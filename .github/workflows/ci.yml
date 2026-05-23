@@ -97,6 +97,83 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
 
+      # Resolve Bun's `workspace:*` protocol to concrete sibling versions
+      # *before* publishing. Why this dance exists at all:
+      #
+      #   - npm publish does NOT rewrite the `workspace:` protocol — the
+      #     literal string "workspace:*" would end up in the published
+      #     tarball and break every consumer doing `npm install fnclaude`.
+      #   - bun publish DOES rewrite it, but doesn't yet support
+      #     --provenance or npm trusted-publisher OIDC auth
+      #     (oven-sh/bun#15601). Switching to bun publish would mean
+      #     dropping provenance and reverting to a long-lived NPM_TOKEN.
+      #   - release-please's node-workspace plugin updates `^range`-style
+      #     workspace cross-deps fine, but explicitly leaves
+      #     protocol-prefixed deps (workspace:, file:, link: …) untouched.
+      #
+      # So we do the rewrite ourselves, in place, before `npm publish`.
+      # First, build a { name → version } map from every workspace
+      # package.json (release-please has bumped them by the time this
+      # step runs — the release PR's merge commit *is* the bump).
+      - name: Build sibling version map
+        id: siblings
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        run: |
+          set -euo pipefail
+          map=$(jq -s 'map({(.name): .version}) | add' \
+            packages/cli/package.json \
+            packages/fnclaude/package.json \
+            packages/renderer/package.json)
+          echo "Resolved siblings:"
+          echo "$map" | jq .
+          # Multiline GITHUB_OUTPUT via heredoc delimiter.
+          {
+            echo "map<<EOF"
+            echo "$map"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Translation follows Bun's documented rules:
+      #   workspace:*       → ^<version>
+      #   workspace:^       → ^<version>
+      #   workspace:~       → ~<version>
+      #   workspace:<x.y.z> → <x.y.z>   (explicit override)
+      - name: Resolve workspace:* deps to concrete versions
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        env:
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+          SIBLINGS: ${{ steps.siblings.outputs.map }}
+        run: |
+          set -euo pipefail
+          echo "$PATHS_RELEASED" | jq -r '.[]' | while read -r pkg_path; do
+            pkg_json="$pkg_path/package.json"
+            echo "::group::Rewriting workspace:* deps in $pkg_json"
+            tmp=$(mktemp)
+            jq --argjson siblings "$SIBLINGS" '
+              def rewrite_deps:
+                with_entries(
+                  if (.value | type == "string" and startswith("workspace:")) then
+                    .value as $spec
+                    | .key as $dep
+                    | ($siblings[$dep]
+                        // error("no sibling version for workspace dep " + $dep)) as $sv
+                    | if   $spec == "workspace:*" then .value = "^" + $sv
+                      elif $spec == "workspace:^" then .value = "^" + $sv
+                      elif $spec == "workspace:~" then .value = "~" + $sv
+                      else .value = ($spec | sub("^workspace:"; ""))
+                      end
+                  else . end
+                );
+              (if has("dependencies")         then .dependencies         |= rewrite_deps else . end)
+              | (if has("devDependencies")      then .devDependencies      |= rewrite_deps else . end)
+              | (if has("peerDependencies")     then .peerDependencies     |= rewrite_deps else . end)
+              | (if has("optionalDependencies") then .optionalDependencies |= rewrite_deps else . end)
+            ' "$pkg_json" > "$tmp"
+            mv "$tmp" "$pkg_json"
+            jq '{name, version, dependencies, devDependencies, peerDependencies, optionalDependencies} | with_entries(select(.value != null))' "$pkg_json"
+            echo "::endgroup::"
+          done
+
       # paths_released is a JSON string of an array, e.g. '["packages/cli"]'.
       # Iterate and publish each one to @next. --provenance attaches an
       # OIDC-signed provenance attestation; the same OIDC token authenticates
