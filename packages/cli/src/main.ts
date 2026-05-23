@@ -42,7 +42,7 @@ import { runMCPServer } from './mcp/client.js';
 import { seedNoop } from './noop.js';
 import { silentRelaunch, silentRelaunchHandoff } from './silentRelaunch.js';
 import { applyWorktreeIntercept } from './worktree.js';
-import { flushWarnings, warn } from './warnings.js';
+import { flushWarnings } from './warnings.js';
 
 /**
  * Pluggable seam set used by `run()`. Tests substitute in-memory implementations
@@ -140,11 +140,17 @@ export async function run(deps: RunDeps = {}): Promise<number> {
   // back at their shell. The silent-relaunch path uses execve which skips
   // this defer; that's intentional — the relaunched fnclaude will re-emit
   // any warnings that still apply.
+  //
+  // Loaders (loadConfig / loadRepoSettings / loadHostAliases / loadPrompts)
+  // and other setup steps return their warnings; we accumulate them in this
+  // local list and drain it via flushWarnings at the deferred-flush point.
+  // No module-global sink — keeps tests hermetic.
+  const warnings: string[] = [];
   let flushed = false;
   const flushOnce = (): void => {
     if (flushed) return;
     flushed = true;
-    flushWarnings(stderr);
+    flushWarnings(warnings, stderr);
   };
 
   try {
@@ -186,11 +192,12 @@ export async function run(deps: RunDeps = {}): Promise<number> {
       try {
         await seedNoopFn(a.cwd);
       } catch (err) {
-        warn(`fnclaude: noop seed failed: ${(err as Error).message}`);
+        warnings.push(`fnclaude: noop seed failed: ${(err as Error).message}`);
       }
     }
 
-    const cfg = loadConfigFn();
+    const { config: cfg, warnings: configWarnings } = loadConfigFn();
+    warnings.push(...configWarnings);
 
     // ── Repo-reference resolver (path-or-repo two-lookup). ───────────────
     if (
@@ -199,8 +206,10 @@ export async function run(deps: RunDeps = {}): Promise<number> {
       !isAbsolute(a.cwd) &&
       !a.cwd.startsWith('~')
     ) {
-      const rs = loadRepoSettingsFn(home, shellCWD);
-      const aliases = loadHostAliasesFn(home);
+      const { settings: rs, warnings: rsWarnings } = loadRepoSettingsFn(home, shellCWD);
+      warnings.push(...rsWarnings);
+      const { aliases, warnings: aliasWarnings } = loadHostAliasesFn(home);
+      warnings.push(...aliasWarnings);
       try {
         const result = await resolveFn({
           input: a.cwd,
@@ -247,14 +256,15 @@ export async function run(deps: RunDeps = {}): Promise<number> {
 
     // ── Sanitize any --name / -n value to a path-safe slug. ──────────────
     {
-      const { args: sanitized, warnings } = sanitizeNamesInPassthrough(a.passthrough);
+      const { args: sanitized, warnings: sanitizeWarnings } =
+        sanitizeNamesInPassthrough(a.passthrough);
       a.passthrough = sanitized;
-      for (const w of warnings) warn(w);
+      warnings.push(...sanitizeWarnings);
     }
 
     // ── Build the claude argv. ───────────────────────────────────────────
     const promptsResult = loadPromptsFn();
-    for (const w of promptsResult.warnings) warn(w);
+    warnings.push(...promptsResult.warnings);
 
     const claudeArgv = buildArgv(a, shellCWD, cfg, promptsResult.prompts);
 

@@ -39,6 +39,17 @@ function home(): string {
 }
 
 /**
+ * Result of a repo-settings load: the merged settings plus any non-fatal
+ * warnings (e.g. malformed JSON files that were skipped). Mirrors
+ * `LoadConfigResult` so the caller can thread warnings into the deferred
+ * flush.
+ */
+export interface LoadRepoSettingsResult {
+  settings: RepoSettings;
+  warnings: readonly string[];
+}
+
+/**
  * Resolve the four-tier merge for the user's environment.
  * `projectRoot` is the cwd Claude Code anchors project/local tiers
  * against — typically the launch cwd or the resolved git toplevel.
@@ -46,7 +57,7 @@ function home(): string {
 export function loadRepoSettings(
   homeDir: string,
   projectRoot: string,
-): RepoSettings {
+): LoadRepoSettingsResult {
   const paths: string[] = [
     join(homeDir, '.claude', 'settings.json'), // user
     join(projectRoot, '.claude', 'settings.json'), // project
@@ -59,13 +70,17 @@ export function loadRepoSettings(
 
 /**
  * Read each path (if it exists) and merge per-field with later entries
- * winning over earlier ones. Missing or malformed files are silently
- * skipped — same fail-soft posture as the plugin.
+ * winning over earlier ones. Missing files are silently skipped (the
+ * fail-soft posture the plugin matches); malformed files produce a
+ * warning so the user can fix them rather than wondering why their
+ * settings don't apply.
  */
-export function mergeRepoSettings(paths: string[]): RepoSettings {
+export function mergeRepoSettings(paths: string[]): LoadRepoSettingsResult {
   const merged: RepoSettings = {};
+  const warnings: string[] = [];
   for (const p of paths) {
-    const f = readRepoSettings(p);
+    const { settings: f, warning } = readRepoSettings(p);
+    if (warning !== null) warnings.push(warning);
     if (!f) continue;
     // Shallow-merge per field: only overwrite when the higher tier sets
     // a non-empty value.
@@ -74,23 +89,32 @@ export function mergeRepoSettings(paths: string[]): RepoSettings {
     if (f.branchTemplate) merged.branchTemplate = f.branchTemplate;
     if (f.gateEnvVar) merged.gateEnvVar = f.gateEnvVar;
   }
-  return merged;
+  return { settings: merged, warnings };
 }
 
-function readRepoSettings(path: string): RepoSettings | null {
+interface ReadRepoSettingsResult {
+  settings: RepoSettings | null;
+  warning: string | null;
+}
+
+function readRepoSettings(path: string): ReadRepoSettingsResult {
   let data: string;
   try {
     data = readFileSync(path, 'utf8');
   } catch {
-    return null;
+    // Missing file is the common path — stay silent.
+    return { settings: null, warning: null };
   }
   let f: SettingsFile;
   try {
     f = JSON.parse(data) as SettingsFile;
-  } catch {
-    return null;
+  } catch (err) {
+    return {
+      settings: null,
+      warning: `fnclaude: repo-settings file ${path} is malformed, skipping: ${(err as Error).message}`,
+    };
   }
-  return f.repoSettings ?? null;
+  return { settings: f.repoSettings ?? null, warning: null };
 }
 
 /**

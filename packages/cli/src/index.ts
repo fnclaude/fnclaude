@@ -88,9 +88,10 @@ export {
 // embedding hosts that want to render their own help.
 export { helpText, setVersion, version, wantsHelp, wantsVersion } from './help.js';
 
-// Warning sink + flush. Test helpers (pendingWarnings, clearWarnings) are
-// re-exported so harness code can introspect/reset between cases.
-export { clearWarnings, flushWarnings, pendingWarnings, warn } from './warnings.js';
+// Warning flush. Loaders (loadConfig / loadRepoSettings / loadHostAliases
+// / loadPrompts) return their warnings; flushWarnings drains a provided
+// list to stderr.
+export { flushWarnings } from './warnings.js';
 
 // noop dir seeding (noop fallback when fnclaude is invoked with no path).
 export { NOOP_HANDOFF_TEMPLATE, defaultNoopDir, seedNoop } from './noop.js';

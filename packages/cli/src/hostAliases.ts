@@ -28,10 +28,21 @@ export function hostAliasesUserPath(home: string): string {
 }
 
 /**
+ * Result of a host-aliases load: the merged alias map plus any non-fatal
+ * warnings (e.g. malformed files that were skipped). Mirrors
+ * `LoadConfigResult` so the caller can thread warnings into the deferred
+ * flush.
+ */
+export interface LoadHostAliasesResult {
+  aliases: Record<string, string>;
+  warnings: readonly string[];
+}
+
+/**
  * Read both files (if present) and merge them, user-level winning per
  * key. Either or both missing returns whatever is available (or empty).
  */
-export function loadHostAliases(home: string): Record<string, string> {
+export function loadHostAliases(home: string): LoadHostAliasesResult {
   return mergeHostAliases([HOST_ALIASES_SYSTEM_PATH, hostAliasesUserPath(home)]);
 }
 
@@ -40,43 +51,57 @@ export function loadHostAliases(home: string): Record<string, string> {
  * winning over earlier ones. Callers order system-first, user-second so
  * user wins on conflict.
  */
-export function mergeHostAliases(paths: string[]): Record<string, string> {
+export function mergeHostAliases(paths: string[]): LoadHostAliasesResult {
   const merged: Record<string, string> = {};
+  const warnings: string[] = [];
   for (const p of paths) {
-    const entries = readHostAliasesFile(p);
-    for (const k of Object.keys(entries)) {
-      merged[k] = entries[k] as string;
+    const { aliases, warning } = readHostAliasesFile(p);
+    if (warning !== null) warnings.push(warning);
+    for (const k of Object.keys(aliases)) {
+      merged[k] = aliases[k] as string;
     }
   }
-  return merged;
+  return { aliases: merged, warnings };
+}
+
+export interface ReadHostAliasesFileResult {
+  aliases: Record<string, string>;
+  warning: string | null;
 }
 
 /**
- * Parse one alias file. Missing file, malformed JSON, non-object root,
- * and non-string values all degrade to "no aliases from this file"
- * silently — same fail-soft posture as the JS plugin.
+ * Parse one alias file. Missing file is the common path and stays
+ * silent. Malformed JSON or non-object roots produce a warning so the
+ * user can fix the file rather than wondering why their aliases don't
+ * apply. Non-string values are silently dropped (mirrors the JS plugin).
  */
-export function readHostAliasesFile(path: string): Record<string, string> {
+export function readHostAliasesFile(path: string): ReadHostAliasesFileResult {
   let data: string;
   try {
     data = readFileSync(path, 'utf8');
   } catch {
-    return {};
+    return { aliases: {}, warning: null };
   }
   let raw: unknown;
   try {
     raw = JSON.parse(data);
-  } catch {
-    return {};
+  } catch (err) {
+    return {
+      aliases: {},
+      warning: `fnclaude: host-aliases file ${path} is malformed, skipping: ${(err as Error).message}`,
+    };
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return {};
+    return {
+      aliases: {},
+      warning: `fnclaude: host-aliases file ${path} has a non-object root, skipping`,
+    };
   }
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === 'string') out[k] = v;
   }
-  return out;
+  return { aliases: out, warning: null };
 }
 
 /**

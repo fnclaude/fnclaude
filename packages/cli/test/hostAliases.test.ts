@@ -15,8 +15,10 @@ function tmp(): string {
 }
 
 describe('mergeHostAliases', () => {
-  test('empty paths → empty map', () => {
-    expect(Object.keys(mergeHostAliases([])).length).toBe(0);
+  test('empty paths → empty map + no warnings', () => {
+    const got = mergeHostAliases([]);
+    expect(Object.keys(got.aliases).length).toBe(0);
+    expect(got.warnings).toEqual([]);
   });
 
   test('single file loaded', () => {
@@ -24,8 +26,9 @@ describe('mergeHostAliases', () => {
     const p = join(dir, 'a.json');
     writeFileSync(p, '{"github.com":"gh","gitlab.com":"gl"}');
     const got = mergeHostAliases([p]);
-    expect(got['github.com']).toBe('gh');
-    expect(got['gitlab.com']).toBe('gl');
+    expect(got.aliases['github.com']).toBe('gh');
+    expect(got.aliases['gitlab.com']).toBe('gl');
+    expect(got.warnings).toEqual([]);
   });
 
   test('user overrides system (later wins per key)', () => {
@@ -35,25 +38,29 @@ describe('mergeHostAliases', () => {
     writeFileSync(sys, '{"github.com":"gh","gitlab.com":"gl"}');
     writeFileSync(usr, '{"github.com":"ghub","bitbucket.org":"bb"}');
     const got = mergeHostAliases([sys, usr]);
-    expect(got['github.com']).toBe('ghub');
-    expect(got['gitlab.com']).toBe('gl');
-    expect(got['bitbucket.org']).toBe('bb');
+    expect(got.aliases['github.com']).toBe('ghub');
+    expect(got.aliases['gitlab.com']).toBe('gl');
+    expect(got.aliases['bitbucket.org']).toBe('bb');
   });
 
-  test('missing file is skipped', () => {
+  test('missing file is skipped silently (no warning)', () => {
     const dir = tmp();
-    expect(Object.keys(mergeHostAliases([join(dir, 'nope.json')])).length).toBe(
-      0,
-    );
+    const got = mergeHostAliases([join(dir, 'nope.json')]);
+    expect(Object.keys(got.aliases).length).toBe(0);
+    expect(got.warnings).toEqual([]);
   });
 
-  test('malformed file is skipped, later good file still loads', () => {
+  test('malformed file produces a warning, later good file still loads', () => {
     const dir = tmp();
     const bad = join(dir, 'bad.json');
     writeFileSync(bad, '{not valid');
     const good = join(dir, 'good.json');
     writeFileSync(good, '{"github.com":"gh"}');
-    expect(mergeHostAliases([bad, good])['github.com']).toBe('gh');
+    const got = mergeHostAliases([bad, good]);
+    expect(got.aliases['github.com']).toBe('gh');
+    expect(got.warnings.length).toBe(1);
+    expect(got.warnings[0]).toContain(bad);
+    expect(got.warnings[0]).toContain('malformed');
   });
 });
 
@@ -66,16 +73,20 @@ describe('readHostAliasesFile', () => {
       '{"github.com":"gh","gitlab.com":42,"bitbucket.org":null}',
     );
     const got = readHostAliasesFile(p);
-    expect(got['github.com']).toBe('gh');
-    expect('gitlab.com' in got).toBe(false);
-    expect('bitbucket.org' in got).toBe(false);
+    expect(got.aliases['github.com']).toBe('gh');
+    expect('gitlab.com' in got.aliases).toBe(false);
+    expect('bitbucket.org' in got.aliases).toBe(false);
+    expect(got.warning).toBeNull();
   });
 
-  test('object root only — array root → empty', () => {
+  test('object root only — array root → empty with warning', () => {
     const dir = tmp();
     const p = join(dir, 'arr.json');
     writeFileSync(p, '["github.com","gh"]');
-    expect(Object.keys(readHostAliasesFile(p)).length).toBe(0);
+    const got = readHostAliasesFile(p);
+    expect(Object.keys(got.aliases).length).toBe(0);
+    expect(got.warning).not.toBeNull();
+    expect(got.warning).toContain('non-object root');
   });
 });
 

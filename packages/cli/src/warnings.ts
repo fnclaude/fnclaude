@@ -5,46 +5,30 @@
 // scroll off-screen too fast to read; flushing on exit shows them in the
 // user's shell where they have time to actually be seen.
 //
+// There is no module-global queue here — every loader (loadConfig,
+// loadRepoSettings, loadHostAliases, loadPrompts) returns its warnings
+// alongside its result, and `main.ts` threads them into a single local
+// list that `flushWarnings` drains at the deferred-flush point. The old
+// global queue made test fixtures share state across files and forced
+// callers to know about a sink module they otherwise didn't depend on;
+// the explicit-thread shape is the fix.
+//
 // Fatal errors that prevent launch entirely (e.g. claude binary not on PATH)
 // should still print directly to stderr and exit non-zero — those don't
 // need deferring because there's no claude session about to drown them out.
 
 import process from 'node:process';
 
-const warnings: string[] = [];
-
 /**
- * Queue a non-fatal warning. Accepts a pre-formatted message (callers do
- * their own templating); printed verbatim on flush.
+ * Print each warning to `stream` on its own line. Returns the number of
+ * warnings written (useful for tests). Empty input is a no-op.
  */
-export function warn(msg: string): void {
-  warnings.push(msg);
-}
-
-/**
- * Print all queued warnings to stderr in order, then clear the queue.
- * Called from `run()` after claude exits. Returns the number of warnings
- * that were flushed (useful for tests).
- */
-export function flushWarnings(stream: NodeJS.WriteStream = process.stderr): number {
-  const n = warnings.length;
+export function flushWarnings(
+  warnings: readonly string[],
+  stream: NodeJS.WriteStream = process.stderr,
+): number {
   for (const w of warnings) {
     stream.write(`${w}\n`);
   }
-  warnings.length = 0;
-  return n;
-}
-
-/**
- * Test helper: return a snapshot of the current queue without flushing.
- */
-export function pendingWarnings(): readonly string[] {
-  return [...warnings];
-}
-
-/**
- * Test helper: clear the queue without emitting anything.
- */
-export function clearWarnings(): void {
-  warnings.length = 0;
+  return warnings.length;
 }

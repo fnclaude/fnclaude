@@ -13,15 +13,17 @@ function writeJSON(path: string, v: unknown): void {
 }
 
 describe('mergeRepoSettings', () => {
-  test('empty paths → empty struct', () => {
-    expect(mergeRepoSettings([])).toEqual({} as RepoSettings);
+  test('empty paths → empty struct + no warnings', () => {
+    expect(mergeRepoSettings([])).toEqual({ settings: {} as RepoSettings, warnings: [] });
   });
 
   test('single tier loads cloneTemplate', () => {
     const dir = tmp();
     const p = join(dir, 'u.json');
     writeJSON(p, { repoSettings: { cloneTemplate: '~/src/{repo}@{owner}' } });
-    expect(mergeRepoSettings([p]).cloneTemplate).toBe('~/src/{repo}@{owner}');
+    const got = mergeRepoSettings([p]);
+    expect(got.settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(got.warnings).toEqual([]);
   });
 
   test('higher tier overrides lower (later wins)', () => {
@@ -30,7 +32,7 @@ describe('mergeRepoSettings', () => {
     const proj = join(dir, 'project.json');
     writeJSON(user, { repoSettings: { cloneTemplate: 'user-clone' } });
     writeJSON(proj, { repoSettings: { cloneTemplate: 'project-clone' } });
-    expect(mergeRepoSettings([user, proj]).cloneTemplate).toBe('project-clone');
+    expect(mergeRepoSettings([user, proj]).settings.cloneTemplate).toBe('project-clone');
   });
 
   test('lower tier fields survive when higher tier omits them', () => {
@@ -41,31 +43,39 @@ describe('mergeRepoSettings', () => {
       repoSettings: { cloneTemplate: 'user-clone', worktreeTemplate: 'user-wt' },
     });
     writeJSON(proj, { repoSettings: { worktreeTemplate: 'project-wt' } });
-    const got = mergeRepoSettings([user, proj]);
+    const { settings: got } = mergeRepoSettings([user, proj]);
     expect(got.cloneTemplate).toBe('user-clone');
     expect(got.worktreeTemplate).toBe('project-wt');
   });
 
-  test('missing file is skipped', () => {
+  test('missing file is skipped silently (no warning)', () => {
     const dir = tmp();
-    expect(mergeRepoSettings([join(dir, 'nope.json')])).toEqual(
-      {} as RepoSettings,
-    );
+    expect(mergeRepoSettings([join(dir, 'nope.json')])).toEqual({
+      settings: {} as RepoSettings,
+      warnings: [],
+    });
   });
 
-  test('malformed file is skipped, later good file still loads', () => {
+  test('malformed file produces a warning but later good file still loads', () => {
     const dir = tmp();
     const bad = join(dir, 'bad.json');
     writeFileSync(bad, '{not valid json');
     const good = join(dir, 'good.json');
     writeJSON(good, { repoSettings: { cloneTemplate: 'kept' } });
-    expect(mergeRepoSettings([bad, good]).cloneTemplate).toBe('kept');
+    const got = mergeRepoSettings([bad, good]);
+    expect(got.settings.cloneTemplate).toBe('kept');
+    expect(got.warnings.length).toBe(1);
+    expect(got.warnings[0]).toContain(bad);
+    expect(got.warnings[0]).toContain('malformed');
   });
 
   test('file lacking repoSettings key is skipped silently', () => {
     const dir = tmp();
     const p = join(dir, 'p.json');
     writeJSON(p, { unrelatedKey: 'x' });
-    expect(mergeRepoSettings([p])).toEqual({} as RepoSettings);
+    expect(mergeRepoSettings([p])).toEqual({
+      settings: {} as RepoSettings,
+      warnings: [],
+    });
   });
 });

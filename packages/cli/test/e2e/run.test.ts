@@ -83,9 +83,9 @@ function makeCapturingDeps(extras: Partial<RunDeps> = {}): {
     cwd: '/tmp/shell-cwd',
     lookupClaude: () => '/usr/bin/claude',
     seedNoop: async () => undefined,
-    loadConfig: () => defaultConfig(),
-    loadRepoSettings: () => ({}),
-    loadHostAliases: () => ({}),
+    loadConfig: () => ({ config: defaultConfig(), warnings: [] }),
+    loadRepoSettings: () => ({ settings: {}, warnings: [] }),
+    loadHostAliases: () => ({ aliases: {}, warnings: [] }),
     loadPrompts: () => ({
       prompts: {
         agentPitfall: '',
