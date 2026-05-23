@@ -93,6 +93,9 @@ export { NOOP_HANDOFF_TEMPLATE, defaultNoopDir, seedNoop } from './noop.js';
 // Silent-relaunch primitives — execve on POSIX, spawn-and-exit on Windows.
 export { silentRelaunch, silentRelaunchHandoff, spawnAndExit } from './silentRelaunch.js';
 
+// Top-level run loop + entry point.
+export { main, run, type RunDeps } from './main.js';
+
 // PTY runner + shared helpers (ring buffer, cross-cwd detection,
 // reconstructArgv, ensureCWD).
 export {
