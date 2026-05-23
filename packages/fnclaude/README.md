@@ -16,4 +16,13 @@ This installs the full Claude Code CLI along with the renderer runtime. The pack
 - `@fnclaude/cli` — Claude Code command-line interface
 - `@fnclaude/renderer` — Renderer and WebSocket server for interactive sessions
 
+## Quick start
+
+After installation, the `fnc` command provides access to all Claude Code functionality:
+
+```bash
+fnc --help          # Show available commands
+fnc <project-path>  # Start a new session in a project
+```
+
 For detailed documentation on CLI features and usage, see the individual package readmes.
