@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.11](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.10...fnclaude-v0.0.11) (2026-05-23)
+
+
+### Bug Fixes
+
+* add repository field to cli + fnclaude package.json for OIDC provenance ([#30](https://github.com/fnclaude/fnclaude/issues/30)) ([65b1e83](https://github.com/fnclaude/fnclaude/commit/65b1e83c3c35ae4b9c99762b6c76b86fc41ce7fc))
+
 ## [0.0.10](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.9...fnclaude-v0.0.10) (2026-05-23)
 
 
