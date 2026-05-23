@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.2.0...cli-v0.3.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port spawn sibling + template substitution from Go ([#35](https://github.com/fnclaude/fnclaude/issues/35)) ([1014901](https://github.com/fnclaude/fnclaude/commit/101490177d0414f4276c5e99b30a07a6ecf70755))
+
 ## [0.2.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.1.1...cli-v0.2.0) (2026-05-23)
 
 
