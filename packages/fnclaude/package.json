@@ -3,6 +3,11 @@
   "version": "0.0.10",
   "description": "fnclaude — wrapper around Claude Code (umbrella package; depends on @fnclaude/cli and @fnclaude/renderer)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnclaude/fnclaude.git",
+    "directory": "packages/fnclaude"
+  },
   "type": "module",
   "bin": {
     "fnc": "./bin/fnc.js"

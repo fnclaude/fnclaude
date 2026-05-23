@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "fnclaude CLI implementation (TypeScript rewrite, in progress)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnclaude/fnclaude.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
