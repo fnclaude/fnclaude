@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.16](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.15...fnclaude-v0.0.16) (2026-05-23)
+
+
+### Bug Fixes
+
+* **fnclaude:** minor README refinement (recovery republish with cli 0.7.2 deps) ([#64](https://github.com/fnclaude/fnclaude/issues/64)) ([c2030ca](https://github.com/fnclaude/fnclaude/commit/c2030ca10ac65041a2e655361ecc52887e990d45))
+
 ## [0.0.15](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.14...fnclaude-v0.0.15) (2026-05-23)
 
 
