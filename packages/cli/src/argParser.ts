@@ -347,6 +347,7 @@ export function parseArgs(argv: readonly string[], home: string): Args {
     worktreeSet,
     worktreeArg,
     usedNoopFallback,
+    worktreeMatched: false,
   };
 }
 

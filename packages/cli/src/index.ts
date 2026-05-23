@@ -12,14 +12,32 @@ export {
 export { expandTildePath } from './paths.js';
 export {
   findPromptsDir,
+  isInteractiveSession,
   loadPrompts,
   readPromptFile,
   readPromptFileSync,
+  selectFragments,
   type FindPromptsDirResult,
   type LoadPromptsResult,
   type PromptSet,
   type ReadPromptFileResult,
 } from './prompts.js';
+export {
+  applyWorktreeIntercept,
+  defaultGitRunner,
+  findWorktree,
+  listWorktrees,
+  type GitRunner,
+  type WorktreeInfo,
+} from './worktree.js';
+export {
+  buildArgv,
+  buildFnclaudeMCPConfigJSON,
+  nameInPassthrough,
+  settingSourcesInPassthrough,
+  tokenInPassthrough,
+  withAppendedSystemPrompts,
+} from './argv.js';
 
 // MCP wire protocol + parent-side listener + subprocess client.
 export {
