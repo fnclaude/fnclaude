@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.6.0...cli-v0.7.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port main run loop + silentRelaunch/Handoff from Go ([#43](https://github.com/fnclaude/fnclaude/issues/43)) ([26da1f3](https://github.com/fnclaude/fnclaude/commit/26da1f315fab8f8964b5dda19d7eb21f2ca85764))
+
 ## [0.6.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.5.0...cli-v0.6.0) (2026-05-23)
 
 
