@@ -97,6 +97,11 @@ jobs:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
 
+      - uses: jdx/mise-action@v2
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        with:
+          experimental: true
+
       # Resolve Bun's `workspace:*` protocol to concrete sibling versions
       # *before* publishing. Why this dance exists at all:
       #
