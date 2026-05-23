@@ -80,7 +80,7 @@ describe('run() short-circuits', () => {
     const { stream: stdout, chunks } = makeBuf();
     const code = await run(baseDeps({ argv: ['--version'], stdout }));
     expect(code).toBe(0);
-    expect(chunks.join('')).toMatch(/^fnclaude \S+\n$/);
+    expect(chunks.join('')).toMatch(/^fnclaude \d+\.\d+\.\d+\n$/);
   });
 
   test('`mcp` dispatches to runMCPServer with noop=false by default', async () => {
