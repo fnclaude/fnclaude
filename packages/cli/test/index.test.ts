@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, test } from 'bun:test';
 import { name } from '../src/index.js';
 
 describe('@fnclaude/cli', () => {
-  it('exposes its package name', () => {
+  test('exposes its package name', () => {
     expect(name).toBe('@fnclaude/cli');
   });
 });

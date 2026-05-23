@@ -12,12 +12,12 @@
   ],
   "scripts": {
     "lint": "echo 'lint stub (fnclaude umbrella)' && exit 0",
-    "test": "vitest run",
+    "test": "bun test",
     "build": "echo 'no build (umbrella package — shim only)'"
   },
   "dependencies": {
-    "@fnclaude/cli": "*",
-    "@fnclaude/renderer": "*"
+    "@fnclaude/cli": "workspace:*",
+    "@fnclaude/renderer": "workspace:*"
   },
   "publishConfig": {
     "access": "public",

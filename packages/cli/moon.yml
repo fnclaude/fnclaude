@@ -6,18 +6,18 @@ language: 'typescript'
 
 tasks:
   lint:
-    command: 'npm run lint'
+    command: 'bun run lint'
     options:
       cache: false
   test:
-    command: 'npm run test'
+    command: 'bun run test'
     inputs:
       - 'src/**/*'
       - 'test/**/*'
       - 'tsconfig.json'
       - 'package.json'
   build:
-    command: 'npm run build'
+    command: 'bun run build'
     inputs:
       - 'src/**/*'
       - 'tsconfig.json'
