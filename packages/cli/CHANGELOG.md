@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.0...cli-v0.7.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **cli:** read version from package.json instead of hardcoded "dev" ([#50](https://github.com/fnclaude/fnclaude/issues/50)) ([08276ed](https://github.com/fnclaude/fnclaude/commit/08276ed969e0f4fc6b8a3fe927e32e50ddeb7647))
+
 ## [0.7.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.6.0...cli-v0.7.0) (2026-05-23)
 
 
