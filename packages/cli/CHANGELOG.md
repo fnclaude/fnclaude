@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.1...cli-v0.7.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* refresh cli and fnclaude READMEs to trigger republish ([#53](https://github.com/fnclaude/fnclaude/issues/53)) ([b687d54](https://github.com/fnclaude/fnclaude/commit/b687d5401a3959e9e4fc34d2c6aee7895174a885))
+
 ## [0.7.1](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.0...cli-v0.7.1) (2026-05-23)
 
 
