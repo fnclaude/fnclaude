@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.13](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.12...fnclaude-v0.0.13) (2026-05-23)
+
+
+### Bug Fixes
+
+* refresh cli and fnclaude READMEs to trigger republish ([#53](https://github.com/fnclaude/fnclaude/issues/53)) ([b687d54](https://github.com/fnclaude/fnclaude/commit/b687d5401a3959e9e4fc34d2c6aee7895174a885))
+
 ## [0.0.12](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.11...fnclaude-v0.0.12) (2026-05-23)
 
 
