@@ -181,6 +181,50 @@ export function readPromptFileSync(dir: string, name: string): ReadPromptFileRes
   }
 }
 
+/**
+ * isInteractiveSession reports whether the passthrough flags indicate an
+ * interactive session (vs. a -p / --print one-shot run). Drives the
+ * fragment-injection gate in selectFragments and the self-MCP injection
+ * gate in buildArgv — neither is useful for non-interactive runs.
+ */
+export function isInteractiveSession(passthrough: readonly string[]): boolean {
+  return !passthrough.some((t) => t === '-p' || t === '--print');
+}
+
+/**
+ * selectFragments returns the prompt fragments to inject for this session,
+ * in stable order. Empty strings (missing files) are dropped.
+ *
+ *   - All interactive sessions (non -p/--print) get agent-pitfall + spawn
+ *     (sibling-session capability applies whether the user is in noop
+ *     routing the conversation or in a project doing focused work).
+ *   - Noop fallback sessions also get noop-router (the router instructions
+ *     that replaced the embedded noop CLAUDE.md).
+ *   - Non-noop sessions also get project-switch + restart (capability hints
+ *     so the user can request a switch to another repo or restart the
+ *     current session at any time).
+ *
+ * -p/--print sessions get nothing — agent spawning, project-switching,
+ * sibling spawning, and restart don't apply to one-shot non-interactive runs.
+ */
+export function selectFragments(
+  ps: PromptSet,
+  passthrough: readonly string[],
+  usedNoopFallback: boolean,
+): string[] {
+  if (!isInteractiveSession(passthrough)) return [];
+  const frags: string[] = [];
+  if (ps.agentPitfall !== '') frags.push(ps.agentPitfall);
+  if (ps.spawn !== '') frags.push(ps.spawn);
+  if (usedNoopFallback) {
+    if (ps.noopRouter !== '') frags.push(ps.noopRouter);
+  } else {
+    if (ps.projectSwitch !== '') frags.push(ps.projectSwitch);
+    if (ps.restart !== '') frags.push(ps.restart);
+  }
+  return frags;
+}
+
 function trimTrailingWhitespace(s: string): string {
   let i = s.length;
   while (i > 0) {

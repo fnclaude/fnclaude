@@ -4,9 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   findPromptsDir,
+  isInteractiveSession,
   loadPrompts,
+  type PromptSet,
   readPromptFile,
   readPromptFileSync,
+  selectFragments,
 } from '../src/prompts.js';
 
 // Mirrors src/prompts_test.go. Tests use FNC_PROMPTS_DIR for deterministic
@@ -141,5 +144,87 @@ describe('loadPrompts', () => {
     expect(prompts.noopRouter).toBe('');
     // Four missing files = four warnings.
     expect(warnings).toHaveLength(4);
+  });
+});
+
+// ── isInteractiveSession ───────────────────────────────────────────────────
+
+describe('isInteractiveSession', () => {
+  test('true when no -p / --print present', () => {
+    expect(isInteractiveSession(['--verbose', '--model', 'sonnet'])).toBe(true);
+  });
+
+  test('false when -p present', () => {
+    expect(isInteractiveSession(['-p', 'do thing'])).toBe(false);
+  });
+
+  test('false when --print present', () => {
+    expect(isInteractiveSession(['--print', 'do thing'])).toBe(false);
+  });
+
+  test('true for empty passthrough', () => {
+    expect(isInteractiveSession([])).toBe(true);
+  });
+});
+
+// ── selectFragments ────────────────────────────────────────────────────────
+
+const fullPromptSet: PromptSet = {
+  agentPitfall: 'AP',
+  projectSwitch: 'PS',
+  spawn: 'SP',
+  restart: 'RS',
+  noopRouter: 'NR',
+};
+
+describe('selectFragments', () => {
+  test('-p mode returns nothing', () => {
+    expect(selectFragments(fullPromptSet, ['-p', 'prompt'], false)).toEqual([]);
+  });
+
+  test('project session: pitfall + spawn + project-switch + restart, in order', () => {
+    expect(selectFragments(fullPromptSet, ['--verbose'], false)).toEqual([
+      'AP',
+      'SP',
+      'PS',
+      'RS',
+    ]);
+  });
+
+  test('noop session: pitfall + spawn + noop-router (no switch/restart)', () => {
+    expect(selectFragments(fullPromptSet, [], true)).toEqual(['AP', 'SP', 'NR']);
+  });
+
+  test('empty PromptSet returns nothing', () => {
+    const empty: PromptSet = {
+      agentPitfall: '',
+      projectSwitch: '',
+      spawn: '',
+      restart: '',
+      noopRouter: '',
+    };
+    expect(selectFragments(empty, ['--verbose'], false)).toEqual([]);
+  });
+
+  test('missing project-switch in project session drops just that fragment', () => {
+    const ps: PromptSet = {
+      agentPitfall: 'AP',
+      projectSwitch: '',
+      spawn: '',
+      restart: '',
+      noopRouter: '',
+    };
+    expect(selectFragments(ps, ['--verbose'], false)).toEqual(['AP']);
+  });
+
+  test('missing noop-router in noop session drops just that fragment', () => {
+    const ps: PromptSet = {
+      agentPitfall: 'AP',
+      projectSwitch: '',
+      spawn: '',
+      restart: '',
+      noopRouter: '',
+    };
+    expect(selectFragments(ps, [], true)).toEqual(['AP']);
   });
 });

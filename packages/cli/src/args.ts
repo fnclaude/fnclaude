@@ -49,4 +49,14 @@ export interface Args {
    * explicit paths don't get auto-seeded.
    */
   usedNoopFallback: boolean;
+
+  /**
+   * WorktreeMatched is set by applyWorktreeIntercept when -w / --worktree
+   * was resolved against an existing worktree of the project repo (cwd was
+   * swapped to that worktree). Downstream consumers (buildArgv's auto-tmux
+   * gate, primarily) treat matched=true as "no new worktree being created
+   * this run" and avoid injecting flags that only make sense when claude
+   * is about to spin up a fresh worktree.
+   */
+  worktreeMatched: boolean;
 }
