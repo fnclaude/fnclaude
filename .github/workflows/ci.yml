@@ -29,6 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # moon resolves a touched-files baseline against the default branch
+          # for incremental task scheduling. Without fetching it, moon errors
+          # with `fatal: ambiguous argument 'main': unknown revision`.
+          fetch-depth: 0
       - uses: jdx/mise-action@v2
         with:
           # mise.toml at the repo root drives the tool list.
