@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.2](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.1...cli-v0.7.2) (2026-05-23)
+
+
+### Bug Fixes
+
+* **cli:** expand README with Quick Start and Key Features sections ([#62](https://github.com/fnclaude/fnclaude/issues/62)) ([616cde1](https://github.com/fnclaude/fnclaude/commit/616cde1805685982b7bb182fbd48fbebfdc12262))
+* document Bun runtime requirement (re-triggers publish chain) ([#56](https://github.com/fnclaude/fnclaude/issues/56)) ([0a4bb13](https://github.com/fnclaude/fnclaude/commit/0a4bb136d5dd9e8b1984630d42ebdb3ec0c91854))
+* expand cli + fnclaude READMEs (recovery republish for both) ([#59](https://github.com/fnclaude/fnclaude/issues/59)) ([53b4ae8](https://github.com/fnclaude/fnclaude/commit/53b4ae885a1aa3edabd9251e97e97a1587f20aff))
+* refresh cli and fnclaude READMEs to trigger republish ([#53](https://github.com/fnclaude/fnclaude/issues/53)) ([b687d54](https://github.com/fnclaude/fnclaude/commit/b687d5401a3959e9e4fc34d2c6aee7895174a885))
+
 ## [0.7.1](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.0...cli-v0.7.1) (2026-05-23)
 
 
