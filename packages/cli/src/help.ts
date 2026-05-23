@@ -2,12 +2,13 @@
 // Ported from src/main.go (helpText, wantsHelp, wantsVersion) in the Go
 // reference.
 
+import pkg from '../package.json' with { type: 'json' };
+
 /**
- * Binary version. Default "dev" for local builds; release pipeline can
- * override by patching this constant or via a build-time env knob. Mirrors
- * the Go reference's `var version = "dev"`.
+ * Binary version. Read from package.json at build time, inlined by the
+ * TypeScript compiler and bundler.
  */
-export let version = 'dev';
+export let version = pkg.version;
 
 /**
  * Test helper: override the reported version. Kept narrow on purpose —

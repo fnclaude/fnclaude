@@ -19,15 +19,16 @@ import {
   type Request,
   type Response,
 } from './protocol.js';
+import pkg from '../../package.json' with { type: 'json' };
 
-// ── version (injected at build time; "dev" otherwise) ─────────────────────
+// ── version (read from package.json at build time) ──────────────────────────
 
 /**
  * Binary version surfaced via the `initialize` response's serverInfo.
- * Defaults to "dev"; the build system can override by patching this
- * constant or via an env knob if needed.
+ * Read from package.json at build time, inlined by the TypeScript compiler
+ * and bundler.
  */
-export const MCP_SERVER_VERSION = 'dev';
+export const MCP_SERVER_VERSION = pkg.version;
 
 // ── Session ID validation ─────────────────────────────────────────────────
 
