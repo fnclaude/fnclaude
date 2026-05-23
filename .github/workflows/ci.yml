@@ -406,10 +406,22 @@ jobs:
           fi
           echo "Current @next for $PACKAGE is $NEXT; promoting $VERSION."
 
+      # npm dist-tag does not yet support OIDC trusted-publisher auth — only
+      # `npm publish` does the OIDC handshake. The publish-next job above gets
+      # away with OIDC-only because it never touches dist-tag, but this step
+      # cannot. Without a real token the setup-node-generated .npmrc leaves
+      # the `${NODE_AUTH_TOKEN}` placeholder unsubstituted and npm fails with
+      # E401. Tracked as an open feature request at npm; revisit when OIDC
+      # dist-tag ships and drop NPM_DIST_TAG_TOKEN.
+      #
+      # NPM_DIST_TAG_TOKEN is a granular access token scoped to just the three
+      # fnclaude packages (fnclaude, @fnclaude/cli, @fnclaude/renderer) with
+      # publish permission — which covers dist-tag mutations.
       - name: Promote @next → @latest on npm
         env:
           PACKAGE: ${{ inputs.package }}
           VERSION: ${{ inputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: npm dist-tag add "${PACKAGE}@${VERSION}" latest
 
       - name: Promote GitHub pre-release → latest release
