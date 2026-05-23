@@ -2,7 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["node_modules", "dist", "bin", "*.lockb"]
+    "ignore": ["node_modules", "dist", "bin", "*.lockb", "package.json"]
   },
   "vcs": {
     "enabled": true,
