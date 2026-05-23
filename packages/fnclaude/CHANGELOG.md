@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.9](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.1...fnclaude-v0.0.9) (2026-05-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @fnclaude/renderer bumped to 1.0.0
+
 ## [0.0.8](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.1...fnclaude-v0.0.8) (2026-05-23)
 
 
