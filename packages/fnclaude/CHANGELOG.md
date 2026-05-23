@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.12](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.11...fnclaude-v0.0.12) (2026-05-23)
+
+
+### Bug Fixes
+
+* **fnclaude:** refresh README; bumps to republish with current cli/renderer deps ([#48](https://github.com/fnclaude/fnclaude/issues/48)) ([e0c978c](https://github.com/fnclaude/fnclaude/commit/e0c978c1acd7b3b955eafda469bbbe908249646d))
+
 ## [0.0.11](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.10...fnclaude-v0.0.11) (2026-05-23)
 
 
