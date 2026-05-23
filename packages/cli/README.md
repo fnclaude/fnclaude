@@ -20,3 +20,7 @@ fnc --help
 ```
 
 For more details on available commands and features, run `fnc help` or see the main fnclaude documentation.
+
+## Status
+
+The CLI is actively maintained. Current release is published to npm under `@latest` and `@next` dist-tags. See the main fnclaude repository for release notes and version history.
