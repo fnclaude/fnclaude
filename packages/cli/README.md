@@ -47,4 +47,4 @@ For more details on available commands and features, run `fnc help` or see the m
 
 ## Status
 
-The CLI is actively maintained. Current release is published to npm under `@latest` and `@next` dist-tags. See the main fnclaude repository for release notes and version history.
+The CLI is actively maintained. Current release is published to npm under `@latest`. See the main fnclaude repository for release notes and version history.
