@@ -28,7 +28,7 @@ jobs:
           # downstream workflows. GitHub intentionally suppresses workflow
           # triggers for GITHUB_TOKEN-actored events to prevent loops; that
           # suppression would prevent the post-merge `push` event from
-          # triggering `publish-next` — meaning no @next version would ship.
+          # triggering the `publish` job — meaning no release would ship.
           GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         # --repo is required: gh otherwise tries to detect the repo from a
