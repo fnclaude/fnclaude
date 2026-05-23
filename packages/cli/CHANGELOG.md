@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.4.0...cli-v0.5.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port autoname + clipboard from Go ([#36](https://github.com/fnclaude/fnclaude/issues/36)) ([6d9394b](https://github.com/fnclaude/fnclaude/commit/6d9394b34848788a1e0eef569c8cfe031ae6e8c9))
+
 ## [0.4.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.3.0...cli-v0.4.0) (2026-05-23)
 
 
