@@ -1,0 +1,28 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  # Manual trigger to catch up state when something stalled the chain.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          # PAT (not GITHUB_TOKEN) so the release PR's pull_request.opened
+          # event fires auto-merge.yml. GITHUB_TOKEN-created PRs don't
+          # trigger workflows, which is why release PRs would otherwise sit
+          # open. auto-merge.yml handles enabling auto-merge from there —
+          # no need to do it inline here.
+          token: ${{ secrets.AUTOMERGE_PAT }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

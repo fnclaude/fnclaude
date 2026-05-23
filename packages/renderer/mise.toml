@@ -1,0 +1,33 @@
+[tools]
+bun = "1"
+
+# Auto-install the pre-commit hook on directory entry. Idempotent (git
+# overwrites the same value on each fire); skipped silently if mise isn't
+# active. Non-mise contributors: run `git config core.hooksPath .githooks`
+# once, or `mise run setup`.
+[hooks]
+enter = "git config core.hooksPath .githooks"
+
+[tasks.setup]
+description = "Install the .githooks/pre-commit hook. Run once after cloning."
+run = "git config core.hooksPath .githooks"
+
+[tasks.dev]
+description = "Run fnclaude-renderer from source"
+run = "bun run src/index.tsx"
+
+[tasks.build]
+description = "Compile to a single binary at bin/fnclaude-renderer"
+run = "bun build --compile --outfile=bin/fnclaude-renderer ./src/index.tsx"
+
+[tasks.test]
+description = "Run the Bun test suite"
+run = "bun test"
+
+[tasks.typecheck]
+description = "TypeScript typecheck"
+run = "bun run typecheck"
+
+[tasks.check]
+description = "Biome lint + format check (matches pre-commit hook)"
+run = "biome check ."

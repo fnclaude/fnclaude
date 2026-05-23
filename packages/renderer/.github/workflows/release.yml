@@ -1,0 +1,100 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Don't cancel an in-flight release — a half-published AUR push is worse than
+# a duplicate run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # Language-specific build. Lives in build.yml (a reusable workflow).
+  # Must produce a `dist` artifact containing per-platform archives +
+  # checksums.txt. See .github/workflows/build.yml for the contract.
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  # Create the GitHub release with the dist artifacts attached. AUR's
+  # source_* URLs point at these release assets.
+  gh-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Attach dist artifacts to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # release-please-action created the release itself when it
+          # pushed the tag (skip-github-release defaults to false), so
+          # the release already exists with release-please's CHANGELOG
+          # rendering. We just upload the build artifacts onto it.
+          # `--clobber` lets re-runs overwrite if a previous attempt
+          # left partial uploads.
+          gh release upload "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+  # Push the AUR PKGBUILD update. Requires the dist artifacts to be live on
+  # the GitHub release (gh-release dependency) because updpkgsums fetches
+  # from the source_* URLs to recompute sha256sums.
+  #
+  # Required repo secrets:
+  #   AUR_USERNAME         author name on the AUR push commit
+  #   AUR_EMAIL            author email on the AUR push commit
+  #   AUR_SSH_PRIVATE_KEY  ED25519 private key whose pubkey is registered at
+  #                        https://aur.archlinux.org/account/
+  publish-aur:
+    needs: gh-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump pkgver to release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          cd packaging/aur
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          cat PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          # NOTE: replace <PKGNAME> with your actual AUR package name
+          # (typically `<project>-bin` for binary releases). This must match
+          # the AUR repo you've already created at
+          # https://aur.archlinux.org/packages/<PKGNAME>.
+          pkgname: fnclaude-renderer-bin
+          pkgbuild: ./packaging/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release ${{ github.ref_name }}"
+          # updpkgsums re-fetches source_* URLs and rewrites sha256sums_*
+          # in-place before publishing — keep this `true` unless you're
+          # computing checksums in build.yml and writing them in directly.
+          updpkgsums: true
+          test: true
+          test_flags: --clean --cleanbuild --syncdeps --noconfirm
+          ssh_keyscan_types: rsa,ecdsa,ed25519

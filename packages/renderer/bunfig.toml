@@ -1,0 +1,10 @@
+# Bun config for fnclaude-renderer
+#
+# [test] preload runs before any test file imports. We use it to set
+# FORCE_COLOR=1 so chalk (transitive via ink) emits ANSI escape codes in
+# the non-TTY test runner — required for renderer tests that assert
+# styling. Without this, chalk auto-strips ANSI in CI and the
+# colored-output assertions fail.
+
+[test]
+preload = "./test/preload.ts"

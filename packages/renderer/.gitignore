@@ -1,0 +1,19 @@
+# Node / Bun
+node_modules/
+dist/
+bin/
+*.tsbuildinfo
+bun.lockb.backup
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Test output
+coverage/
+*.test.snapshot
