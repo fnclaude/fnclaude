@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.3.0...cli-v0.4.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port argv builder + worktree intercept from Go ([#38](https://github.com/fnclaude/fnclaude/issues/38)) ([2734684](https://github.com/fnclaude/fnclaude/commit/27346841a04d74072dde1a00537152f2827a081e))
+
 ## [0.3.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.2.0...cli-v0.3.0) (2026-05-23)
 
 
