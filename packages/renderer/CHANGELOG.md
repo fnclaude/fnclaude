@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.0...renderer-v2.0.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **renderer:** reformat package.json files array per biome ([#21](https://github.com/fnclaude/fnclaude/issues/21)) ([825ce07](https://github.com/fnclaude/fnclaude/commit/825ce071231d01aa8478a6af6d2d6e3b72b0d662))
+
 ## [2.0.0](https://github.com/fnclaude/fnclaude/compare/renderer-v1.0.2...renderer-v2.0.0) (2026-05-23)
 
 
