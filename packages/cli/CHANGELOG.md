@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.5.0...cli-v0.6.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port PTY runner + cross-cwd detection from Go ([#39](https://github.com/fnclaude/fnclaude/issues/39)) ([47f2c4e](https://github.com/fnclaude/fnclaude/commit/47f2c4eaa82deaf5861f3ad92a4a229eb291e664))
+
 ## [0.5.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.4.0...cli-v0.5.0) (2026-05-23)
 
 
