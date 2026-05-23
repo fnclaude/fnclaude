@@ -78,3 +78,20 @@ export {
   transferDenyBareOK,
   transferDenyFlags,
 } from './args/preserve.js';
+
+// PTY runner + shared helpers (ring buffer, cross-cwd detection,
+// reconstructArgv, ensureCWD).
+export {
+  clearScreen,
+  crossCwdRe,
+  detectCrossCwd,
+  ensureCWD,
+  RING_BUFFER_SIZE,
+  reconstructArgv,
+  RingBuffer,
+  runWithPTY,
+  type CrossCwdMatch,
+  type EnsureCWDHandle,
+  type RunOptions,
+  type RunResult,
+} from './pty.js';
