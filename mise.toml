@@ -1,0 +1,18 @@
+# Mise config — pin Node + define shared tasks here.
+# https://mise.jdx.dev/configuration.html
+#
+# Auto-install the pre-commit hook on directory entry. Idempotent (git
+# overwrites the same value on each fire); skipped silently if mise isn't
+# active. Non-mise users: run `git config core.hooksPath .githooks` once.
+[hooks]
+enter = "git config core.hooksPath .githooks"
+
+# Pin Node here, e.g.:
+#   node = "20"
+[tools]
+
+# Common tasks. Optional — wire up your own as your project needs.
+# [tasks.build]
+# run = "npm run build"
+# [tasks.test]
+# run = "npm test"
