@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.1.1...cli-v0.2.0) (2026-05-23)
+
+
+### Features
+
+* **cli:** port MCP protocol + listener + client subprocess from Go ([#33](https://github.com/fnclaude/fnclaude/issues/33)) ([abae712](https://github.com/fnclaude/fnclaude/commit/abae7125e4b4a2bbf255f6d18ca4285a910e6c93))
+
 ## [0.1.1](https://github.com/fnclaude/fnclaude/compare/cli-v0.1.0...cli-v0.1.1) (2026-05-23)
 
 
