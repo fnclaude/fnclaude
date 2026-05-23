@@ -176,52 +176,93 @@ export function decodeResponse(line: string | Buffer): Response {
 }
 
 /**
- * Read one newline-terminated JSON line from an async iterable of Buffer
- * chunks (e.g. a `net.Socket`). Returns the decoded Request or null if
- * the stream ended cleanly before any line was seen (analogous to Go's
- * `io.EOF` return).
- *
- * Buffers across chunk boundaries — a single line may arrive spread
- * across multiple reads. Stops at the first '\n'; bytes past it are
- * silently dropped (the wire protocol is one-line-per-connection).
+ * A minimal Readable surface: `on('data' | 'end' | 'error' | 'close', ...)`.
+ * Both Node's `net.Socket` and the Readable streams from `node:stream`
+ * satisfy this. We deliberately avoid `for await ... of` on the socket —
+ * breaking out of that loop calls the iterator's return() which
+ * **destroys the underlying socket**, preventing the response write.
  */
-export async function readRequest(
-  stream: AsyncIterable<Buffer | Uint8Array>,
-): Promise<Request | null> {
+export interface DataStream {
+  on(event: 'data', listener: (chunk: Buffer) => void): this;
+  on(event: 'end' | 'close', listener: () => void): this;
+  on(event: 'error', listener: (err: Error) => void): this;
+  off(event: 'data', listener: (chunk: Buffer) => void): this;
+  off(event: 'end' | 'close', listener: () => void): this;
+  off(event: 'error', listener: (err: Error) => void): this;
+}
+
+/**
+ * Read one newline-terminated JSON line from a data-emitting stream (a
+ * `net.Socket` is the common case). Returns the decoded Request or null
+ * if the stream ended cleanly before any line was seen (analogous to
+ * Go's `io.EOF` return).
+ *
+ * Buffers across chunk boundaries. Stops at the first '\n'; bytes past
+ * it are silently dropped (the wire protocol is one-line-per-connection).
+ *
+ * Crucially, this does NOT use `for await ... of socket` — that
+ * iterator's automatic cleanup destroys the socket on break/return,
+ * which would prevent the caller from writing the response back. The
+ * event-listener form leaves the socket fully writable.
+ */
+export async function readRequest(stream: DataStream): Promise<Request | null> {
   const line = await readLine(stream);
   if (line === null) return null;
   return decodeRequest(line);
 }
 
 /** Read one newline-terminated JSON line and decode it as a Response. */
-export async function readResponse(
-  stream: AsyncIterable<Buffer | Uint8Array>,
-): Promise<Response | null> {
+export async function readResponse(stream: DataStream): Promise<Response | null> {
   const line = await readLine(stream);
   if (line === null) return null;
   return decodeResponse(line);
 }
 
-/** Internal — read up to and including the first '\n' from an async iter. */
-async function readLine(
-  stream: AsyncIterable<Buffer | Uint8Array>,
-): Promise<string | null> {
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of stream) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    chunks.push(buf);
-    total += buf.length;
-    // Search for newline in this chunk.
-    const nl = buf.indexOf(0x0a);
-    if (nl >= 0) {
-      // Slice everything up to and including the newline; ignore any
-      // trailing bytes in the same chunk (one line per connection).
-      const before = chunks.slice(0, -1);
-      const head = Buffer.concat([...before, buf.subarray(0, nl + 1)]);
-      return head.toString('utf8');
-    }
-  }
-  if (total === 0) return null;
-  return Buffer.concat(chunks).toString('utf8');
+/** Internal — read up to and including the first '\n' via stream events. */
+async function readLine(stream: DataStream): Promise<string | null> {
+  return new Promise<string | null>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+
+    const cleanup = (): void => {
+      stream.off('data', onData);
+      stream.off('end', onEnd);
+      stream.off('close', onEnd);
+      stream.off('error', onError);
+    };
+    const settle = (value: string | null, err?: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve(value);
+    };
+    const onData = (raw: Buffer): void => {
+      const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+      const nl = buf.indexOf(0x0a);
+      if (nl < 0) {
+        chunks.push(buf);
+        total += buf.length;
+        return;
+      }
+      // Slice everything up to and including the newline; drop trailing
+      // bytes in the same chunk (one line per connection).
+      const head = Buffer.concat([...chunks, buf.subarray(0, nl + 1)]);
+      settle(head.toString('utf8'));
+    };
+    const onEnd = (): void => {
+      if (total === 0) {
+        settle(null);
+        return;
+      }
+      settle(Buffer.concat(chunks).toString('utf8'));
+    };
+    const onError = (err: Error): void => settle(null, err);
+
+    stream.on('data', onData);
+    stream.on('end', onEnd);
+    stream.on('close', onEnd);
+    stream.on('error', onError);
+  });
 }
