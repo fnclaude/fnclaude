@@ -4,3 +4,7 @@ dist/
 .env.*
 !.env.example
 *.log
+
+# moon's task cache + hashed inputs/outputs
+.moon/cache/
+.moon/docker/

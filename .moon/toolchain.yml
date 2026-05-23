@@ -1,0 +1,11 @@
+# https://moonrepo.dev/docs/config/toolchain
+#
+# Node + npm are pinned at the system level via mise.toml. moon trusts the
+# ambient toolchain rather than fetching its own — keeps a single source of
+# truth for tool versions across the repo.
+$schema: 'https://moonrepo.dev/schemas/toolchain.json'
+
+node:
+  version: null
+  packageManager: 'npm'
+  syncProjectWorkspaceDependencies: false

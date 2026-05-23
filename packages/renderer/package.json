@@ -1,0 +1,22 @@
+{
+  "name": "@fnclaude/renderer",
+  "version": "0.0.1",
+  "description": "fnclaude renderer (placeholder — real implementation lands in a follow-up)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "lint": "echo 'lint stub (renderer)' && exit 0",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

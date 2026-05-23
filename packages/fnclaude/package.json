@@ -1,0 +1,26 @@
+{
+  "name": "fnclaude",
+  "version": "0.0.1",
+  "description": "fnclaude — wrapper around Claude Code (umbrella package; depends on @fnclaude/cli and @fnclaude/renderer)",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "fnc": "./bin/fnc.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "scripts": {
+    "lint": "echo 'lint stub (fnclaude umbrella)' && exit 0",
+    "test": "vitest run",
+    "build": "echo 'no build (umbrella package — shim only)'"
+  },
+  "dependencies": {
+    "@fnclaude/cli": "*",
+    "@fnclaude/renderer": "*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

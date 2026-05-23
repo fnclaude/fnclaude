@@ -1,0 +1,26 @@
+# https://moonrepo.dev/docs/config/project
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+layer: 'library'
+language: 'typescript'
+
+tasks:
+  lint:
+    command: 'npm run lint'
+    options:
+      cache: false
+  test:
+    command: 'npm run test'
+    inputs:
+      - 'src/**/*'
+      - 'test/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+  build:
+    command: 'npm run build'
+    inputs:
+      - 'src/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+    outputs:
+      - 'dist'
