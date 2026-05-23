@@ -6,24 +6,9 @@ on:
   pull_request:
     branches: [main]
   merge_group:
-  workflow_dispatch:
-    inputs:
-      package:
-        description: "Package to promote @next → @latest"
-        required: true
-        type: choice
-        options:
-          - fnclaude
-          - "@fnclaude/cli"
-          - "@fnclaude/renderer"
-      version:
-        description: "Version to promote (must already be published under @next)"
-        required: true
-        type: string
 
 # On PRs and merge queue: cancel stale runs when new commits arrive.
 # On push to main: never cancel — a publish mid-flight must complete.
-# On workflow_dispatch: never cancel — a promotion mid-flight must complete.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
@@ -31,7 +16,6 @@ concurrency:
 jobs:
 
   # ── Verify ────────────────────────────────────────────────────────────────
-  # Runs on all events except workflow_dispatch (which is promote-only).
   # Make this job a required status check on main in branch protection settings.
   #
   # Toolchain: Bun (runtime + package manager + test runner) and moon (task
@@ -39,7 +23,6 @@ jobs:
   # mise-action step installs whatever mise.toml asks for, keeping a single
   # source of truth between local dev and CI.
   verify:
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       # actions/checkout@v4 intermittently fails with
@@ -73,17 +56,25 @@ jobs:
       - run: moon run :test
       - run: moon run :build
 
-  # ── Publish @next ─────────────────────────────────────────────────────────
+  # ── Publish ───────────────────────────────────────────────────────────────
   # Runs on every push to main. release-please-action either opens/updates a
   # per-package release PR or, when one of those release PRs is merged, tags
   # the release and surfaces it via `paths_released`. For every released path
-  # we publish that package to npm under the @next dist-tag.
+  # we publish that package to npm at the default `@latest` dist-tag.
+  #
+  # Flow end-to-end: feature PR merges → release-please opens/updates a
+  # release PR → release PR merges (auto-merge gated on `verify`) → this job
+  # fires again and publishes the just-released packages directly to `@latest`.
+  # No promotion gate — the release PR's `verify` status check + branch
+  # protection IS the gate. (`npm dist-tag` can't be authed via OIDC
+  # trusted-publishing yet — npm/cli#8547 — so a two-stage @next→@latest
+  # dance is not feasible without a long-lived token in the repo.)
   #
   # Trusted-publisher OIDC is configured on npmjs.com for all three packages
   # (provider=GitHub Actions, repo=fnclaude/fnclaude, workflow=ci.yml). No
   # NPM_TOKEN secret — `id-token: write` + npm CLI's built-in OIDC handshake
   # do the auth. That's why this workflow file must stay named `ci.yml`.
-  publish-next:
+  publish:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -239,8 +230,8 @@ jobs:
       # from bun.lock (oven-sh/bun#20477) would see stale versions on the next
       # checkout. Running `bun install` here re-syncs the lockfile in the
       # runner's working tree. We don't commit it back to main (that would
-      # re-trigger publish-next and requires an extra push round-trip); CI
-      # always runs `bun install` before bun operations, so the runner is
+      # re-trigger this publish job and requires an extra push round-trip);
+      # CI always runs `bun install` before bun operations, so the runner is
       # always in a consistent state even without the committed update.
       - name: Refresh bun.lock workspace versions
         if: ${{ steps.release.outputs.releases_created == 'true' }}
@@ -311,121 +302,18 @@ jobs:
           fi
 
       # `sorted` is a JSON string of an array, e.g. '["packages/cli","packages/fnclaude"]',
-      # in topo order (dependents last). Iterate and publish each one to @next.
-      # --provenance attaches an OIDC-signed provenance attestation; the same
-      # OIDC token authenticates the publish itself via the package's
-      # trusted-publisher config.
-      - name: Publish released packages to @next
+      # in topo order (dependents last). Iterate and publish each one to
+      # the default `@latest` dist-tag. --provenance attaches an OIDC-signed
+      # provenance attestation; the same OIDC token authenticates the
+      # publish itself via the package's trusted-publisher config.
+      - name: Publish released packages
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
           SORTED: ${{ steps.sorted.outputs.sorted }}
         run: |
           set -euo pipefail
           echo "$SORTED" | jq -r '.[]' | while read -r pkg_path; do
-            echo "::group::Publishing $pkg_path to @next"
-            (cd "$pkg_path" && npm publish --provenance --tag next)
+            echo "::group::Publishing $pkg_path"
+            (cd "$pkg_path" && npm publish --provenance)
             echo "::endgroup::"
           done
-
-  # ── Promote @next → @latest ───────────────────────────────────────────────
-  # Triggered manually via "Run workflow" in the GitHub Actions UI. Choose
-  # the package and the @next version to promote. Moves the npm dist-tag
-  # from @next to @latest (no rebuild — same artifact) and flips the
-  # corresponding GitHub pre-release into the latest release.
-  #
-  # Setup: create a "production" environment in repo Settings → Environments
-  # and configure required reviewers for an approval gate before promotion.
-  promote:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: write   # gh release edit
-      id-token: write   # OIDC — npm trusted-publisher auth for dist-tag
-    steps:
-      # actions/checkout@v4 intermittently fails with
-      # `fatal: could not read Username for 'https://github.com'`. Three-attempt
-      # retry absorbs the flake without needing a manual rerun; final attempt
-      # has no `continue-on-error` so a real failure still fails the job.
-      - uses: actions/checkout@v4
-        id: checkout-1
-        continue-on-error: true
-      - uses: actions/checkout@v4
-        if: steps.checkout-1.outcome == 'failure'
-        id: checkout-2
-        continue-on-error: true
-      - uses: actions/checkout@v4
-        if: steps.checkout-1.outcome == 'failure' && steps.checkout-2.outcome == 'failure'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          registry-url: https://registry.npmjs.org
-
-      # Map the user-facing package name to its release-please tag component.
-      # Tag format is `<component>-v<version>` because the manifest config
-      # sets include-component-in-tag: true. The node strategy normalizes a
-      # scoped package name `@scope/name` down to `name`, so:
-      #   fnclaude            → fnclaude-vX.Y.Z
-      #   @fnclaude/cli       → cli-vX.Y.Z
-      #   @fnclaude/renderer  → renderer-vX.Y.Z
-      - name: Resolve GitHub release tag for package
-        id: resolve
-        env:
-          PACKAGE: ${{ inputs.package }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          case "$PACKAGE" in
-            "fnclaude")            component="fnclaude" ;;
-            "@fnclaude/cli")       component="cli" ;;
-            "@fnclaude/renderer")  component="renderer" ;;
-            *) echo "::error::Unknown package: $PACKAGE"; exit 1 ;;
-          esac
-          tag="${component}-v${VERSION}"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "Promoting ${PACKAGE}@${VERSION} (tag ${tag})"
-
-      # Confirm the version we're about to promote actually exists on @next.
-      # Catches typos in the workflow_dispatch input before we mutate state.
-      - name: Verify version is on @next
-        env:
-          PACKAGE: ${{ inputs.package }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          NEXT=$(npm view "$PACKAGE" dist-tags.next 2>/dev/null || true)
-          if [ -z "$NEXT" ]; then
-            echo "::error::$PACKAGE has no @next dist-tag — nothing to promote."
-            exit 1
-          fi
-          # Allow promoting any historical @next version (not just the current
-          # one), as long as the version exists on the registry.
-          if ! npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
-            echo "::error::$PACKAGE@$VERSION is not published on npm."
-            exit 1
-          fi
-          echo "Current @next for $PACKAGE is $NEXT; promoting $VERSION."
-
-      # npm dist-tag does not yet support OIDC trusted-publisher auth — only
-      # `npm publish` does the OIDC handshake. The publish-next job above gets
-      # away with OIDC-only because it never touches dist-tag, but this step
-      # cannot. Without a real token the setup-node-generated .npmrc leaves
-      # the `${NODE_AUTH_TOKEN}` placeholder unsubstituted and npm fails with
-      # E401. Tracked as an open feature request at npm; revisit when OIDC
-      # dist-tag ships and drop NPM_DIST_TAG_TOKEN.
-      #
-      # NPM_DIST_TAG_TOKEN is a granular access token scoped to just the three
-      # fnclaude packages (fnclaude, @fnclaude/cli, @fnclaude/renderer) with
-      # publish permission — which covers dist-tag mutations.
-      - name: Promote @next → @latest on npm
-        env:
-          PACKAGE: ${{ inputs.package }}
-          VERSION: ${{ inputs.version }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
-        run: npm dist-tag add "${PACKAGE}@${VERSION}" latest
-
-      - name: Promote GitHub pre-release → latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.resolve.outputs.tag }}
-        run: gh release edit "$TAG" --prerelease=false --latest

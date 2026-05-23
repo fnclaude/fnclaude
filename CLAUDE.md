@@ -8,7 +8,7 @@ Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.c
 
 ## Release flow
 
-This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 3-package monorepo (`fnclaude`, `@fnclaude/cli`, `@fnclaude/renderer`). The shipping pattern matches the standard `@next` → `@latest` two-stage promotion: every PR merge eventually publishes a `@next` pre-release for the affected package; promotion to `@latest` is a manual gate.
+This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 3-package monorepo (`fnclaude`, `@fnclaude/cli`, `@fnclaude/renderer`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
   `CI` workflow's `release-please` job via `googleapis/release-please-action`.
@@ -19,19 +19,22 @@ This repo uses [release-please](https://github.com/googleapis/release-please) in
   the moment `verify` is green. Merging a release PR triggers another
   push to `main`, which fires release-please-action again; this time the
   action's `paths_released` output includes the just-merged package, and a
-  downstream step runs `npm publish --provenance --tag next` for it.
-  OIDC trusted-publisher auth handles npm credentials — no `NPM_TOKEN`.
-- Promotion to `@latest` is a **manual gate** per package. Trigger the
-  `CI` workflow via `workflow_dispatch` with `package` and `version`
-  inputs; the `promote` job is gated by the `production` environment
-  (required reviewer approval). It moves the dist-tag via
-  `npm dist-tag add` and flips the GitHub release from prerelease → latest.
-  No rebuild — the `@next` artifact is the `@latest` artifact.
+  downstream step runs `npm publish --provenance` for it (defaults to the
+  `@latest` dist-tag). OIDC trusted-publisher auth handles npm
+  credentials — no `NPM_TOKEN`.
+- No promotion gate. Branch protection on `main` requires `verify` to be
+  green before any PR (feature OR release PR) can merge — that's the gate.
+  A two-stage `@next` → `@latest` flow would require `npm dist-tag add`,
+  which doesn't yet support OIDC trusted-publishing
+  ([npm/cli#8547](https://github.com/npm/cli/issues/8547)); the only way
+  to wire it up would be a long-lived `NPM_TOKEN` in the repo, which
+  trades the OIDC win for a modest gate value.
 
-Net effect: every feature merge eventually ships a `@next` pre-release for
-the affected package. The cost is two pushes per feature (the feature merge,
-then the bot's release PR auto-merging); the trade-off is per-package
-versioning and per-package CHANGELOGs that fit the monorepo shape.
+Net effect: every feature merge eventually ships a release of the
+affected package to `@latest`. The cost is two pushes per feature (the
+feature merge, then the bot's release PR auto-merging); the trade-off
+is per-package versioning and per-package CHANGELOGs that fit the
+monorepo shape.
 
 ### Version bump rules (conventional commits)
 
@@ -57,9 +60,9 @@ code change.**
 Auto-merge is enabled on every non-draft PR (`.github/workflows/auto-merge.yml`);
 it fires the moment the `verify` status check is green. Without TDD, a PR
 can land before any test captures the bug behavior — which means future
-regressions slip in silently. The `@next` → `@latest` promotion gate
-catches gross issues, but TDD is what catches the subtle ones that pass
-human review.
+regressions slip in silently. With no second-stage promotion gate, the
+test suite is the only thing standing between a buggy `feat:`/`fix:` and
+a published `@latest` artifact — TDD isn't a nice-to-have, it's the gate.
 
 The workflow:
 
