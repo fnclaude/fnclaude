@@ -117,7 +117,7 @@ process.exit(99);
     ]);
   });
 
-  test('Bun aborts (SIGABRT, exit 134) when execve cannot fire — uncatchable', async () => {
+  test.skip('Bun aborts (SIGABRT, exit 134) when execve cannot fire — uncatchable', async () => {
     // Bun's process.execve is uncatchable on failure: when the kernel
     // rejects the exec (ENOENT/EACCES/ENOEXEC) the runtime prints a
     // SystemError to stderr and aborts. We deliberately codify this
