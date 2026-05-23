@@ -79,6 +79,20 @@ export {
   transferDenyFlags,
 } from './args/preserve.js';
 
+// Help / version surfaces consumed by main.ts and friendly to import in
+// embedding hosts that want to render their own help.
+export { helpText, setVersion, version, wantsHelp, wantsVersion } from './help.js';
+
+// Warning sink + flush. Test helpers (pendingWarnings, clearWarnings) are
+// re-exported so harness code can introspect/reset between cases.
+export { clearWarnings, flushWarnings, pendingWarnings, warn } from './warnings.js';
+
+// noop dir seeding (noop fallback when fnclaude is invoked with no path).
+export { NOOP_HANDOFF_TEMPLATE, defaultNoopDir, seedNoop } from './noop.js';
+
+// Silent-relaunch primitives — execve on POSIX, spawn-and-exit on Windows.
+export { silentRelaunch, silentRelaunchHandoff, spawnAndExit } from './silentRelaunch.js';
+
 // PTY runner + shared helpers (ring buffer, cross-cwd detection,
 // reconstructArgv, ensureCWD).
 export {
