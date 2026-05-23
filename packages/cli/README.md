@@ -9,6 +9,10 @@ npm install @fnclaude/cli
 bun add @fnclaude/cli
 ```
 
+## Requirements
+
+This package requires the **Bun runtime** for terminal session management. The underlying PTY layer uses node-pty with Bun's native adapter, which provides efficient cross-platform support for interactive shell sessions. Node.js as the JavaScript runtime is supported for package management and installation, but session execution runs via Bun.
+
 ## Usage
 
 ```bash
