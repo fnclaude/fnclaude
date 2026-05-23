@@ -12,10 +12,11 @@
 // async to fit Bun/Node idioms; CLI startup is already async-friendly so
 // awaiting `loadPrompts()` adds no observable delay.
 
-import { realpathSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { resolveSelfPath } from './paths.js';
 
 export interface PromptSet {
   readonly agentPitfall: string;
@@ -102,17 +103,9 @@ export function findPromptsDir(): FindPromptsDirResult {
     }
   }
 
-  // Prefer argv[1] (the CLI script) over execPath (the interpreter) so the
-  // search anchors to the script's neighbours, not bun's bin dir.
-  const argv1 = process.argv.length > 1 ? process.argv[1] : undefined;
-  let exe = argv1 !== undefined && argv1 !== '' ? argv1 : process.execPath;
-
-  try {
-    exe = realpathSync(exe);
-  } catch {
-    // Fall back to unresolved path; symlink resolution failure isn't fatal.
-  }
-  const exeDir = dirname(exe);
+  // Anchor the search at the script's neighbours, not bun's bin dir;
+  // resolveSelfPath handles the argv[1] / execPath / realpathSync logic.
+  const exeDir = dirname(resolveSelfPath());
 
   const candidates = [
     join(exeDir, 'prompts'),

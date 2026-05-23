@@ -16,9 +16,8 @@
 //   4. System-prompt fragment injection: --append-system-prompt <merged-text>
 //      composed by selectFragments + withAppendedSystemPrompts.
 
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import process from 'node:process';
 import type { Args } from './args.js';
 import {
   nameInPassthrough as _nameInPassthrough,
@@ -26,6 +25,7 @@ import {
   tokenInPassthrough,
 } from './argParser.js';
 import type { Config } from './config.js';
+import { resolveSelfPath } from './paths.js';
 import { isInteractiveSession, selectFragments, type PromptSet } from './prompts.js';
 
 // Re-export the passthrough inspection helpers from their canonical home so
@@ -58,14 +58,7 @@ interface McpConfigEntry {
  * → repo/bin/fnclaude symlink resolves to the real binary path).
  */
 export function buildFnclaudeMCPConfigJSON(noop: boolean): string | null {
-  const argv1 = process.argv.length > 1 ? process.argv[1] : undefined;
-  let exe = argv1 !== undefined && argv1 !== '' ? argv1 : process.execPath;
-
-  try {
-    exe = realpathSync(exe);
-  } catch {
-    // Fall back to unresolved path; symlink resolution failure isn't fatal.
-  }
+  const exe = resolveSelfPath();
 
   const args = ['mcp'];
   if (noop) args.push('--noop');

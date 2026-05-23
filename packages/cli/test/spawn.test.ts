@@ -3,9 +3,9 @@ import {
   autoDetectSpawnCommand,
   buildSpawnArgv,
   cleanEnvForSpawn,
-  selfPath,
   spawnSibling,
 } from '../src/spawn.js';
+import { resolveSelfPath } from '../src/paths.js';
 import { defaultConfig } from '../src/config.js';
 
 // ── env helpers ────────────────────────────────────────────────────────────
@@ -206,11 +206,11 @@ describe('buildSpawnArgv', () => {
   }
 });
 
-// ── selfPath ───────────────────────────────────────────────────────────────
+// ── resolveSelfPath ───────────────────────────────────────────────────────
 
-describe('selfPath', () => {
+describe('resolveSelfPath', () => {
   test('returns a non-empty string', () => {
-    const p = selfPath();
+    const p = resolveSelfPath();
     expect(typeof p).toBe('string');
     expect(p.length).toBeGreaterThan(0);
   });

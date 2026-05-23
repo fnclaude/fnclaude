@@ -9,7 +9,7 @@ export {
   parseRepoRef,
   type RepoRef,
 } from './repoRef.js';
-export { expandTildePath } from './paths.js';
+export { expandTildePath, resolveSelfPath } from './paths.js';
 export {
   findPromptsDir,
   isInteractiveSession,

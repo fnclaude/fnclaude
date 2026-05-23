@@ -9,10 +9,9 @@
 // The indirection via spawnFn lets tests inject a mock without launching
 // real processes.
 
-import { realpathSync } from 'node:fs';
-import { dirname } from 'node:path';
 import process from 'node:process';
 import type { Config } from './config.js';
+import { resolveSelfPath } from './paths.js';
 import { substitute } from './template.js';
 
 // ── env cleaning ───────────────────────────────────────────────────────────
@@ -37,31 +36,6 @@ export function cleanEnvForSpawn(env: string[]): string[] {
     if (!drop.has(key)) out.push(e);
   }
   return out;
-}
-
-// ── selfPath ───────────────────────────────────────────────────────────────
-
-/**
- * Return the absolute, symlink-resolved path to this fnclaude script,
- * suitable for `{bin}` substitution in a spawn-launcher template.
- *
- * Preference order mirrors prompts.ts (Unit 6):
- *  1. process.argv[1] — the CLI script path (anchors to the script, not the
- *     Bun interpreter).
- *  2. process.execPath — the Bun binary; fallback when argv[1] is absent.
- *
- * Symlinks are resolved so the spawned launcher gets the real path, not a
- * shim that might not be on the PATH inside the new window.
- */
-export function selfPath(): string {
-  const argv1 = process.argv.length > 1 ? process.argv[1] : undefined;
-  let exe = argv1 !== undefined && argv1 !== '' ? argv1 : process.execPath;
-  try {
-    exe = realpathSync(exe);
-  } catch {
-    // symlink resolution failure is not fatal — use the unresolved path
-  }
-  return exe;
 }
 
 // ── autoDetectSpawnCommand ─────────────────────────────────────────────────
@@ -162,7 +136,7 @@ export async function spawnSibling(
   extraArgs: string[],
   spawnFn: SpawnFn = defaultSpawnFn,
 ): Promise<boolean> {
-  const bin = selfPath();
+  const bin = resolveSelfPath();
 
   let tmpl = cfg.auto.spawnCommand;
   if (!tmpl) {
