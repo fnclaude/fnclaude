@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.13...fnclaude-v0.0.14) (2026-05-23)
+
+
+### Bug Fixes
+
+* document Bun runtime requirement (re-triggers publish chain) ([#56](https://github.com/fnclaude/fnclaude/issues/56)) ([0a4bb13](https://github.com/fnclaude/fnclaude/commit/0a4bb136d5dd9e8b1984630d42ebdb3ec0c91854))
+
 ## [0.0.13](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.12...fnclaude-v0.0.13) (2026-05-23)
 
 
