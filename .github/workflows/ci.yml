@@ -7,9 +7,23 @@ on:
     branches: [main]
   merge_group:
   workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to promote @next → @latest"
+        required: true
+        type: choice
+        options:
+          - fnclaude
+          - "@fnclaude/cli"
+          - "@fnclaude/renderer"
+      version:
+        description: "Version to promote (must already be published under @next)"
+        required: true
+        type: string
 
 # On PRs and merge queue: cancel stale runs when new commits arrive.
 # On push to main: never cancel — a publish mid-flight must complete.
+# On workflow_dispatch: never cancel — a promotion mid-flight must complete.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
@@ -44,34 +58,143 @@ jobs:
       - run: moon run :build
 
   # ── Publish @next ─────────────────────────────────────────────────────────
-  # Runs on every push to main. Uses semantic-release to determine the version
-  # from conventional commits, publish to npm under the @next dist-tag, and
-  # create a GitHub pre-release. Nothing is published on PRs or merge_group.
+  # Runs on every push to main. release-please-action either opens/updates a
+  # per-package release PR or, when one of those release PRs is merged, tags
+  # the release and surfaces it via `paths_released`. For every released path
+  # we publish that package to npm under the @next dist-tag.
+  #
+  # Trusted-publisher OIDC is configured on npmjs.com for all three packages
+  # (provider=GitHub Actions, repo=fnclaude/fnclaude, workflow=ci.yml). No
+  # NPM_TOKEN secret — `id-token: write` + npm CLI's built-in OIDC handshake
+  # do the auth. That's why this workflow file must stay named `ci.yml`.
   publish-next:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # create git tags and GitHub releases
-      id-token: write   # npm provenance attestation
+      contents: write       # release-please creates tags + GitHub releases
+      pull-requests: write  # release-please opens/updates release PRs
+      id-token: write       # OIDC — npm trusted-publisher auth + provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: googleapis/release-please-action@v4
+        id: release
         with:
-          fetch-depth: 0  # semantic-release needs full history
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # PAT (not GITHUB_TOKEN) so release-please's PRs fire downstream
+          # workflow events (auto-merge.yml, future CI). PRs opened by
+          # GITHUB_TOKEN are intentionally suppressed from triggering
+          # workflows — that suppression would leave release PRs sitting
+          # open forever waiting for a `verify` run that never starts.
+          token: ${{ secrets.AUTOMERGE_PAT }}
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+
       - uses: actions/setup-node@v4
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npx semantic-release
+
+      # Resolve Bun's `workspace:*` protocol to concrete sibling versions
+      # *before* publishing. Why this dance exists at all:
+      #
+      #   - npm publish does NOT rewrite the `workspace:` protocol — the
+      #     literal string "workspace:*" would end up in the published
+      #     tarball and break every consumer doing `npm install fnclaude`.
+      #   - bun publish DOES rewrite it, but doesn't yet support
+      #     --provenance or npm trusted-publisher OIDC auth
+      #     (oven-sh/bun#15601). Switching to bun publish would mean
+      #     dropping provenance and reverting to a long-lived NPM_TOKEN.
+      #   - release-please's node-workspace plugin updates `^range`-style
+      #     workspace cross-deps fine, but explicitly leaves
+      #     protocol-prefixed deps (workspace:, file:, link: …) untouched.
+      #
+      # So we do the rewrite ourselves, in place, before `npm publish`.
+      # First, build a { name → version } map from every workspace
+      # package.json (release-please has bumped them by the time this
+      # step runs — the release PR's merge commit *is* the bump).
+      - name: Build sibling version map
+        id: siblings
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        run: |
+          set -euo pipefail
+          map=$(jq -s 'map({(.name): .version}) | add' \
+            packages/cli/package.json \
+            packages/fnclaude/package.json \
+            packages/renderer/package.json)
+          echo "Resolved siblings:"
+          echo "$map" | jq .
+          # Multiline GITHUB_OUTPUT via heredoc delimiter.
+          {
+            echo "map<<EOF"
+            echo "$map"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Translation follows Bun's documented rules:
+      #   workspace:*       → ^<version>
+      #   workspace:^       → ^<version>
+      #   workspace:~       → ~<version>
+      #   workspace:<x.y.z> → <x.y.z>   (explicit override)
+      - name: Resolve workspace:* deps to concrete versions
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+          SIBLINGS: ${{ steps.siblings.outputs.map }}
+        run: |
+          set -euo pipefail
+          echo "$PATHS_RELEASED" | jq -r '.[]' | while read -r pkg_path; do
+            pkg_json="$pkg_path/package.json"
+            echo "::group::Rewriting workspace:* deps in $pkg_json"
+            tmp=$(mktemp)
+            jq --argjson siblings "$SIBLINGS" '
+              def rewrite_deps:
+                with_entries(
+                  if (.value | type == "string" and startswith("workspace:")) then
+                    .value as $spec
+                    | .key as $dep
+                    | ($siblings[$dep]
+                        // error("no sibling version for workspace dep " + $dep)) as $sv
+                    | if   $spec == "workspace:*" then .value = "^" + $sv
+                      elif $spec == "workspace:^" then .value = "^" + $sv
+                      elif $spec == "workspace:~" then .value = "~" + $sv
+                      else .value = ($spec | sub("^workspace:"; ""))
+                      end
+                  else . end
+                );
+              (if has("dependencies")         then .dependencies         |= rewrite_deps else . end)
+              | (if has("devDependencies")      then .devDependencies      |= rewrite_deps else . end)
+              | (if has("peerDependencies")     then .peerDependencies     |= rewrite_deps else . end)
+              | (if has("optionalDependencies") then .optionalDependencies |= rewrite_deps else . end)
+            ' "$pkg_json" > "$tmp"
+            mv "$tmp" "$pkg_json"
+            jq '{name, version, dependencies, devDependencies, peerDependencies, optionalDependencies} | with_entries(select(.value != null))' "$pkg_json"
+            echo "::endgroup::"
+          done
+
+      # paths_released is a JSON string of an array, e.g. '["packages/cli"]'.
+      # Iterate and publish each one to @next. --provenance attaches an
+      # OIDC-signed provenance attestation; the same OIDC token authenticates
+      # the publish itself via the package's trusted-publisher config.
+      - name: Publish released packages to @next
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        env:
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+        run: |
+          set -euo pipefail
+          echo "$PATHS_RELEASED" | jq -r '.[]' | while read -r pkg_path; do
+            echo "::group::Publishing $pkg_path to @next"
+            (cd "$pkg_path" && npm publish --provenance --tag next)
+            echo "::endgroup::"
+          done
 
   # ── Promote @next → @latest ───────────────────────────────────────────────
-  # Triggered manually via "Run workflow" in the GitHub Actions UI.
-  # Reads whatever version is currently on @next, promotes it to @latest on
-  # npm, and marks the corresponding GitHub pre-release as the latest release.
-  # No rebuild — the same artifact is just re-tagged.
+  # Triggered manually via "Run workflow" in the GitHub Actions UI. Choose
+  # the package and the @next version to promote. Moves the npm dist-tag
+  # from @next to @latest (no rebuild — same artifact) and flips the
+  # corresponding GitHub pre-release into the latest release.
   #
   # Setup: create a "production" environment in repo Settings → Environments
   # and configure required reviewers for an approval gate before promotion.
@@ -80,30 +203,68 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     permissions:
-      contents: write
-      id-token: write   # OIDC — npm trusted publisher auth
+      contents: write   # gh release edit
+      id-token: write   # OIDC — npm trusted-publisher auth for dist-tag
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
           registry-url: https://registry.npmjs.org
-      - name: Resolve @next version
+
+      # Map the user-facing package name to its release-please tag component.
+      # Tag format is `<component>-v<version>` because the manifest config
+      # sets include-component-in-tag: true. The node strategy normalizes a
+      # scoped package name `@scope/name` down to `name`, so:
+      #   fnclaude            → fnclaude-vX.Y.Z
+      #   @fnclaude/cli       → cli-vX.Y.Z
+      #   @fnclaude/renderer  → renderer-vX.Y.Z
+      - name: Resolve GitHub release tag for package
         id: resolve
+        env:
+          PACKAGE: ${{ inputs.package }}
+          VERSION: ${{ inputs.version }}
         run: |
-          PACKAGE=$(node -p "require('./package.json').name")
-          VERSION=$(npm view "$PACKAGE" dist-tags.next 2>/dev/null)
-          if [ -z "$VERSION" ]; then
-            echo "::error::No @next version found for $PACKAGE — nothing to promote."
+          set -euo pipefail
+          case "$PACKAGE" in
+            "fnclaude")            component="fnclaude" ;;
+            "@fnclaude/cli")       component="cli" ;;
+            "@fnclaude/renderer")  component="renderer" ;;
+            *) echo "::error::Unknown package: $PACKAGE"; exit 1 ;;
+          esac
+          tag="${component}-v${VERSION}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Promoting ${PACKAGE}@${VERSION} (tag ${tag})"
+
+      # Confirm the version we're about to promote actually exists on @next.
+      # Catches typos in the workflow_dispatch input before we mutate state.
+      - name: Verify version is on @next
+        env:
+          PACKAGE: ${{ inputs.package }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          NEXT=$(npm view "$PACKAGE" dist-tags.next 2>/dev/null || true)
+          if [ -z "$NEXT" ]; then
+            echo "::error::$PACKAGE has no @next dist-tag — nothing to promote."
             exit 1
           fi
-          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Promoting $PACKAGE@$VERSION (@next → @latest)"
+          # Allow promoting any historical @next version (not just the current
+          # one), as long as the version exists on the registry.
+          if ! npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::$PACKAGE@$VERSION is not published on npm."
+            exit 1
+          fi
+          echo "Current @next for $PACKAGE is $NEXT; promoting $VERSION."
+
       - name: Promote @next → @latest on npm
-        run: npm dist-tag add ${{ steps.resolve.outputs.package }}@${{ steps.resolve.outputs.version }} latest
+        env:
+          PACKAGE: ${{ inputs.package }}
+          VERSION: ${{ inputs.version }}
+        run: npm dist-tag add "${PACKAGE}@${VERSION}" latest
+
       - name: Promote GitHub pre-release → latest release
-        run: gh release edit ${{ steps.resolve.outputs.tag }} --prerelease=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: gh release edit "$TAG" --prerelease=false --latest

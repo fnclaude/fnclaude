@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "separate-pull-requests": true,
+  "plugins": ["node-workspace"],
+  "packages": {
+    "packages/cli": {
+      "release-type": "node",
+      "package-name": "@fnclaude/cli",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "packages/fnclaude": {
+      "release-type": "node",
+      "package-name": "fnclaude",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "packages/renderer": {
+      "release-type": "node",
+      "package-name": "@fnclaude/renderer",
+      "changelog-path": "CHANGELOG.md"
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "refactor", "section": "Refactoring", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "style", "section": "Style", "hidden": true }
+  ]
+}
