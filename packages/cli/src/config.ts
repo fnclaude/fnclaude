@@ -22,7 +22,14 @@ function home(): string {
 // ── public types ───────────────────────────────────────────────────────────
 
 export type TmuxMode = 'never' | 'worktree';
-export type HandoffMode = 'never' | 'ask' | string; // or a non-negative integer-as-string
+/**
+ * `'never'`, `'ask'`, or a non-negative integer-as-string (e.g. `'5'`).
+ *
+ * The template-literal `${number}` variant narrows correctly: a bare
+ * `string` would collapse the union, so runtime validation gates env-var
+ * and config-file inputs into this type via `normalizeHandoffMode`.
+ */
+export type HandoffMode = 'never' | 'ask' | `${number}`;
 
 export interface NameConfig {
   /** Model used for the noop name session. */
@@ -143,8 +150,10 @@ export function normalizeTmuxMode(v: string): TmuxMode {
 export function normalizeHandoffMode(v: string): HandoffMode {
   if (v === 'never' || v === 'ask') return v;
   if (v === '') return 'ask';
-  // Non-negative integer (no decimal, no unit).
-  if (/^\d+$/.test(v)) return v;
+  // Non-negative integer (no decimal, no unit). The regex guarantees the
+  // template-literal shape, which TS's type narrowing can't infer from a
+  // .test() call alone — so assert it explicitly once.
+  if (/^\d+$/.test(v)) return v as `${number}`;
   warn(
     `fnclaude: auto.handoff=${JSON.stringify(v)} is not a valid mode (use "never", "ask", or a non-negative integer), falling back to "ask"`,
   );
@@ -268,10 +277,10 @@ export function loadConfig(): Config {
         cfg.name.quietMissingAPIKey = raw.name.quiet_missing_api_key;
       }
       if (typeof raw.auto?.tmux === 'string' && raw.auto.tmux !== '') {
-        cfg.auto.tmux = raw.auto.tmux as TmuxMode;
+        cfg.auto.tmux = normalizeTmuxMode(raw.auto.tmux);
       }
       if (typeof raw.auto?.handoff === 'string' && raw.auto.handoff !== '') {
-        cfg.auto.handoff = raw.auto.handoff;
+        cfg.auto.handoff = normalizeHandoffMode(raw.auto.handoff);
       }
       if (
         typeof raw.auto?.spawn_command === 'string' &&
@@ -301,12 +310,9 @@ export function loadConfig(): Config {
   if (e.FNCLAUDE_QUIET_MISSING_API_KEY) {
     cfg.name.quietMissingAPIKey = parseBoolEnv(e.FNCLAUDE_QUIET_MISSING_API_KEY);
   }
-  if (e.FNCLAUDE_TMUX) cfg.auto.tmux = e.FNCLAUDE_TMUX as TmuxMode;
-  if (e.FNCLAUDE_HANDOFF) cfg.auto.handoff = e.FNCLAUDE_HANDOFF;
+  if (e.FNCLAUDE_TMUX) cfg.auto.tmux = normalizeTmuxMode(e.FNCLAUDE_TMUX);
+  if (e.FNCLAUDE_HANDOFF) cfg.auto.handoff = normalizeHandoffMode(e.FNCLAUDE_HANDOFF);
   if (e.FNCLAUDE_SPAWN_COMMAND) cfg.auto.spawnCommand = e.FNCLAUDE_SPAWN_COMMAND;
-
-  cfg.auto.tmux = normalizeTmuxMode(cfg.auto.tmux);
-  cfg.auto.handoff = normalizeHandoffMode(cfg.auto.handoff);
 
   return cfg;
 }

@@ -55,9 +55,14 @@ export {
   readRequest,
   readResponse,
   type Action,
+  type CopyRequest,
   type Op,
   type Request,
+  type RequestOverrides,
   type Response,
+  type RestartRequest,
+  type SpawnRequest,
+  type SwitchRequest,
 } from './mcp/protocol.js';
 export {
   SocketListener,
