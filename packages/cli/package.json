@@ -27,5 +27,8 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0"
   }
 }
