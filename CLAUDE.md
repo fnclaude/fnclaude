@@ -8,23 +8,30 @@ Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.c
 
 ## Release flow
 
-This repo uses [semantic-release](https://semantic-release.gitbook.io/) with a two-stage dist-tag promotion:
+This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 3-package monorepo (`fnclaude`, `@fnclaude/cli`, `@fnclaude/renderer`). The shipping pattern matches the standard `@next` → `@latest` two-stage promotion: every PR merge eventually publishes a `@next` pre-release for the affected package; promotion to `@latest` is a manual gate.
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
-  `CI` workflow's `publish-next` job. semantic-release reads the
-  conventional-commit history, determines the next version, publishes to
-  npm under the `@next` dist-tag, and creates a GitHub **pre-release**.
-- Promotion to `@latest` is a **manual gate**. Run the `CI` workflow via
-  workflow_dispatch ("Run workflow" in the Actions UI); the `promote` job
-  is gated by the `production` environment, which requires reviewer
-  approval. It moves the same artifact from `@next` to `@latest` on npm
-  and converts the GitHub pre-release into the latest release. No
-  rebuild — the @next version is the @latest version.
-- Auto-merge is enabled on every non-draft PR
-  (`.github/workflows/auto-merge.yml`); it fires the moment the `verify`
-  status check is green.
+  `CI` workflow's `release-please` job via `googleapis/release-please-action`.
+  For each package with new conventional commits scoped to its path, the
+  action opens or updates a per-package **release PR** (titled like
+  `chore(main): release @fnclaude/cli 0.2.0`).
+- Release PRs are non-draft, so `auto-merge.yml` covers them — they merge
+  the moment `verify` is green. Merging a release PR triggers another
+  push to `main`, which fires release-please-action again; this time the
+  action's `paths_released` output includes the just-merged package, and a
+  downstream step runs `npm publish --provenance --tag next` for it.
+  OIDC trusted-publisher auth handles npm credentials — no `NPM_TOKEN`.
+- Promotion to `@latest` is a **manual gate** per package. Trigger the
+  `CI` workflow via `workflow_dispatch` with `package` and `version`
+  inputs; the `promote` job is gated by the `production` environment
+  (required reviewer approval). It moves the dist-tag via
+  `npm dist-tag add` and flips the GitHub release from prerelease → latest.
+  No rebuild — the `@next` artifact is the `@latest` artifact.
 
-Effectively: every PR merge to `main` ships a `@next` pre-release. `@latest` is what users get on `npm install <pkg>` by default — that's the gated step.
+Net effect: every feature merge eventually ships a `@next` pre-release for
+the affected package. The cost is two pushes per feature (the feature merge,
+then the bot's release PR auto-merging); the trade-off is per-package
+versioning and per-package CHANGELOGs that fit the monorepo shape.
 
 ### Version bump rules (conventional commits)
 
@@ -36,7 +43,11 @@ Effectively: every PR merge to `main` ships a `@next` pre-release. `@latest` is 
 | `perf:` | patch (0.0.X) | yes |
 | `docs:`, `refactor:`, `chore:`, `ci:`, `build:`, `test:`, `style:` | none | hidden |
 
-> Note: semantic-release's `@semantic-release/commit-analyzer` default rules already skip `docs:`/`refactor:`/`chore:`/`ci:`/`build:`/`test:`/`style:` — they don't bump a version and don't appear in release notes. No `releaseRules` override is needed in `.releaserc.json`, and intentionally none is configured. Compare with release-please, which couples CHANGELOG visibility with bump-eligibility and needs explicit `"hidden": true` per type.
+> Note: release-please couples CHANGELOG visibility with bump-eligibility.
+> The no-bump types (`docs:`, `refactor:`, `chore:`, `ci:`, `build:`,
+> `test:`, `style:`) are explicitly listed with `"hidden": true` in
+> `release-please-config.json`'s `changelog-sections` to keep them out of
+> CHANGELOGs and prevent accidental version bumps.
 
 ## Test-driven changes — HARD RULE
 
