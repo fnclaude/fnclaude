@@ -189,11 +189,20 @@ export function parseDuration(s: string): number | null {
 }
 
 // Deferred stderr warnings — fnclaude collects these during config load
-// and flushes them at a sensible time. Tests can clear/inspect this list.
+// and flushes them via the shared warnings sink at a sensible time (after
+// claude exits, in run()). The local `deferredWarnings` export is kept
+// for backward compatibility with callers that imported it; it shadows
+// the shared sink's view of config-emitted warnings only.
 export const deferredWarnings: string[] = [];
+
+// Defer-import the shared warnings module so config remains import-cycle-
+// safe and any test that loads config in isolation still works without
+// the warnings module having been initialized.
+import { warn as globalWarn } from './warnings.js';
 
 function warn(msg: string): void {
   deferredWarnings.push(msg);
+  globalWarn(msg);
 }
 
 // ── raw TOML shape (mirrors the Go rawConfig) ──────────────────────────────
