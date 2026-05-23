@@ -1,0 +1,28 @@
+#!/bin/sh
+# fnclaude-renderer pre-commit hook: refuse to commit if biome check fails.
+#
+# Activated by either:
+#   git config core.hooksPath .githooks
+# or, equivalently:
+#   mise run setup
+
+set -e
+
+if ! command -v bun >/dev/null 2>&1; then
+    echo "pre-commit: bun not on PATH — cannot run biome check." >&2
+    echo "  Activate mise ('eval \"\$(mise activate)\"') or install bun globally," >&2
+    echo "  then re-commit. Refusing to let unchecked code through silently." >&2
+    exit 1
+fi
+
+# biome may not be installed yet on a fresh clone; install on demand.
+if [ ! -f node_modules/@biomejs/biome/package.json ]; then
+    bun install --silent
+fi
+
+if ! bun run check; then
+    echo >&2
+    echo "biome check failed. Run 'bun run fmt' (auto-fix formatting) or address" >&2
+    echo "the lint errors above, then re-stage and re-commit." >&2
+    exit 1
+fi
