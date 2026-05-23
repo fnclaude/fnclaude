@@ -1,10 +1,12 @@
-# fnclaude-renderer
+# @fnclaude/renderer
 
 Configurable TUI front-end for Claude Code. Bidirectional stream-json driver, repaint-on-toggle visibility filters (Alt+1-8), pretty markdown via [glow](https://github.com/charmbracelet/glow).
 
 ## Status
 
 Pre-v1. Active development. v0 ships the renderer in standalone wrapper mode — `fnclaude-renderer ...` spawns claude internally, renders the stream.
+
+> Previously published as `fnclaude-renderer` on npm. Renamed to `@fnclaude/renderer` when imported into the [fnclaude monorepo](https://github.com/fnclaude/fnclaude).
 
 ## Goals
 
@@ -15,6 +17,14 @@ Pre-v1. Active development. v0 ships the renderer in standalone wrapper mode —
 
 ## Install
 
+### npm
+
+```sh
+npm install -g @fnclaude/renderer
+# then
+fnclaude-renderer ...
+```
+
 ### Arch Linux (AUR)
 
 ```sh
@@ -23,7 +33,7 @@ yay -S fnclaude-renderer-bin
 
 ### Other platforms
 
-Download the pre-built binary for your platform from the [latest release](https://github.com/fnrhombus/fnclaude-renderer/releases/latest):
+Download the pre-built binary for your platform from the [latest release](https://github.com/fnclaude/fnclaude/releases/latest):
 
 - Linux x86_64 / arm64
 - macOS x86_64 (Intel) / arm64 (Apple Silicon)

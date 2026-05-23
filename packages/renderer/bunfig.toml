@@ -1,4 +1,4 @@
-# Bun config for fnclaude-renderer
+# Bun config for @fnclaude/renderer
 #
 # [test] preload runs before any test file imports. We use it to set
 # FORCE_COLOR=1 so chalk (transitive via ink) emits ANSI escape codes in

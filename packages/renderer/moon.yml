@@ -1,0 +1,27 @@
+# https://moonrepo.dev/docs/config/project
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+layer: 'application'
+language: 'typescript'
+
+tasks:
+  lint:
+    command: 'bun run check'
+    options:
+      cache: false
+  test:
+    command: 'bun test'
+    inputs:
+      - 'src/**/*'
+      - 'test/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'bunfig.toml'
+  build:
+    command: 'bun build --compile --outfile=./bin/fnclaude-renderer ./src/index.tsx'
+    inputs:
+      - 'src/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+    outputs:
+      - 'bin'
