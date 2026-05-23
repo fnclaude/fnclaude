@@ -13,7 +13,7 @@ This installs the full Claude Code CLI along with the renderer runtime. The pack
 
 ### Install details
 
-fnclaude bundles `@fnclaude/cli` and `@fnclaude/renderer` as a single umbrella package. Both dependencies are pinned to matching versions to ensure compatibility between the CLI and renderer layers.
+fnclaude bundles `@fnclaude/cli` and `@fnclaude/renderer` as a single umbrella package. Dependencies are resolved via workspace references to ensure the CLI and renderer always use compatible versions.
 
 ## Compatibility
 
