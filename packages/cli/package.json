@@ -1,0 +1,26 @@
+{
+  "name": "@fnclaude/cli",
+  "version": "0.0.1",
+  "description": "fnclaude CLI implementation (TypeScript rewrite, in progress)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "fnc": "./bin/fnc.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "lint": "echo 'lint stub (cli)' && exit 0",
+    "test": "bun test",
+    "build": "tsc -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

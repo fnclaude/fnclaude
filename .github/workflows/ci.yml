@@ -19,20 +19,24 @@ jobs:
   # ── Verify ────────────────────────────────────────────────────────────────
   # Runs on all events except workflow_dispatch (which is promote-only).
   # Make this job a required status check on main in branch protection settings.
+  #
+  # Toolchain: Bun (runtime + package manager + test runner) and moon (task
+  # orchestration across the monorepo). Both are pinned in mise.toml — the
+  # mise-action step installs whatever mise.toml asks for, keeping a single
+  # source of truth between local dev and CI.
   verify:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: jdx/mise-action@v2
         with:
-          node-version: lts/*
-          cache: npm
-      - run: npm ci
-      # TODO: add your lint, test, and build steps:
-      # - run: npm run lint
-      # - run: npm test
-      # - run: npm run build
+          # mise.toml at the repo root drives the tool list.
+          experimental: true
+      - run: bun install --frozen-lockfile
+      - run: moon run :lint
+      - run: moon run :test
+      - run: moon run :build
 
   # ── Publish @next ─────────────────────────────────────────────────────────
   # Runs on every push to main. Uses semantic-release to determine the version

@@ -1,0 +1,28 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(
+  readFileSync(resolve(here, '..', 'package.json'), 'utf8'),
+) as {
+  name: string;
+  dependencies: Record<string, string>;
+  bin: Record<string, string>;
+};
+
+describe('fnclaude (umbrella)', () => {
+  test('declares the expected name and bin', () => {
+    expect(pkg.name).toBe('fnclaude');
+    expect(pkg.bin).toEqual({ fnc: './bin/fnc.js' });
+  });
+
+  test('depends on the cli and renderer packages via workspace protocol', () => {
+    // Bun does NOT auto-link bare "*" — it tries the registry (Bun issue
+    // #25177). Use "workspace:*" instead. `bun publish` and release-please's
+    // node-workspace plugin both rewrite this to a concrete version on publish.
+    expect(pkg.dependencies['@fnclaude/cli']).toBe('workspace:*');
+    expect(pkg.dependencies['@fnclaude/renderer']).toBe('workspace:*');
+  });
+});

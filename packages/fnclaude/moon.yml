@@ -1,0 +1,22 @@
+# https://moonrepo.dev/docs/config/project
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+layer: 'application'
+language: 'typescript'
+
+# Umbrella package — no src/, just a bin shim that delegates to @fnclaude/cli.
+tasks:
+  lint:
+    command: 'bun run lint'
+    options:
+      cache: false
+  test:
+    command: 'bun run test'
+    inputs:
+      - 'test/**/*'
+      - 'bin/**/*'
+      - 'package.json'
+  build:
+    command: 'bun run build'
+    options:
+      cache: false

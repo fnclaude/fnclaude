@@ -1,4 +1,4 @@
-# Mise config — pin Node + define shared tasks here.
+# Mise config — pin Bun + moon, plus the pre-commit hook installer.
 # https://mise.jdx.dev/configuration.html
 #
 # Auto-install the pre-commit hook on directory entry. Idempotent (git
@@ -7,12 +7,7 @@
 [hooks]
 enter = "git config core.hooksPath .githooks"
 
-# Pin Node here, e.g.:
-#   node = "20"
 [tools]
-
-# Common tasks. Optional — wire up your own as your project needs.
-# [tasks.build]
-# run = "npm run build"
-# [tasks.test]
-# run = "npm test"
+bun = "latest"
+# moon's task runner — drives build/test/lint across the workspace.
+"aqua:moonrepo/moon" = "latest"
