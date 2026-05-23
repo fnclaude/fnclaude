@@ -1,0 +1,145 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  findPromptsDir,
+  loadPrompts,
+  readPromptFile,
+  readPromptFileSync,
+} from '../src/prompts.js';
+
+// Mirrors src/prompts_test.go. Tests use FNC_PROMPTS_DIR for deterministic
+// behaviour rather than mocking exe-sibling lookups.
+
+let tmp: string;
+const prevEnv = process.env.FNC_PROMPTS_DIR;
+
+beforeEach(() => {
+  tmp = mkdtempSync(join(tmpdir(), 'fnc-prompts-'));
+});
+
+afterEach(() => {
+  rmSync(tmp, { recursive: true, force: true });
+  if (prevEnv === undefined) {
+    delete process.env.FNC_PROMPTS_DIR;
+  } else {
+    process.env.FNC_PROMPTS_DIR = prevEnv;
+  }
+});
+
+describe('findPromptsDir', () => {
+  test('FNC_PROMPTS_DIR override returns the env path', () => {
+    process.env.FNC_PROMPTS_DIR = tmp;
+    const result = findPromptsDir();
+    expect(result.dir).toBe(tmp);
+    expect(result.error).toBeNull();
+  });
+
+  test('FNC_PROMPTS_DIR pointing at missing dir errors', () => {
+    process.env.FNC_PROMPTS_DIR = '/nonexistent/path/should/not/exist';
+    const result = findPromptsDir();
+    expect(result.dir).toBeNull();
+    expect(result.error).not.toBeNull();
+    expect(result.error!).toContain('FNC_PROMPTS_DIR');
+  });
+
+  test('with no env override and no neighbour dir, returns descriptive error', () => {
+    delete process.env.FNC_PROMPTS_DIR;
+    const result = findPromptsDir();
+    // In CI the test-runner exe's neighbours don't contain a prompts dir;
+    // if they happen to (dev workstation that bundled one), skip.
+    if (result.dir !== null) {
+      return;
+    }
+    expect(result.error).toContain('prompts directory not found');
+  });
+});
+
+describe('readPromptFileSync', () => {
+  test('reads valid file and trims trailing whitespace', () => {
+    writeFileSync(join(tmp, 'x.md'), 'hello world\n\n');
+    const { content, warning } = readPromptFileSync(tmp, 'x.md');
+    expect(content).toBe('hello world');
+    expect(warning).toBeNull();
+  });
+
+  test('missing file returns empty content + warning mentioning path and recovery hint', () => {
+    const { content, warning } = readPromptFileSync(tmp, 'missing.md');
+    expect(content).toBe('');
+    expect(warning).not.toBeNull();
+    expect(warning!).toContain(join(tmp, 'missing.md'));
+    expect(warning!).toContain('missing.md');
+    expect(warning!).toContain('FNC_PROMPTS_DIR');
+  });
+});
+
+describe('readPromptFile (async)', () => {
+  test('reads valid file and trims trailing whitespace', async () => {
+    writeFileSync(join(tmp, 'x.md'), 'hello world\n\n');
+    const { content, warning } = await readPromptFile(tmp, 'x.md');
+    expect(content).toBe('hello world');
+    expect(warning).toBeNull();
+  });
+
+  test('missing file returns empty content + warning', async () => {
+    const { content, warning } = await readPromptFile(tmp, 'missing.md');
+    expect(content).toBe('');
+    expect(warning).not.toBeNull();
+    expect(warning!).toContain('missing.md');
+  });
+});
+
+describe('loadPrompts', () => {
+  test('all files present populates every fragment', () => {
+    const files: Record<string, string> = {
+      'agent-pitfall.md': 'pitfall content',
+      'project-switch.md': 'switch content',
+      'spawn.md': 'spawn content',
+      'restart.md': 'restart content',
+      'noop-router.md': 'router content',
+    };
+    for (const [name, body] of Object.entries(files)) {
+      writeFileSync(join(tmp, name), body);
+    }
+    process.env.FNC_PROMPTS_DIR = tmp;
+
+    const { prompts, warnings } = loadPrompts();
+    expect(prompts.agentPitfall).toBe('pitfall content');
+    expect(prompts.projectSwitch).toBe('switch content');
+    expect(prompts.spawn).toBe('spawn content');
+    expect(prompts.restart).toBe('restart content');
+    expect(prompts.noopRouter).toBe('router content');
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('missing dir returns empty PromptSet with actionable warning', () => {
+    process.env.FNC_PROMPTS_DIR = '/nonexistent/path';
+    const { prompts, warnings } = loadPrompts();
+    expect(prompts.agentPitfall).toBe('');
+    expect(prompts.projectSwitch).toBe('');
+    expect(prompts.spawn).toBe('');
+    expect(prompts.restart).toBe('');
+    expect(prompts.noopRouter).toBe('');
+    expect(warnings.length).toBeGreaterThan(0);
+    const w = warnings[0]!;
+    expect(w).toContain('/nonexistent/path');
+    expect(w).toContain('FNC_PROMPTS_DIR');
+    expect(w).toContain('AUR');
+    expect(w).toContain('go install');
+  });
+
+  test('partial files populate present, warn on missing', () => {
+    writeFileSync(join(tmp, 'agent-pitfall.md'), 'ap');
+    process.env.FNC_PROMPTS_DIR = tmp;
+
+    const { prompts, warnings } = loadPrompts();
+    expect(prompts.agentPitfall).toBe('ap');
+    expect(prompts.projectSwitch).toBe('');
+    expect(prompts.spawn).toBe('');
+    expect(prompts.restart).toBe('');
+    expect(prompts.noopRouter).toBe('');
+    // Four missing files = four warnings.
+    expect(warnings).toHaveLength(4);
+  });
+});
