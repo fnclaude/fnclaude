@@ -74,9 +74,9 @@ The workflow:
 
 ```sh
 git stash --keep-index -- <your-code-files>
-npm test          # the new test should FAIL here
+bun test          # the new test should FAIL here
 git stash pop
-npm test          # and pass here
+bun test          # and pass here
 ```
 
 When TDD is impractical, prefix the commit explicitly to opt out:
