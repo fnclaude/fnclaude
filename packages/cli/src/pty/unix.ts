@@ -11,6 +11,13 @@
  * onData/onExit/kill surface work as documented. There's no native Bun PTY
  * primitive yet; if/when Bun ships one, this file is the natural place to
  * swap implementations behind the shared RunOptions API.
+ *
+ * Lifecycle: each setup phase that needs an undo step returns a small
+ * disposable wrapper (`using` / `await using`). The orchestration function
+ * stays linear and the teardown happens implicitly when the block exits —
+ * including every early-return error path. The disposables are LIFO at
+ * dispose time, so order them top-to-bottom from "last to clean" to "first
+ * to clean".
  */
 
 import { spawn as ptySpawn, type IPty } from 'node-pty';
@@ -19,6 +26,7 @@ import { handoffEnv } from '../handoff.js';
 import { SocketListener } from '../mcp/socketListener.js';
 import {
   ensureCWD,
+  type EnsureCWDHandle,
   RING_BUFFER_SIZE,
   RingBuffer,
   type RunOptions,
@@ -54,6 +62,207 @@ function isTTY(stream: { isTTY?: boolean }): boolean {
   return stream.isTTY === true;
 }
 
+// ── disposable wrappers ────────────────────────────────────────────────────
+
+/**
+ * Wraps a SocketListener so it's auto-closed on scope exit. Held as
+ * `await using` because close() is async. Disposed LAST (declared first)
+ * so callers can extract the handoff argv before the socket goes away.
+ */
+class ListenerHandle {
+  private constructor(readonly inner: SocketListener) {}
+
+  static async start(
+    opts: Parameters<typeof SocketListener.start>[0],
+  ): Promise<ListenerHandle> {
+    return new ListenerHandle(await SocketListener.start(opts));
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.inner.close();
+  }
+}
+
+/**
+ * Wraps `ensureCWD`'s fabricated-tree cleanup. The normal lifecycle is
+ * `unwindNow()` right after spawn (claude has chdir'd, the path on disk
+ * is no longer load-bearing). The asyncDispose is the safety net for any
+ * early-return path where spawn never happened.
+ */
+class CwdHandle {
+  private done = false;
+
+  private constructor(private readonly h: EnsureCWDHandle) {}
+
+  static async ensure(dir: string): Promise<CwdHandle> {
+    return new CwdHandle(await ensureCWD(dir));
+  }
+
+  /**
+   * Eager cleanup — call once spawn has succeeded. Marks the disposer as
+   * a no-op so dispose-on-exit doesn't double-fire.
+   */
+  async unwindNow(): Promise<void> {
+    if (this.done) return;
+    this.done = true;
+    try {
+      await this.h.cleanup();
+    } catch (err) {
+      process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
+    }
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    if (this.done) return;
+    this.done = true;
+    // Safety-net path (early error before spawn) — swallow & ignore. We
+    // already surfaced the original error to the caller; a secondary
+    // cleanup failure here would just add noise.
+    await this.h.cleanup().catch(() => undefined);
+  }
+}
+
+/**
+ * Wraps an IPty so it's defensively killed on scope exit. In the happy
+ * path the child has already exited (we awaited its exit before falling
+ * out of the block); kill() on a dead pty is a no-op. In the error path
+ * (something between spawn and exit-await threw) this guarantees we don't
+ * leak a child process.
+ */
+class PtyHandle {
+  constructor(readonly inner: IPty) {}
+
+  [Symbol.dispose](): void {
+    try {
+      this.inner.kill();
+    } catch {
+      // already dead — fine
+    }
+  }
+}
+
+/**
+ * Raw mode on the controlling TTY. Restores to whatever the original
+ * `isRaw` was. Returns null when stdin isn't a real TTY (test harness,
+ * piped invocation) — disposable then becomes a no-op via `?.`.
+ */
+class RawModeHandle {
+  private constructor(
+    private readonly stdin: NodeJS.ReadStream,
+    private readonly wasRaw: boolean,
+  ) {}
+
+  static enter(): RawModeHandle | null {
+    if (!isTTY(process.stdin)) return null;
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    try {
+      stdin.setRawMode(true);
+    } catch {
+      // not a real TTY in some test harnesses — skip raw mode silently
+      return null;
+    }
+    return new RawModeHandle(stdin, wasRaw);
+  }
+
+  [Symbol.dispose](): void {
+    try {
+      this.stdin.setRawMode(this.wasRaw);
+    } catch {
+      // best-effort — terminal may already be torn down
+    }
+  }
+}
+
+/**
+ * SIGWINCH forwarder — resize the PTY when the controlling terminal
+ * changes size. Dispose removes the listener.
+ */
+class WinchForwarder {
+  private constructor(private readonly handler: () => void) {}
+
+  static start(pty: IPty): WinchForwarder {
+    const handler = (): void => {
+      const sz = getTerminalSize();
+      try {
+        pty.resize(sz.cols, sz.rows);
+      } catch {
+        // ignore — child may have already exited
+      }
+    };
+    process.on('SIGWINCH', handler);
+    return new WinchForwarder(handler);
+  }
+
+  [Symbol.dispose](): void {
+    process.off('SIGWINCH', this.handler);
+  }
+}
+
+/**
+ * stdin → PTY-master pump. Only attaches when stdin is a real TTY —
+ * draining a non-TTY pipe could close the PTY prematurely. Dispose detaches
+ * the listener and pauses (so the parent doesn't keep consuming) without
+ * destroying stdin.
+ */
+class StdinPump {
+  private constructor(private readonly handler: (chunk: Buffer) => void) {}
+
+  static start(pty: IPty): StdinPump | null {
+    if (!isTTY(process.stdin)) return null;
+    const handler = (chunk: Buffer): void => {
+      try {
+        pty.write(chunk);
+      } catch {
+        // child gone — ignore
+      }
+    };
+    process.stdin.on('data', handler);
+    if (typeof process.stdin.resume === 'function') process.stdin.resume();
+    return new StdinPump(handler);
+  }
+
+  [Symbol.dispose](): void {
+    process.stdin.off('data', this.handler);
+    if (typeof process.stdin.pause === 'function') process.stdin.pause();
+  }
+}
+
+/**
+ * Arms a kill chain that fires when the SocketListener's `triggered`
+ * promise resolves (i.e. a handoff action was dispatched): SIGTERM, then
+ * SIGKILL after a 200 ms grace. Dispose clears the pending SIGKILL timer
+ * if it hasn't fired yet.
+ */
+class HandoffKill {
+  private timer: NodeJS.Timeout | null = null;
+
+  private constructor() {}
+
+  static arm(listener: SocketListener, pty: IPty): HandoffKill {
+    const h = new HandoffKill();
+    void listener.triggered().then(() => {
+      try {
+        pty.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
+      h.timer = setTimeout(() => {
+        try {
+          pty.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }, 200);
+    });
+    return h;
+  }
+
+  [Symbol.dispose](): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+  }
+}
+
 // ── runWithPTY ─────────────────────────────────────────────────────────────
 
 export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
@@ -78,41 +287,44 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // moment claude (and thus the `fnclaude mcp` subprocess) starts. On
   // listener-startup failure we abort the run — handoff is core behavior,
   // not optional.
-  let listener: SocketListener | null = null;
-  if (handoff !== null) {
-    try {
-      listener = await SocketListener.start({
-        spec: handoff,
-        cfg,
-        launchCWD,
-        origArgs: handoff.originalArgs,
-      });
-    } catch (err) {
-      process.stderr.write(
-        `fnclaude: socket listener failed to start: ${(err as Error).message}\n`,
-      );
-      return { exitCode: 1, tail: null, handoffArgv: null };
-    }
+  let listener: ListenerHandle | null;
+  try {
+    listener =
+      handoff !== null
+        ? await ListenerHandle.start({
+            spec: handoff,
+            cfg,
+            launchCWD,
+            origArgs: handoff.originalArgs,
+          })
+        : null;
+  } catch (err) {
+    process.stderr.write(
+      `fnclaude: socket listener failed to start: ${(err as Error).message}\n`,
+    );
+    return { exitCode: 1, tail: null, handoffArgv: null };
   }
+  // Bind into `await using` scope. Declared first → disposed last, after
+  // we've extracted the handoff argv below.
+  await using _listener = listener;
 
   // Resuming a session whose stored cwd no longer exists used to surface as
   // a misleading ENOENT-against-claude-binary. Fabricate the tree before
   // spawn, then immediately unwind it once claude has chdir'd in.
-  let cleanupCWD: (() => Promise<void>) | null = null;
+  let cwd: CwdHandle;
   try {
-    const h = await ensureCWD(launchCWD);
-    cleanupCWD = h.cleanup;
+    cwd = await CwdHandle.ensure(launchCWD);
   } catch (err) {
     process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
-    if (listener !== null) await listener.close();
     return { exitCode: 1, tail: null, handoffArgv: null };
   }
+  await using _cwd = cwd;
 
   // Spawn under the PTY.
   const { cols, rows } = getTerminalSize();
-  let pty: IPty;
+  let ptyRaw: IPty;
   try {
-    pty = ptySpawn(claudeArgv[0] as string, claudeArgv.slice(1), {
+    ptyRaw = ptySpawn(claudeArgv[0] as string, claudeArgv.slice(1), {
       name: process.env.TERM ?? 'xterm-256color',
       cols,
       rows,
@@ -121,44 +333,24 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
       encoding: null, // emit raw Buffers so the ring tail is byte-accurate
     });
   } catch (err) {
-    if (cleanupCWD !== null) await cleanupCWD().catch(() => undefined);
-    if (listener !== null) await listener.close();
+    // cwd + listener will be cleaned up by their `using` disposers on the
+    // way out of this scope.
     process.stderr.write(
       `fnclaude: failed to start claude with PTY: ${(err as Error).message}\n`,
     );
     return { exitCode: 1, tail: null, handoffArgv: null };
   }
+  using pty = new PtyHandle(ptyRaw);
 
   // Unwind any fabricated cwd tree now that the child has been spawned —
   // claude's kernel cwd is held by inode reference, so the path on disk
-  // is no longer load-bearing.
-  if (cleanupCWD !== null) {
-    try {
-      await cleanupCWD();
-    } catch (err) {
-      process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
-    }
-  }
+  // is no longer load-bearing. The CwdHandle's disposer becomes a no-op
+  // after this.
+  await cwd.unwindNow();
 
   // Put the controlling terminal into raw mode so the PTY behaves
   // transparently (key-by-key, no local echo, etc.).
-  let restoreRaw: (() => void) | null = null;
-  if (isTTY(process.stdin)) {
-    const stdinRaw = process.stdin;
-    const wasRaw = stdinRaw.isRaw;
-    try {
-      stdinRaw.setRawMode(true);
-      restoreRaw = () => {
-        try {
-          stdinRaw.setRawMode(wasRaw);
-        } catch {
-          // best-effort — terminal may already be torn down
-        }
-      };
-    } catch {
-      // not a real TTY in some test harnesses — skip raw mode silently
-    }
-  }
+  using _rawMode = RawModeHandle.enter();
 
   // Ring buffer for post-exit cross-cwd scanning.
   const ring = new RingBuffer(RING_BUFFER_SIZE);
@@ -167,64 +359,25 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // emits Buffer chunks; the type declaration still says string, but at
   // runtime it's Buffer when encoding is null (the lib's docstring is
   // explicit on this).
-  pty.onData((chunk: unknown) => {
+  pty.inner.onData((chunk: unknown) => {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     ring.write(buf);
     process.stdout.write(buf);
   });
 
-  // Forward SIGWINCH (terminal resize) to the PTY. Listener is detached in
-  // the finally block.
-  const onWinch = (): void => {
-    const sz = getTerminalSize();
-    try {
-      pty.resize(sz.cols, sz.rows);
-    } catch {
-      // ignore — child may have already exited
-    }
-  };
-  process.on('SIGWINCH', onWinch);
+  // Forward SIGWINCH (terminal resize) to the PTY.
+  using _winch = WinchForwarder.start(pty.inner);
 
   // Pump stdin → PTY master. We only forward when stdin is a real TTY —
   // otherwise (test harness, piped invocation, headless run) we don't want
   // to drain a non-TTY stdin pipe which could close the PTY prematurely.
-  // We attach a 'data' handler rather than pipe() so we can detach cleanly
-  // on exit without destroying stdin (which would leak into the parent's
-  // post-PTY state).
-  let onStdinData: ((chunk: Buffer) => void) | null = null;
-  if (isTTY(process.stdin)) {
-    onStdinData = (chunk: Buffer): void => {
-      try {
-        pty.write(chunk);
-      } catch {
-        // child gone — ignore
-      }
-    };
-    process.stdin.on('data', onStdinData);
-    if (typeof process.stdin.resume === 'function') process.stdin.resume();
-  }
+  using _stdinPump = StdinPump.start(pty.inner);
 
   // Handoff: when the listener fires triggered(), terminate claude.
   // SIGTERM + brief grace + SIGKILL mirrors the legacy SIGUSR1 path
   // — the listener marks "switch fired" and the parent gets out of
   // the PTY loop ASAP.
-  let handoffKillTimer: NodeJS.Timeout | null = null;
-  if (listener !== null) {
-    void listener.triggered().then(() => {
-      try {
-        pty.kill('SIGTERM');
-      } catch {
-        // ignore
-      }
-      handoffKillTimer = setTimeout(() => {
-        try {
-          pty.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }, 200);
-    });
-  }
+  using _handoffKill = listener !== null ? HandoffKill.arm(listener.inner, pty.inner) : null;
 
   // Wait for the child to exit. Use a one-shot guard so we capture only
   // the FIRST exit event — node-pty under Bun has been observed to emit
@@ -233,7 +386,7 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   const exitResult = await new Promise<{ exitCode: number; signal?: number }>(
     (resolve) => {
       let fired = false;
-      const disposable = pty.onExit((e) => {
+      const disposable = pty.inner.onExit((e) => {
         if (fired) return;
         fired = true;
         disposable.dispose();
@@ -241,15 +394,6 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
       });
     },
   );
-
-  // Tear down listeners / restore terminal state.
-  process.off('SIGWINCH', onWinch);
-  if (onStdinData !== null) {
-    process.stdin.off('data', onStdinData);
-    if (typeof process.stdin.pause === 'function') process.stdin.pause();
-  }
-  if (restoreRaw !== null) restoreRaw();
-  if (handoffKillTimer !== null) clearTimeout(handoffKillTimer);
 
   // node-pty's exit shape: { exitCode, signal? }.
   //
@@ -268,11 +412,10 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // `handoffArgv !== null` (the listener's stash), not the exit code.
   const exitCode = exitResult.exitCode;
 
-  let handoffArgv: string[] | null = null;
-  if (listener !== null) {
-    handoffArgv = listener.getHandoffArgv();
-    await listener.close();
-  }
+  // Extract handoff argv BEFORE the listener's disposer fires (which will
+  // close the socket). The listener disposer runs last because it was
+  // declared first in this scope.
+  const handoffArgv = listener !== null ? listener.inner.getHandoffArgv() : null;
 
   return { exitCode, tail: ring.bytes(), handoffArgv };
 }
