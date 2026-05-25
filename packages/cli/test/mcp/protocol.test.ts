@@ -116,6 +116,105 @@ describe('decode rejects malformed JSON', () => {
   });
 });
 
+// ── decodeRequest input validation ─────────────────────────────────────────
+//
+// The wire format trusts whatever a connected client sends — the parent
+// listener will dispatch and act on it. A compromised fnclaude-mcp
+// subprocess (or anything else that learns the socket path) can submit
+// arbitrary JSON. Validate shape, length, and dangerous bytes at the
+// boundary so malformed input can't reach the dispatcher's
+// re-exec / clipboard / file-write paths.
+
+describe('decodeRequest validation rejects malformed payloads', () => {
+  test('non-object payload', () => {
+    expect(() => decodeRequest('"just-a-string"')).toThrow(/object/i);
+    expect(() => decodeRequest('null')).toThrow(/object/i);
+    expect(() => decodeRequest('42')).toThrow(/object/i);
+    expect(() => decodeRequest('[]')).toThrow(/object/i);
+  });
+
+  test('missing or unknown op', () => {
+    expect(() => decodeRequest('{}')).toThrow(/op/i);
+    expect(() => decodeRequest('{"op":"explode"}')).toThrow(/op/i);
+    expect(() => decodeRequest('{"op":42}')).toThrow(/op/i);
+  });
+
+  test('wrong type for a string field', () => {
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'restart', session_id: 42 })),
+    ).toThrow(/session_id/i);
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'switch', destination: { evil: true } })),
+    ).toThrow(/destination/i);
+  });
+
+  test('wrong type for a boolean override field', () => {
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'restart', session_id: 'abc', brief: 'yes' })),
+    ).toThrow(/brief/i);
+  });
+
+  test('null byte in any string field is rejected', () => {
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'restart', session_id: 'abc\x00def' })),
+    ).toThrow(/null byte/i);
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'copy_to_clipboard', text: 'safe\x00bad' })),
+    ).toThrow(/null byte/i);
+  });
+
+  test('parent-traversal segment in destination is rejected', () => {
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'switch', destination: '../etc/passwd' })),
+    ).toThrow(/destination|traversal/i);
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'switch', destination: '/safe/../etc' })),
+    ).toThrow(/destination|traversal/i);
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'spawn', destination: 'foo/../bar' })),
+    ).toThrow(/destination|traversal/i);
+  });
+
+  test('benign ".." substring (not a path segment) is allowed', () => {
+    // ".." inside a path component like "foo..bar" or trailing ".." inside
+    // a longer name MUST NOT be a false positive — only true segments
+    // (delimited by / or string ends) are dangerous.
+    const got = decodeRequest(
+      JSON.stringify({ op: 'switch', destination: '/foo..bar/baz' }),
+    );
+    expect(got).toMatchObject({ op: 'switch', destination: '/foo..bar/baz' });
+  });
+
+  test('over-length string fields are rejected', () => {
+    // Short fields like model / effort / permission_mode have a tight cap;
+    // summary has a generous cap (it's the handoff continuity blob).
+    const huge = 'a'.repeat(1024 * 1024); // 1 MiB
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'restart', model: huge })),
+    ).toThrow(/length|model/i);
+    expect(() =>
+      decodeRequest(JSON.stringify({ op: 'switch', destination: 'a'.repeat(10_000) })),
+    ).toThrow(/length|destination/i);
+  });
+
+  test('valid restart payload passes through unchanged', () => {
+    const req = decodeRequest(
+      JSON.stringify({
+        op: 'restart',
+        session_id: '01234567-89ab-cdef-0123-456789abcdef',
+        model: 'sonnet',
+        brief: true,
+      }),
+    );
+    expect(req).toEqual({
+      op: 'restart',
+      session_id: '01234567-89ab-cdef-0123-456789abcdef',
+      model: 'sonnet',
+      brief: true,
+    });
+  });
+});
+
 // ── readRequest / readResponse stream behavior ─────────────────────────────
 
 describe('readRequest / readResponse over async iterable streams', () => {
