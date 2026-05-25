@@ -45,6 +45,10 @@ For more details on available commands and features, run `fnc help` or see the m
 - **Session resume**: Resume previous sessions with `fnc continue` or pick one interactively with `fnc resume`
 - **MCP integration**: Built-in Model Context Protocol server for seamless Claude integration
 
+## Platform support
+
+Supported on **Linux** and **macOS**. The codebase has a Windows fallback path (`spawn + process.exit` instead of `process.execve`) but it has never been exercised — treat it as untested. If you run on Windows, expect breakage.
+
 ## Status
 
 The CLI is actively maintained. Current release is published to npm under `@latest`. See the main fnclaude repository for release notes and version history.
