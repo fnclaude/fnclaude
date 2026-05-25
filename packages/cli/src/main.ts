@@ -35,33 +35,38 @@ import {
   type ResolvedArgs,
 } from './args.js';
 import { buildArgv } from './argv.js';
-import { loadConfig } from './config.js';
+import { loadConfig, type Config } from './config.js';
 import { handoffSocketPath, type HandoffSpec } from './handoff.js';
 import { helpText, version, wantsHelp, wantsVersion } from './help.js';
 import { loadHostAliases } from './hostAliases.js';
 import { expandTildePath } from './paths.js';
-import { loadPrompts } from './prompts.js';
+import { loadPrompts, type PromptSet } from './prompts.js';
 import { detectCrossCwd, runWithPTY } from './pty.js';
 import { loadRepoSettings } from './repoSettings.js';
-import { Resolve } from './resolver.js';
+import { Resolve, type RepoSettings, type ResolveDeps } from './resolver.js';
 import { sanitizeNamesInPassthrough } from './sanitize.js';
 import { runMCPServer } from './mcp/client.js';
 import { seedNoop } from './noop.js';
 import { silentRelaunch, silentRelaunchHandoff } from './silentRelaunch.js';
-import { applyWorktreeIntercept } from './worktree.js';
+import { applyWorktreeIntercept, type GitRunner } from './worktree.js';
 import { flushWarnings } from './warnings.js';
 
 /**
- * Pluggable seam set used by `run()`. Tests substitute in-memory implementations
- * to drive the orchestration without launching real subprocesses, dialing
- * real sockets, or touching the real filesystem.
+ * `RunIO` — process-shaped seams. Streams, paths, the launch environment,
+ * and the external behaviour the pipeline depends on (claude binary
+ * lookup, PTY runner, relaunch, MCP dispatcher, noop seeder, autoname
+ * LLM call). Plus the *inner* dependency seams of the pipeline modules
+ * themselves — `gitRunner` (consumed by applyWorktreeIntercept) and
+ * `resolveDeps` (consumed by Resolve) — surfaced here so tests can swap
+ * the I/O each module does without a wrapper layer of outer functions.
  *
- * The default values (when the caller omits a field) resolve to the
- * production implementations imported above. Mirrors the Go `run()`'s
- * package-level `runMCPServerFn` / `gitRunner` indirections, expanded so the
- * full integration is testable without monkey-patching.
+ * Earlier shape had both outer (`RunDeps.applyWorktreeIntercept`) and
+ * inner (`applyWorktreeIntercept`'s `GitRunner` parameter) seams for the
+ * same boundary. Collapsed to the inner seam only — the outer one was
+ * dead weight in production (the function never varies) and in tests it
+ * just wrapped the inner seam with two extra lines of closure plumbing.
  */
-export interface RunDeps {
+export interface RunIO {
   /** Source argv (typically `process.argv.slice(2)`). */
   argv?: readonly string[];
   /** Stream where the help/version/error text is written. */
@@ -71,6 +76,7 @@ export interface RunDeps {
   home?: string;
   /** Shell cwd at startup. */
   cwd?: string;
+
   /** PATH lookup for the claude binary; returns null when not found. */
   lookupClaude?: (name: string) => string | null;
   /** Override the run-with-pty step. */
@@ -79,24 +85,63 @@ export interface RunDeps {
   silentRelaunch?: typeof silentRelaunch;
   /** Override the silent-relaunch-handoff step. */
   silentRelaunchHandoff?: typeof silentRelaunchHandoff;
+  /** Override runMCPServer (the `mcp` subcommand dispatcher). */
+  runMCPServer?: typeof runMCPServer;
   /** Override seedNoop (best-effort dir seeder). */
   seedNoop?: typeof seedNoop;
   /** Override generateName for auto-name (skip the LLM call). */
   generateName?: typeof generateName;
-  /** Override loadPrompts (skip disk lookup). */
-  loadPrompts?: typeof loadPrompts;
-  /** Override loadConfig (use a fixed config). */
-  loadConfig?: typeof loadConfig;
-  /** Override loadRepoSettings (skip the four-tier settings.json merge). */
-  loadRepoSettings?: typeof loadRepoSettings;
-  /** Override loadHostAliases. */
-  loadHostAliases?: typeof loadHostAliases;
-  /** Override Resolve. */
-  resolve?: typeof Resolve;
-  /** Override applyWorktreeIntercept. */
-  applyWorktreeIntercept?: typeof applyWorktreeIntercept;
-  /** Override runMCPServer (the `mcp` subcommand dispatcher). */
-  runMCPServer?: typeof runMCPServer;
+
+  /**
+   * GitRunner for applyWorktreeIntercept. Tests that want to drive a
+   * fake `git worktree list` reply pass one here; production uses the
+   * module's `defaultGitRunner`.
+   */
+  gitRunner?: GitRunner;
+
+  /**
+   * Resolver I/O seams (path-exists check, gh CLI, clone). Tests pass a
+   * stub set so the resolver runs without touching the network or
+   * filesystem; production uses `productionDeps()` from resolver.ts.
+   */
+  resolveDeps?: ResolveDeps;
+}
+
+/**
+ * `RunConfig` — pre-loaded data the pipeline reads. When a field is
+ * supplied here, the corresponding loader (loadConfig / loadPrompts /
+ * loadRepoSettings / loadHostAliases) is skipped and the supplied value
+ * is used directly. Tests build a hermetic config payload up-front; in
+ * production every field is omitted and the loaders run for real.
+ *
+ * These were previously expressed as `loadConfig: typeof loadConfig`
+ * function seams in the unified `RunDeps`. The 1:1 thin-wrapper pattern
+ * was double-injection — in production they have zero variance, and in
+ * tests they were always loader stubs that returned a fixed payload.
+ * Storing the payload directly removes a layer of function plumbing.
+ */
+export interface RunConfig {
+  /** Pre-loaded config. Omit to call `loadConfig()`. */
+  config?: Config;
+  /** Pre-loaded prompts. Omit to call `loadPrompts()`. */
+  prompts?: PromptSet;
+  /** Pre-loaded repo settings. Omit to call `loadRepoSettings(home, cwd)`. */
+  repoSettings?: RepoSettings;
+  /** Pre-loaded host aliases. Omit to call `loadHostAliases(home)`. */
+  hostAliases?: Record<string, string>;
+}
+
+/**
+ * Top-level deps for `run()` — two named groups (`io` and `data`),
+ * each optional, each with optional fields. Tests typically populate
+ * only the fields they care about. Production omits everything (passes
+ * `{}` or nothing) and lets every default kick in.
+ */
+export interface RunDeps {
+  /** Process-shaped seams (streams, env, external behaviours). */
+  io?: RunIO;
+  /** Pre-loaded data payloads (skips the corresponding loaders). */
+  data?: RunConfig;
 }
 
 function lookupClaudeFromPath(name: string): string | null {
@@ -124,24 +169,21 @@ function lookupClaudeFromPath(name: string): string | null {
  * through to returning claude's exit code, mirroring Go's behavior.
  */
 export async function run(deps: RunDeps = {}): Promise<number> {
-  const argv = deps.argv ?? process.argv.slice(2);
-  const stdout = deps.stdout ?? process.stdout;
-  const stderr = deps.stderr ?? process.stderr;
-  const home = deps.home ?? process.env.HOME ?? homedir();
-  const shellCWD = deps.cwd ?? process.cwd();
-  const lookupClaude = deps.lookupClaude ?? lookupClaudeFromPath;
-  const runPTY = deps.runWithPTY ?? runWithPTY;
-  const relaunch = deps.silentRelaunch ?? silentRelaunch;
-  const relaunchHandoff = deps.silentRelaunchHandoff ?? silentRelaunchHandoff;
-  const seedNoopFn = deps.seedNoop ?? seedNoop;
-  const generateNameFn = deps.generateName ?? generateName;
-  const loadPromptsFn = deps.loadPrompts ?? loadPrompts;
-  const loadConfigFn = deps.loadConfig ?? loadConfig;
-  const loadRepoSettingsFn = deps.loadRepoSettings ?? loadRepoSettings;
-  const loadHostAliasesFn = deps.loadHostAliases ?? loadHostAliases;
-  const resolveFn = deps.resolve ?? Resolve;
-  const applyWorktreeInterceptFn = deps.applyWorktreeIntercept ?? applyWorktreeIntercept;
-  const runMCPServerFn = deps.runMCPServer ?? runMCPServer;
+  const io = deps.io ?? {};
+  const data = deps.data ?? {};
+
+  const argv = io.argv ?? process.argv.slice(2);
+  const stdout = io.stdout ?? process.stdout;
+  const stderr = io.stderr ?? process.stderr;
+  const home = io.home ?? process.env.HOME ?? homedir();
+  const shellCWD = io.cwd ?? process.cwd();
+  const lookupClaude = io.lookupClaude ?? lookupClaudeFromPath;
+  const runPTY = io.runWithPTY ?? runWithPTY;
+  const relaunch = io.silentRelaunch ?? silentRelaunch;
+  const relaunchHandoff = io.silentRelaunchHandoff ?? silentRelaunchHandoff;
+  const seedNoopFn = io.seedNoop ?? seedNoop;
+  const generateNameFn = io.generateName ?? generateName;
+  const runMCPServerFn = io.runMCPServer ?? runMCPServer;
 
   // Defer-flush warnings on exit, AFTER claude has finished and the user is
   // back at their shell. The silent-relaunch path uses execve which skips
@@ -203,8 +245,15 @@ export async function run(deps: RunDeps = {}): Promise<number> {
       }
     }
 
-    const { config: cfg, warnings: configWarnings } = loadConfigFn();
-    warnings.push(...configWarnings);
+    // ── Config: pre-loaded or freshly loaded from disk. ──────────────────
+    let cfg: Config;
+    if (data.config !== undefined) {
+      cfg = data.config;
+    } else {
+      const loaded = loadConfig();
+      cfg = loaded.config;
+      warnings.push(...loaded.warnings);
+    }
 
     // ── Repo-reference resolver (path-or-repo two-lookup). ───────────────
     //
@@ -219,19 +268,46 @@ export async function run(deps: RunDeps = {}): Promise<number> {
       !isAbsolute(parsed.cwd) &&
       !parsed.cwd.startsWith('~')
     ) {
-      const { settings: rs, warnings: rsWarnings } = loadRepoSettingsFn(home, shellCWD);
-      warnings.push(...rsWarnings);
-      const { aliases, warnings: aliasWarnings } = loadHostAliasesFn(home);
-      warnings.push(...aliasWarnings);
+      let rs: RepoSettings;
+      if (data.repoSettings !== undefined) {
+        rs = data.repoSettings;
+      } else {
+        const loaded = loadRepoSettings(home, shellCWD);
+        rs = loaded.settings;
+        warnings.push(...loaded.warnings);
+      }
+      let aliases: Record<string, string>;
+      if (data.hostAliases !== undefined) {
+        aliases = data.hostAliases;
+      } else {
+        const loaded = loadHostAliases(home);
+        aliases = loaded.aliases;
+        warnings.push(...loaded.warnings);
+      }
       let result;
       try {
-        result = await resolveFn({
-          input: parsed.cwd,
-          cwd: shellCWD,
-          home,
-          settings: rs,
-          hostAliases: aliases,
-        });
+        // Resolver's inner deps (path-exists, gh CLI, clone): use the
+        // injected ones in tests, fall back to productionDeps in real
+        // runs. Passing `undefined` lets Resolve default-construct
+        // productionDeps() itself.
+        result = await (io.resolveDeps
+          ? Resolve(
+              {
+                input: parsed.cwd,
+                cwd: shellCWD,
+                home,
+                settings: rs,
+                hostAliases: aliases,
+              },
+              io.resolveDeps,
+            )
+          : Resolve({
+              input: parsed.cwd,
+              cwd: shellCWD,
+              home,
+              settings: rs,
+              hostAliases: aliases,
+            }));
       } catch (err) {
         stderr.write(`${(err as Error).message}\n`);
         return 1;
@@ -257,7 +333,13 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     }
 
     // ── -w / --worktree intercept. ───────────────────────────────────────
-    const intercepted = applyWorktreeInterceptFn(resolved, shellCWD);
+    //
+    // GitRunner is the inner seam — production uses the module's default
+    // (synchronous `git -C <dir> ...`); tests inject a stub that yields
+    // the fake `git worktree list --porcelain` shape they want.
+    const intercepted = io.gitRunner
+      ? applyWorktreeIntercept(resolved, shellCWD, io.gitRunner)
+      : applyWorktreeIntercept(resolved, shellCWD);
 
     // ── Resolve the launch cwd relative to shell cwd. ────────────────────
     const launchCWD = isAbsolute(intercepted.cwd)
@@ -286,10 +368,16 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     });
 
     // ── Build the claude argv. ───────────────────────────────────────────
-    const promptsResult = loadPromptsFn();
-    warnings.push(...promptsResult.warnings);
+    let prompts: PromptSet;
+    if (data.prompts !== undefined) {
+      prompts = data.prompts;
+    } else {
+      const loaded = loadPrompts();
+      prompts = loaded.prompts;
+      warnings.push(...loaded.warnings);
+    }
 
-    const claudeArgv = buildArgv(sanitized, shellCWD, cfg, promptsResult.prompts);
+    const claudeArgv = buildArgv(sanitized, shellCWD, cfg, prompts);
 
     // ── Verify claude is on PATH before starting the PTY. ────────────────
     if (lookupClaude('claude') === null) {

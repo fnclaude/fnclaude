@@ -35,9 +35,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Writable } from 'node:stream';
 import { defaultConfig } from '../../src/config.js';
-import { run, type RunDeps } from '../../src/main.js';
+import { run, type RunConfig, type RunDeps, type RunIO } from '../../src/main.js';
 import type { RunOptions, RunResult } from '../../src/pty.js';
-import { applyWorktreeIntercept as realApplyWorktreeIntercept } from '../../src/worktree.js';
 
 interface CapturedRun {
   claudeArgv: string[] | null;
@@ -48,8 +47,14 @@ interface CapturedRun {
   stdout: string;
 }
 
-/** Build a deps object that runs the real pipeline but captures the PTY call. */
-function makeCapturingDeps(extras: Partial<RunDeps> = {}): {
+/**
+ * Build a deps object that runs the real pipeline but captures the PTY
+ * call. Tests pass overrides per group (`io` / `data`); the defaults set
+ * the non-relevant seams to hermetic stubs.
+ */
+function makeCapturingDeps(
+  overrides: { io?: Partial<RunIO>; data?: Partial<RunConfig> } = {},
+): {
   deps: RunDeps;
   out: CapturedRun;
 } {
@@ -76,30 +81,27 @@ function makeCapturingDeps(extras: Partial<RunDeps> = {}): {
     },
   }) as unknown as NodeJS.WriteStream;
 
-  const baseDeps: RunDeps = {
+  const io: RunIO = {
     stdout: stdoutStream,
     stderr: stderrStream,
     home: '/home/tester',
     cwd: '/tmp/shell-cwd',
     lookupClaude: () => '/usr/bin/claude',
     seedNoop: async () => undefined,
-    loadConfig: () => ({ config: defaultConfig(), warnings: [] }),
-    loadRepoSettings: () => ({ settings: {}, warnings: [] }),
-    loadHostAliases: () => ({ aliases: {}, warnings: [] }),
-    loadPrompts: () => ({
-      prompts: {
-        agentPitfall: '',
-        projectSwitch: '',
-        spawn: '',
-        restart: '',
-        noopRouter: '',
-      },
-      warnings: [],
-    }),
-    resolve: async (opts) => ({ path: opts.input }),
-    // applyWorktreeIntercept is the REAL one — that's part of the pipeline
-    // we want to exercise. The Git invocations it makes are stubbed via the
-    // injected GitRunner inside each scenario where worktree matters.
+    // applyWorktreeIntercept runs for real (no outer-level seam) — the
+    // intercept's `git` call is stubbed at the inner seam via `gitRunner`.
+    // Default returns "" → "no matching worktree, pushes --worktree +
+    // --name". Tests that want a *matched* worktree return the porcelain
+    // shape for one instead.
+    gitRunner: () => '',
+    // Stub Resolve's I/O seams so we never shell out to gh in tests.
+    // Default `pathExists: () => true` is fine — tests that exercise the
+    // resolver branch (non-absolute input) inject a more specific stub.
+    resolveDeps: {
+      pathExists: async () => true,
+      ghCmd: async () => ({ stdout: '' }),
+      runClone: async () => undefined,
+    },
     generateName: async () => 'auto-name-stub',
     runWithPTY: async (opts: RunOptions): Promise<RunResult> => {
       out.claudeArgv = opts.claudeArgv;
@@ -110,16 +112,28 @@ function makeCapturingDeps(extras: Partial<RunDeps> = {}): {
     silentRelaunch: () => undefined,
     silentRelaunchHandoff: () => undefined,
     runMCPServer: async () => 0,
-    ...extras,
+    ...overrides.io,
   };
-  return { deps: baseDeps, out };
+  const data: RunConfig = {
+    config: defaultConfig(),
+    repoSettings: {},
+    hostAliases: {},
+    prompts: {
+      agentPitfall: '',
+      projectSwitch: '',
+      spawn: '',
+      restart: '',
+      noopRouter: '',
+    },
+    ...overrides.data,
+  };
+  return { deps: { io, data }, out };
 }
 
 describe('run() e2e — full-stack argv construction', () => {
   test('fixture 1: bare invocation seeds noop and runs in noop dir', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: [],
-      home: '/home/tester',
+      io: { argv: [], home: '/home/tester' },
     });
     out.exitCode = await run(deps);
 
@@ -140,7 +154,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 2: absolute path positional → that path is launchCWD', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path'],
+      io: { argv: ['/some/abs/path'] },
     });
     await run(deps);
 
@@ -154,7 +168,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 3: magic word "opus" → --model opus in passthrough', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['opus', '/some/abs/path'],
+      io: { argv: ['opus', '/some/abs/path'] },
     });
     await run(deps);
 
@@ -166,7 +180,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 4: magic words "opus max" → --model opus + --effort max', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['opus', 'max', '/some/abs/path'],
+      io: { argv: ['opus', 'max', '/some/abs/path'] },
     });
     await run(deps);
 
@@ -181,8 +195,10 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 5: autoname fires for `-- prompt` with no --name', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '--', 'fix the bug'],
-      generateName: async () => 'fix-the-bug',
+      io: {
+        argv: ['/some/abs/path', '--', 'fix the bug'],
+        generateName: async () => 'fix-the-bug',
+      },
     });
     await run(deps);
 
@@ -198,10 +214,12 @@ describe('run() e2e — full-stack argv construction', () => {
   test('fixture 6: explicit --name suppresses autoname', async () => {
     let autonameCalled = false;
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '--name', 'user-picked', '--', 'do something'],
-      generateName: async () => {
-        autonameCalled = true;
-        return 'should-not-appear';
+      io: {
+        argv: ['/some/abs/path', '--name', 'user-picked', '--', 'do something'],
+        generateName: async () => {
+          autonameCalled = true;
+          return 'should-not-appear';
+        },
       },
     });
     await run(deps);
@@ -216,8 +234,8 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 7: --print is non-interactive → no self-MCP, no system prompts', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '--print', '--', 'hello'],
-      loadPrompts: () => ({
+      io: { argv: ['/some/abs/path', '--print', '--', 'hello'] },
+      data: {
         prompts: {
           agentPitfall: 'PITFALL-FRAGMENT',
           projectSwitch: 'SWITCH-FRAGMENT',
@@ -225,8 +243,7 @@ describe('run() e2e — full-stack argv construction', () => {
           restart: 'RESTART-FRAGMENT',
           noopRouter: 'NOOP-FRAGMENT',
         },
-        warnings: [],
-      }),
+      },
     });
     await run(deps);
 
@@ -237,15 +254,14 @@ describe('run() e2e — full-stack argv construction', () => {
   });
 
   test('fixture 8: -w with unmatched worktree name → --worktree + auto --name', async () => {
-    // Use the REAL applyWorktreeIntercept with a stub gitRunner that reports
-    // no matching worktree. The intercept should then push --worktree and
-    // auto-attach --name (the latter when --name isn't already set).
+    // Real applyWorktreeIntercept runs; we drive its outcome via the
+    // injected GitRunner. Empty stdout = no worktrees, no match → intercept
+    // pushes --worktree + --name.
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '-w', 'my-feature'],
-      applyWorktreeIntercept: (a, shellCWD) =>
-        // GitRunner: (dir, ...args) => stdout-string. Empty string = no
-        // worktrees, no match → intercept pushes --worktree + --name.
-        realApplyWorktreeIntercept(a, shellCWD, () => ''),
+      io: {
+        argv: ['/some/abs/path', '-w', 'my-feature'],
+        gitRunner: () => '',
+      },
     });
     await run(deps);
 
@@ -261,15 +277,12 @@ describe('run() e2e — full-stack argv construction', () => {
   test('fixture 8b: -w matching an existing worktree → cwd swap, no --worktree', async () => {
     const matchedPath = '/some/abs/path/.worktrees/my-feature';
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '-w', 'my-feature'],
-      applyWorktreeIntercept: (a, shellCWD) =>
-        realApplyWorktreeIntercept(
-          a,
-          shellCWD,
-          // `git worktree list --porcelain` shape — one block per worktree.
-          () =>
-            `worktree ${matchedPath}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/my-feature\n\n`,
-        ),
+      io: {
+        argv: ['/some/abs/path', '-w', 'my-feature'],
+        // `git worktree list --porcelain` shape — one block per worktree.
+        gitRunner: () =>
+          `worktree ${matchedPath}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/my-feature\n\n`,
+      },
     });
     await run(deps);
 
@@ -281,7 +294,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 9: short flag -V translates to --verbose in passthrough', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '-V'],
+      io: { argv: ['/some/abs/path', '-V'] },
     });
     await run(deps);
 
@@ -292,7 +305,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 10: collapsed short flags expand individually', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '-BV'],
+      io: { argv: ['/some/abs/path', '-BV'] },
     });
     await run(deps);
 
@@ -302,7 +315,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 11: passthrough preserves user-supplied unknown long flags verbatim', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path', '--custom-claude-flag', 'value-x'],
+      io: { argv: ['/some/abs/path', '--custom-claude-flag', 'value-x'] },
     });
     await run(deps);
 
@@ -313,7 +326,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 12: handoff spec is built with mode + per-pid socket path', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path'],
+      io: { argv: ['/some/abs/path'] },
     });
     await run(deps);
 
@@ -323,7 +336,7 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 13: parse error short-circuits with stderr message + exit 1', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['opus', 'max', '/p1', '/p2', '/p3'], // too many positionals
+      io: { argv: ['opus', 'max', '/p1', '/p2', '/p3'] }, // too many positionals
     });
     const code = await run(deps);
 
@@ -335,8 +348,10 @@ describe('run() e2e — full-stack argv construction', () => {
 
   test('fixture 14: claude not on PATH → exit 1 with message', async () => {
     const { deps, out } = makeCapturingDeps({
-      argv: ['/some/abs/path'],
-      lookupClaude: () => null,
+      io: {
+        argv: ['/some/abs/path'],
+        lookupClaude: () => null,
+      },
     });
     const code = await run(deps);
 

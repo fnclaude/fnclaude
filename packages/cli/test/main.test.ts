@@ -1,34 +1,21 @@
 // Integration tests for run() — the orchestration loop.
 //
-// The point of these tests is composition: every dependency is faked, and
-// we assert that run() calls each one with the values that mirror Go's
-// run() ordering. Mocking the seams (loadConfig, runWithPTY, generateName,
-// silentRelaunch, etc.) lets us drive the whole loop without launching a
-// real PTY, a real claude binary, or talking to the network.
+// The point of these tests is composition: we feed run() a deterministic
+// `RunIO` (external-behaviour seams) and `RunConfig` (pre-loaded data)
+// payload, then assert that the orchestrated calls happen in the right
+// order and with the right arguments. Mocking each seam lets us drive
+// the whole loop without launching a real PTY, a real claude binary, or
+// talking to the network.
 
 import { describe, expect, test } from 'bun:test';
-import { PassThrough, Writable } from 'node:stream';
-import {
-  brandIntercepted,
-  type InterceptedArgs,
-  type ResolvedArgs,
-} from '../src/args.js';
-import { defaultConfig, type Config } from '../src/config.js';
+import { Writable } from 'node:stream';
+import { defaultConfig } from '../src/config.js';
 import type { HandoffSpec } from '../src/handoff.js';
-import type { RunDeps, run as runType } from '../src/main.js';
+import type { GitRunner } from '../src/worktree.js';
+import type { RunDeps, RunIO, RunConfig } from '../src/main.js';
 import { run } from '../src/main.js';
 import type { RunOptions, RunResult } from '../src/pty.js';
-import type { ResolveOpts, ResolveResult } from '../src/resolver.js';
-
-/**
- * Default applyWorktreeIntercept stub: the new signature is pure (takes a
- * `ResolvedArgs`, returns an `InterceptedArgs`). The simplest faithful stub
- * stamps the input as intercepted with `worktreeMatched: false`, which is
- * what the pre-refactor mutator effectively did when it short-circuited.
- */
-function defaultInterceptStub(a: ResolvedArgs): InterceptedArgs {
-  return brandIntercepted({ ...a, worktreeMatched: false });
-}
+import type { ResolveDeps } from '../src/resolver.js';
 
 function makeBuf(): { stream: NodeJS.WriteStream; chunks: string[] } {
   const chunks: string[] = [];
@@ -41,12 +28,51 @@ function makeBuf(): { stream: NodeJS.WriteStream; chunks: string[] } {
   return { stream: stream as unknown as NodeJS.WriteStream, chunks };
 }
 
-// Reusable defaults for non-relevant deps. Each test overrides what it
-// cares about.
-function baseDeps(extras: Partial<RunDeps> = {}): RunDeps {
+/**
+ * No-op GitRunner: returns "" on every call, which `applyWorktreeIntercept`
+ * interprets as "no worktrees / not a git repo". Used as the default in
+ * tests that exercise the intercept without caring about its result.
+ */
+const noopGitRunner: GitRunner = () => '';
+
+/**
+ * Stub ResolveDeps that pretends every input exists as a local path. The
+ * non-resolver tests don't exercise the resolver branch, but having a
+ * default avoids `productionDeps()` being called when a test forgets to
+ * stub it (which would shell out to gh).
+ */
+function stubResolveDeps(
+  ghCmdResults: Record<string, string> = {},
+): ResolveDeps {
+  return {
+    pathExists: async () => true,
+    ghCmd: async (args) => ({ stdout: ghCmdResults[args.join(' ')] ?? '' }),
+    runClone: async () => undefined,
+  };
+}
+
+function emptyPrompts() {
+  return {
+    agentPitfall: '',
+    projectSwitch: '',
+    spawn: '',
+    restart: '',
+    noopRouter: '',
+  };
+}
+
+/**
+ * Build a `RunDeps` with the test-friendly defaults set on both groups,
+ * plus the test's specific overrides. Each override slot accepts a
+ * partial of its corresponding group.
+ */
+function baseDeps(overrides: {
+  io?: Partial<RunIO>;
+  data?: Partial<RunConfig>;
+} = {}): RunDeps {
   const { stream: stdoutStream } = makeBuf();
   const { stream: stderrStream } = makeBuf();
-  return {
+  const io: RunIO = {
     argv: [],
     stdout: stdoutStream,
     stderr: stderrStream,
@@ -54,21 +80,8 @@ function baseDeps(extras: Partial<RunDeps> = {}): RunDeps {
     cwd: '/tmp/cwd',
     lookupClaude: () => '/usr/bin/claude',
     seedNoop: async () => undefined,
-    loadConfig: () => ({ config: defaultConfig(), warnings: [] }),
-    loadRepoSettings: () => ({ settings: {}, warnings: [] }),
-    loadHostAliases: () => ({ aliases: {}, warnings: [] }),
-    loadPrompts: () => ({
-      prompts: {
-        agentPitfall: '',
-        projectSwitch: '',
-        spawn: '',
-        restart: '',
-        noopRouter: '',
-      },
-      warnings: [],
-    }),
-    resolve: async (opts: ResolveOpts): Promise<ResolveResult> => ({ path: opts.input }),
-    applyWorktreeIntercept: defaultInterceptStub,
+    gitRunner: noopGitRunner,
+    resolveDeps: stubResolveDeps(),
     generateName: async () => 'fake-name',
     runWithPTY: async (_opts: RunOptions): Promise<RunResult> => ({
       exitCode: 0,
@@ -78,21 +91,29 @@ function baseDeps(extras: Partial<RunDeps> = {}): RunDeps {
     silentRelaunch: () => undefined,
     silentRelaunchHandoff: () => undefined,
     runMCPServer: async () => 0,
-    ...extras,
+    ...overrides.io,
   };
+  const data: RunConfig = {
+    config: defaultConfig(),
+    repoSettings: {},
+    hostAliases: {},
+    prompts: emptyPrompts(),
+    ...overrides.data,
+  };
+  return { io, data };
 }
 
 describe('run() short-circuits', () => {
   test('--help prints help text and exits 0', async () => {
     const { stream: stdout, chunks } = makeBuf();
-    const code = await run(baseDeps({ argv: ['--help'], stdout }));
+    const code = await run(baseDeps({ io: { argv: ['--help'], stdout } }));
     expect(code).toBe(0);
     expect(chunks.join('')).toContain('fnclaude — claude CLI launcher');
   });
 
   test('--version prints version line and exits 0', async () => {
     const { stream: stdout, chunks } = makeBuf();
-    const code = await run(baseDeps({ argv: ['--version'], stdout }));
+    const code = await run(baseDeps({ io: { argv: ['--version'], stdout } }));
     expect(code).toBe(0);
     expect(chunks.join('')).toMatch(/^fnclaude \d+\.\d+\.\d+\n$/);
   });
@@ -101,10 +122,12 @@ describe('run() short-circuits', () => {
     let captured: { noop: boolean; socket: string } | null = null;
     const code = await run(
       baseDeps({
-        argv: ['mcp'],
-        runMCPServer: async (opts) => {
-          captured = { noop: opts.noop, socket: opts.socketPath };
-          return 7;
+        io: {
+          argv: ['mcp'],
+          runMCPServer: async (opts) => {
+            captured = { noop: opts.noop, socket: opts.socketPath };
+            return 7;
+          },
         },
       }),
     );
@@ -117,10 +140,12 @@ describe('run() short-circuits', () => {
     let noopSeen = false;
     const code = await run(
       baseDeps({
-        argv: ['mcp', '--noop'],
-        runMCPServer: async (opts) => {
-          noopSeen = opts.noop;
-          return 0;
+        io: {
+          argv: ['mcp', '--noop'],
+          runMCPServer: async (opts) => {
+            noopSeen = opts.noop;
+            return 0;
+          },
         },
       }),
     );
@@ -132,9 +157,11 @@ describe('run() short-circuits', () => {
     const { stream: stderr, chunks } = makeBuf();
     const code = await run(
       baseDeps({
-        // Three positionals after magic is a parse error.
-        argv: ['opus', 'max', '/p1', '/p2', '/p3'],
-        stderr,
+        io: {
+          // Three positionals after magic is a parse error.
+          argv: ['opus', 'max', '/p1', '/p2', '/p3'],
+          stderr,
+        },
       }),
     );
     expect(code).toBe(1);
@@ -145,9 +172,11 @@ describe('run() short-circuits', () => {
     const { stream: stderr, chunks } = makeBuf();
     const code = await run(
       baseDeps({
-        argv: [],
-        stderr,
-        lookupClaude: () => null,
+        io: {
+          argv: [],
+          stderr,
+          lookupClaude: () => null,
+        },
       }),
     );
     expect(code).toBe(1);
@@ -156,7 +185,7 @@ describe('run() short-circuits', () => {
 });
 
 describe('run() pipeline composition', () => {
-  test('happy path threads parsed argv through every seam in order', async () => {
+  test('happy path threads parsed argv through the side-effectful seams in order', async () => {
     const events: string[] = [];
     let claudeArgvSeen: string[] | null = null;
     let launchCWDSeen: string | null = null;
@@ -164,45 +193,29 @@ describe('run() pipeline composition', () => {
 
     const code = await run(
       baseDeps({
-        argv: ['/some/abs/path', '--', 'fix the bug'],
-        seedNoop: async (d) => {
-          events.push(`seedNoop:${d}`);
-        },
-        loadConfig: () => {
-          events.push('loadConfig');
-          return { config: defaultConfig(), warnings: [] };
-        },
-        loadPrompts: () => {
-          events.push('loadPrompts');
-          return { prompts: emptyPrompts(), warnings: [] };
-        },
-        resolve: async () => {
-          events.push('resolve');
-          return { path: '/some/abs/path' };
-        },
-        applyWorktreeIntercept: (a) => {
-          events.push('worktree');
-          return defaultInterceptStub(a);
-        },
-        generateName: async () => {
-          events.push('autoname');
-          return 'fixing-bug';
-        },
-        runWithPTY: async (opts) => {
-          events.push('pty');
-          claudeArgvSeen = opts.claudeArgv;
-          launchCWDSeen = opts.launchCWD;
-          handoffSpecSeen = opts.handoff;
-          return { exitCode: 0, tail: null, handoffArgv: null };
+        io: {
+          argv: ['/some/abs/path', '--', 'fix the bug'],
+          seedNoop: async (d) => {
+            events.push(`seedNoop:${d}`);
+          },
+          generateName: async () => {
+            events.push('autoname');
+            return 'fixing-bug';
+          },
+          runWithPTY: async (opts) => {
+            events.push('pty');
+            claudeArgvSeen = opts.claudeArgv;
+            launchCWDSeen = opts.launchCWD;
+            handoffSpecSeen = opts.handoff;
+            return { exitCode: 0, tail: null, handoffArgv: null };
+          },
         },
       }),
     );
 
     expect(code).toBe(0);
-    // /some/abs/path is absolute → resolve() is skipped, but seedNoop only
+    // /some/abs/path is absolute → resolve() is skipped, AND seedNoop only
     // fires for noop-fallback paths; explicit positional skips it.
-    expect(events).toContain('loadConfig');
-    expect(events).toContain('worktree');
     expect(events).toContain('autoname'); // -- "fix the bug" qualifies
     expect(events).toContain('pty');
 
@@ -226,13 +239,22 @@ describe('run() pipeline composition', () => {
     let resolveCalled = false;
     const code = await run(
       baseDeps({
-        argv: [],
-        seedNoop: async () => {
-          seeded = true;
-        },
-        resolve: async () => {
-          resolveCalled = true;
-          return { path: '/should-not-be-called' };
+        io: {
+          argv: [],
+          seedNoop: async () => {
+            seeded = true;
+          },
+          resolveDeps: {
+            pathExists: async () => {
+              resolveCalled = true;
+              return false;
+            },
+            ghCmd: async () => {
+              resolveCalled = true;
+              return { stdout: '' };
+            },
+            runClone: async () => undefined,
+          },
         },
       }),
     );
@@ -242,67 +264,128 @@ describe('run() pipeline composition', () => {
   });
 
   test('cwd-relative non-noop input passes through Resolve', async () => {
-    let resolveInput: string | null = null;
+    let resolveInputSeen: string | null = null;
     const code = await run(
       baseDeps({
-        argv: ['my-repo'],
-        resolve: async (opts) => {
-          resolveInput = opts.input;
-          return { path: '/resolved/my-repo' };
+        io: {
+          argv: ['my-repo'],
+          resolveDeps: {
+            pathExists: async (p) => {
+              // pathExists is the first probe Resolve does; the candidate
+              // path it builds is "<cwd>/<input>", so the input string is
+              // recoverable from the basename.
+              resolveInputSeen = p.split('/').pop() ?? null;
+              return true;
+            },
+            ghCmd: async () => ({ stdout: '' }),
+            runClone: async () => undefined,
+          },
         },
       }),
     );
     expect(code).toBe(0);
-    expect(resolveInput).toBe('my-repo');
+    expect(resolveInputSeen).toBe('my-repo');
   });
 
   test('Resolve error short-circuits to exit 1', async () => {
     const { stream: stderr, chunks } = makeBuf();
     const code = await run(
       baseDeps({
-        argv: ['some-ref'],
-        stderr,
-        resolve: async () => {
-          throw new Error('repo not found');
+        io: {
+          argv: ['some-ref'],
+          stderr,
+          resolveDeps: {
+            // Both lookups fail → Resolve throws "could not resolve …".
+            pathExists: async () => false,
+            ghCmd: async () => {
+              throw new Error('no gh');
+            },
+            runClone: async () => undefined,
+          },
         },
       }),
     );
     expect(code).toBe(1);
-    expect(chunks.join('')).toContain('repo not found');
+    expect(chunks.join('')).toContain('could not resolve');
   });
 
-  test('Resolve workspace propagates to the worktree intercept', async () => {
-    let argsCaptured: ResolvedArgs | null = null;
+  test('Resolve workspace promotes to worktreeArg through the intercept', async () => {
+    // Non-absolute input → resolver runs, returns workspace="staging".
+    // The intercept then sees worktreeSet=true with worktreeArg=staging
+    // and (no match) appends --worktree staging plus --name staging.
+    let claudeArgvSeen: string[] | null = null;
     const code = await run(
       baseDeps({
-        argv: ['my-repo+staging'],
-        resolve: async () => ({ path: '/resolved/my-repo', workspace: 'staging' }),
-        applyWorktreeIntercept: (a) => {
-          argsCaptured = a;
-          return defaultInterceptStub(a);
+        io: {
+          argv: ['my-repo+staging'],
+          // Resolver `productionDeps` does:
+          //   1. pathExists("<cwd>/my-repo")     — return false (not local)
+          //   2. ghCmd(["api","user","--jq",".login"]) — return "tester"
+          //   3. ghCmd(["api","repos/tester/my-repo","--silent"]) — succeed
+          // Bare-name ref → owner promotion picks "tester"; repo exists.
+          // cloneTemplate "/resolved/{repo}" → target "/resolved/my-repo".
+          // pathExists("/resolved/my-repo") = true → no clone needed.
+          resolveDeps: {
+            pathExists: async (p) => p === '/resolved/my-repo',
+            ghCmd: async (args) => {
+              if (args.includes('user') && args.includes('.login')) {
+                return { stdout: 'tester\n' };
+              }
+              return { stdout: '' };
+            },
+            runClone: async () => undefined,
+          },
+          runWithPTY: async (opts) => {
+            claudeArgvSeen = opts.claudeArgv;
+            return { exitCode: 0, tail: null, handoffArgv: null };
+          },
+        },
+        data: {
+          repoSettings: { cloneTemplate: '/resolved/{repo}' },
         },
       }),
     );
     expect(code).toBe(0);
-    expect(argsCaptured).not.toBeNull();
-    expect(argsCaptured!.worktreeSet).toBe(true);
-    expect(argsCaptured!.worktreeArg).toBe('staging');
+    expect(claudeArgvSeen).not.toBeNull();
+    const wtIdx = claudeArgvSeen!.indexOf('--worktree');
+    expect(wtIdx).toBeGreaterThan(-1);
+    expect(claudeArgvSeen![wtIdx + 1]).toBe('staging');
+    const nameIdx = claudeArgvSeen!.indexOf('--name');
+    expect(nameIdx).toBeGreaterThan(-1);
+    expect(claudeArgvSeen![nameIdx + 1]).toBe('staging');
   });
 
   test('Resolve workspace does NOT override an explicit -w flag', async () => {
-    let argsCaptured: ResolvedArgs | null = null;
+    let claudeArgvSeen: string[] | null = null;
     const code = await run(
       baseDeps({
-        argv: ['my-repo+ws-from-suffix', '-w', 'explicit-wt'],
-        resolve: async () => ({ path: '/resolved/my-repo', workspace: 'ws-from-suffix' }),
-        applyWorktreeIntercept: (a) => {
-          argsCaptured = a;
-          return defaultInterceptStub(a);
+        io: {
+          argv: ['my-repo+ws-from-suffix', '-w', 'explicit-wt'],
+          resolveDeps: {
+            pathExists: async (p) => p === '/resolved/my-repo',
+            ghCmd: async (args) => {
+              if (args.includes('user') && args.includes('.login')) {
+                return { stdout: 'tester\n' };
+              }
+              return { stdout: '' };
+            },
+            runClone: async () => undefined,
+          },
+          runWithPTY: async (opts) => {
+            claudeArgvSeen = opts.claudeArgv;
+            return { exitCode: 0, tail: null, handoffArgv: null };
+          },
+        },
+        data: {
+          repoSettings: { cloneTemplate: '/resolved/{repo}' },
         },
       }),
     );
     expect(code).toBe(0);
-    expect(argsCaptured!.worktreeArg).toBe('explicit-wt');
+    const wtIdx = claudeArgvSeen!.indexOf('--worktree');
+    expect(wtIdx).toBeGreaterThan(-1);
+    // The explicit -w wins; the +workspace suffix is suppressed.
+    expect(claudeArgvSeen![wtIdx + 1]).toBe('explicit-wt');
   });
 });
 
@@ -310,8 +393,10 @@ describe('run() exit-time decision tree', () => {
   test('claude exit code propagates when no handoff and no cross-cwd marker', async () => {
     const code = await run(
       baseDeps({
-        argv: ['/abs/cwd'],
-        runWithPTY: async () => ({ exitCode: 13, tail: Buffer.from('nothing interesting'), handoffArgv: null }),
+        io: {
+          argv: ['/abs/cwd'],
+          runWithPTY: async () => ({ exitCode: 13, tail: Buffer.from('nothing interesting'), handoffArgv: null }),
+        },
       }),
     );
     expect(code).toBe(13);
@@ -322,18 +407,20 @@ describe('run() exit-time decision tree', () => {
     let crossCwdCalled = false;
     const code = await run(
       baseDeps({
-        argv: ['/abs/cwd'],
-        runWithPTY: async () => ({
-          exitCode: 0,
-          tail: Buffer.from('To resume, run:\ncd /elsewhere && claude --resume 12345678-1234-1234-1234-123456789abc'),
-          handoffArgv: ['/handoff/dest', '--name', 'handoff-name'],
-        }),
-        silentRelaunchHandoff: (argv) => {
-          handoffCalled = true;
-          expect(argv).toEqual(['/handoff/dest', '--name', 'handoff-name']);
-        },
-        silentRelaunch: () => {
-          crossCwdCalled = true;
+        io: {
+          argv: ['/abs/cwd'],
+          runWithPTY: async () => ({
+            exitCode: 0,
+            tail: Buffer.from('To resume, run:\ncd /elsewhere && claude --resume 12345678-1234-1234-1234-123456789abc'),
+            handoffArgv: ['/handoff/dest', '--name', 'handoff-name'],
+          }),
+          silentRelaunchHandoff: (argv) => {
+            handoffCalled = true;
+            expect(argv).toEqual(['/handoff/dest', '--name', 'handoff-name']);
+          },
+          silentRelaunch: () => {
+            crossCwdCalled = true;
+          },
         },
       }),
     );
@@ -350,16 +437,18 @@ describe('run() exit-time decision tree', () => {
     let captured: { args: readonly string[]; dest: string; uuid: string } | null = null;
     const code = await run(
       baseDeps({
-        argv: ['/abs/cwd', '-V'],
-        runWithPTY: async () => ({
-          exitCode: 0,
-          tail: Buffer.from(
-            'noise...\nTo resume, run:\ncd /target && claude --resume abcdef12-1234-1234-1234-1234567890ab\n',
-          ),
-          handoffArgv: null,
-        }),
-        silentRelaunch: (args, dest, uuid) => {
-          captured = { args, dest, uuid };
+        io: {
+          argv: ['/abs/cwd', '-V'],
+          runWithPTY: async () => ({
+            exitCode: 0,
+            tail: Buffer.from(
+              'noise...\nTo resume, run:\ncd /target && claude --resume abcdef12-1234-1234-1234-1234567890ab\n',
+            ),
+            handoffArgv: null,
+          }),
+          silentRelaunch: (args, dest, uuid) => {
+            captured = { args, dest, uuid };
+          },
         },
       }),
     );
@@ -374,10 +463,12 @@ describe('run() exit-time decision tree', () => {
     let relaunchCalled = false;
     const code = await run(
       baseDeps({
-        argv: ['/abs/cwd'],
-        runWithPTY: async () => ({ exitCode: 5, tail: null, handoffArgv: null }),
-        silentRelaunch: () => {
-          relaunchCalled = true;
+        io: {
+          argv: ['/abs/cwd'],
+          runWithPTY: async () => ({ exitCode: 5, tail: null, handoffArgv: null }),
+          silentRelaunch: () => {
+            relaunchCalled = true;
+          },
         },
       }),
     );
@@ -385,13 +476,3 @@ describe('run() exit-time decision tree', () => {
     expect(relaunchCalled).toBe(false);
   });
 });
-
-function emptyPrompts() {
-  return {
-    agentPitfall: '',
-    projectSwitch: '',
-    spawn: '',
-    restart: '',
-    noopRouter: '',
-  };
-}
