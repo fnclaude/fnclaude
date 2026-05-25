@@ -13,7 +13,6 @@
 //     `worktreeMatched` invariant. The cwd / passthrough overrides flow
 //     through `withIntercepted`; nothing is mutated in place.
 
-import { execFileSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import {
   withIntercepted,
@@ -31,14 +30,30 @@ import { nameInPassthrough } from './passthrough.js';
 export type GitRunner = (dir: string, ...args: string[]) => string;
 
 /**
- * Production GitRunner. Spawns git synchronously (same shape as Go's
- * `exec.Command(...).Output()` posture in the reference).
+ * Production GitRunner. Spawns git synchronously via Bun.spawnSync — same
+ * mechanism the rest of the codebase uses for its child-process work
+ * (autoname, resolver, clipboard, spawn). Node's `execFileSync` here was
+ * the lone holdout; switching unifies the spawn layer.
+ *
+ * Behaviour preserved from the prior `execFileSync` version:
+ *   - On a successful run (exit 0), returns the UTF-8-decoded stdout.
+ *   - On non-zero exit, throws an Error with the git stderr verbatim —
+ *     callers (listWorktrees) catch any thrown value and treat it as
+ *     "no match possible", so the exact shape of the error doesn't matter
+ *     beyond being throwable.
+ *   - If `git` isn't on PATH, Bun.spawnSync throws ENOENT itself (same
+ *     posture as execFileSync did).
  */
 export const defaultGitRunner: GitRunner = (dir, ...args) => {
-  return execFileSync('git', ['-C', dir, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const proc = Bun.spawnSync(['git', '-C', dir, ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
+  if (proc.exitCode !== 0) {
+    const stderr = proc.stderr?.toString('utf8') ?? '';
+    throw new Error(`git -C ${dir} ${args.join(' ')} exited ${proc.exitCode}: ${stderr.trim()}`);
+  }
+  return proc.stdout?.toString('utf8') ?? '';
 };
 
 /**

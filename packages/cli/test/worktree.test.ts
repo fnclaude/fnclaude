@@ -14,6 +14,9 @@
 // mock at module level or spawn real git processes.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   brandResolved,
   type BaseArgs,
@@ -21,6 +24,7 @@ import {
 } from '../src/args.js';
 import {
   applyWorktreeIntercept,
+  defaultGitRunner,
   findWorktree,
   listWorktrees,
   type GitRunner,
@@ -314,5 +318,30 @@ describe('applyWorktreeIntercept', () => {
     const out = applyWorktreeIntercept(a, '/shell', runner);
     expect(out.cwd).toBe('/repo/.claude/worktrees/feat-x');
     expect(out.worktreeMatched).toBe(true);
+  });
+});
+
+// ── defaultGitRunner ───────────────────────────────────────────────────────
+//
+// Locks in the production GitRunner's behaviour on a real `git` invocation.
+// The other tests in this file inject fake runners; these exercise the
+// actual Bun.spawnSync call so a regression in the spawn layer is caught
+// here rather than only at runtime.
+
+describe('defaultGitRunner', () => {
+  test('returns stdout on a successful git invocation', () => {
+    // `git --version` is the cheapest possible success; output stable across
+    // versions ("git version <semver>\n").
+    const out = defaultGitRunner('.', '--version');
+    expect(out).toMatch(/^git version /);
+  });
+
+  test('throws on a non-zero exit (not-a-repo posture)', () => {
+    // `git worktree list` in /tmp is guaranteed not to be inside any repo
+    // and will exit non-zero with a "not a git repository" stderr.
+    const dir = mkdtempSync(join(tmpdir(), 'fnc-no-repo-'));
+    expect(() => defaultGitRunner(dir, 'worktree', 'list', '--porcelain')).toThrow(
+      /not a git repository/,
+    );
   });
 });
