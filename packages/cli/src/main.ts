@@ -27,6 +27,13 @@ import {
   type LlmClientFn,
 } from './autoname.js';
 import { parseArgs } from './argParser.js';
+import {
+  brandResolved,
+  withPassthroughUpdate,
+  withResolved,
+  type InterceptedArgs,
+  type ResolvedArgs,
+} from './args.js';
 import { buildArgv } from './argv.js';
 import { loadConfig } from './config.js';
 import { handoffSocketPath, type HandoffSpec } from './handoff.js';
@@ -179,18 +186,18 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     }
 
     // ── Parse fnclaude's own argv. ────────────────────────────────────────
-    let a;
+    let parsed;
     try {
-      a = parseArgs(argv, home);
+      parsed = parseArgs(argv, home);
     } catch (err) {
       stderr.write(`${(err as Error).message}\n`);
       return 1;
     }
 
     // ── Seed the noop dir iff fallback was used. ─────────────────────────
-    if (a.usedNoopFallback) {
+    if (parsed.usedNoopFallback) {
       try {
-        await seedNoopFn(a.cwd);
+        await seedNoopFn(parsed.cwd);
       } catch (err) {
         warnings.push(`fnclaude: noop seed failed: ${(err as Error).message}`);
       }
@@ -200,73 +207,89 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     warnings.push(...configWarnings);
 
     // ── Repo-reference resolver (path-or-repo two-lookup). ───────────────
+    //
+    // Produces a `ResolvedArgs` either way — the resolver path overwrites
+    // cwd (and possibly worktreeSet/worktreeArg), the tilde-only path
+    // expands cwd, and the absolute-path / noop-fallback path stamps the
+    // existing fields straight through.
+    let resolved: ResolvedArgs;
     if (
-      !a.usedNoopFallback &&
-      a.cwd !== '' &&
-      !isAbsolute(a.cwd) &&
-      !a.cwd.startsWith('~')
+      !parsed.usedNoopFallback &&
+      parsed.cwd !== '' &&
+      !isAbsolute(parsed.cwd) &&
+      !parsed.cwd.startsWith('~')
     ) {
       const { settings: rs, warnings: rsWarnings } = loadRepoSettingsFn(home, shellCWD);
       warnings.push(...rsWarnings);
       const { aliases, warnings: aliasWarnings } = loadHostAliasesFn(home);
       warnings.push(...aliasWarnings);
+      let result;
       try {
-        const result = await resolveFn({
-          input: a.cwd,
+        result = await resolveFn({
+          input: parsed.cwd,
           cwd: shellCWD,
           home,
           settings: rs,
           hostAliases: aliases,
         });
-        a.cwd = result.path;
-        // If the user's reference had a +workspace suffix AND they didn't
-        // pass -w explicitly, propagate the workspace to the intercept
-        // layer.
-        if (result.workspace !== undefined && result.workspace !== '' && !a.worktreeSet) {
-          a.worktreeSet = true;
-          a.worktreeArg = result.workspace;
-        }
       } catch (err) {
         stderr.write(`${(err as Error).message}\n`);
         return 1;
       }
-    } else if (a.cwd.startsWith('~')) {
+      // If the user's reference had a +workspace suffix AND they didn't
+      // pass -w explicitly, propagate the workspace to the intercept
+      // layer.
+      const promoteWorkspace =
+        result.workspace !== undefined && result.workspace !== '' && !parsed.worktreeSet;
+      resolved = withResolved(parsed, {
+        cwd: result.path,
+        ...(promoteWorkspace
+          ? { worktreeSet: true, worktreeArg: result.workspace! }
+          : {}),
+      });
+    } else if (parsed.cwd.startsWith('~')) {
       // Tilde-expand absolute-shaped inputs that didn't go through the
       // resolver (resolver expands tildes for its short-circuit path, but
       // it isn't called for tilde-prefixed inputs here).
-      a.cwd = expandTildePath(a.cwd);
+      resolved = withResolved(parsed, { cwd: expandTildePath(parsed.cwd) });
+    } else {
+      resolved = brandResolved(parsed);
     }
 
     // ── -w / --worktree intercept. ───────────────────────────────────────
-    applyWorktreeInterceptFn(a, shellCWD);
+    const intercepted = applyWorktreeInterceptFn(resolved, shellCWD);
 
     // ── Resolve the launch cwd relative to shell cwd. ────────────────────
-    const launchCWD = isAbsolute(a.cwd) ? a.cwd : join(shellCWD, a.cwd);
+    const launchCWD = isAbsolute(intercepted.cwd)
+      ? intercepted.cwd
+      : join(shellCWD, intercepted.cwd);
 
     // ── Auto-name if qualifying. ──────────────────────────────────────────
-    if (shouldAutoName(a.passthrough)) {
-      const prompt = extractPrompt(a.passthrough);
+    let named: InterceptedArgs = intercepted;
+    if (shouldAutoName(named.passthrough)) {
+      const prompt = extractPrompt(named.passthrough);
       const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
       let llmFn: LlmClientFn | undefined;
       if (apiKey !== '') llmFn = defaultLlmClient(apiKey);
       else llmFn = claudeCliFn(cfg.name.model);
       const name = await generateNameFn(prompt, cfg.name, apiKey, llmFn);
-      a.passthrough = ['--name', name, ...a.passthrough];
+      named = withPassthroughUpdate(named, {
+        passthrough: ['--name', name, ...named.passthrough],
+      });
     }
 
     // ── Sanitize any --name / -n value to a path-safe slug. ──────────────
-    {
-      const { args: sanitized, warnings: sanitizeWarnings } =
-        sanitizeNamesInPassthrough(a.passthrough);
-      a.passthrough = sanitized;
-      warnings.push(...sanitizeWarnings);
-    }
+    const sanitizeResult = sanitizeNamesInPassthrough(named.passthrough);
+    warnings.push(...sanitizeResult.warnings);
+    const sanitized = withPassthroughUpdate(named, {
+      passthrough: sanitizeResult.args,
+    });
 
     // ── Build the claude argv. ───────────────────────────────────────────
     const promptsResult = loadPromptsFn();
     warnings.push(...promptsResult.warnings);
 
-    const claudeArgv = buildArgv(a, shellCWD, cfg, promptsResult.prompts);
+    const claudeArgv = buildArgv(sanitized, shellCWD, cfg, promptsResult.prompts);
 
     // ── Verify claude is on PATH before starting the PTY. ────────────────
     if (lookupClaude('claude') === null) {

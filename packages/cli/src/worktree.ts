@@ -8,14 +8,18 @@
 //     pass a GitRunner in, with `defaultGitRunner` exported for production
 //     use. Both shapes give tests deterministic control without an env or
 //     module-state assumption.
-//   - applyWorktreeIntercept mutates Args in place to match the Go signature
-//     `*Args`. This keeps the call site in run() simple: `applyWorktreeIntercept(args, cwd)`
-//     reads naturally, and Args is a single-owner container at that point in
-//     the lifecycle — no aliasing concerns.
+//   - applyWorktreeIntercept is a pure stage transition: takes a
+//     `ResolvedArgs`, returns an `InterceptedArgs` that carries the new
+//     `worktreeMatched` invariant. The cwd / passthrough overrides flow
+//     through `withIntercepted`; nothing is mutated in place.
 
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
-import type { Args } from './args.js';
+import {
+  withIntercepted,
+  type InterceptedArgs,
+  type ResolvedArgs,
+} from './args.js';
 import { nameInPassthrough } from './passthrough.js';
 
 /**
@@ -128,30 +132,37 @@ function basename(p: string): string {
 }
 
 /**
- * applyWorktreeIntercept applies the -w / --worktree intercept logic to a.
- * It may modify a.cwd, a.passthrough, and a.worktreeMatched in place.
+ * applyWorktreeIntercept applies the -w / --worktree intercept logic.
  *
- *   1. worktreeSet=false → no-op.
- *   2. Bare -w (worktreeArg="") → push --worktree through unchanged.
- *   3. Existing worktree matched → swap a.cwd to the worktree, set
+ * Pure function: takes a `ResolvedArgs`, returns a new `InterceptedArgs`.
+ * No input is mutated. The four cases:
+ *
+ *   1. worktreeSet=false → carry through with worktreeMatched=false.
+ *   2. Bare -w (worktreeArg="") → append --worktree to passthrough,
+ *      worktreeMatched=false.
+ *   3. Existing worktree matched → swap cwd to the worktree path, set
  *      worktreeMatched=true, suppress --worktree.
- *   4. Otherwise → push --worktree <name> through, plus --name <name>
- *      (when --name isn't already set).
+ *   4. Otherwise → append --worktree <name>, plus --name <name> when
+ *      --name isn't already set; worktreeMatched=false.
  *
  * `shellCWD` is the process working directory at fnclaude startup, used
- * to resolve a relative a.cwd to an absolute path before querying git.
+ * to resolve a relative `cwd` to an absolute path before querying git.
  */
 export function applyWorktreeIntercept(
-  a: Args,
+  a: ResolvedArgs,
   shellCWD: string,
   runner: GitRunner = defaultGitRunner,
-): void {
-  if (!a.worktreeSet) return;
+): InterceptedArgs {
+  if (!a.worktreeSet) {
+    return withIntercepted(a, { worktreeMatched: false });
+  }
 
   // Bare -w with no name: push --worktree back through unchanged.
   if (a.worktreeArg === '') {
-    a.passthrough.push('--worktree');
-    return;
+    return withIntercepted(a, {
+      passthrough: [...a.passthrough, '--worktree'],
+      worktreeMatched: false,
+    });
   }
 
   // Resolve absolute cwd for git queries.
@@ -162,14 +173,13 @@ export function applyWorktreeIntercept(
   const hit = findWorktree(listWorktrees(dir, runner), a.worktreeArg);
   if (hit) {
     // Existing worktree matched: swap cwd, suppress -w.
-    a.cwd = hit.path;
-    a.worktreeMatched = true;
-    return;
+    return withIntercepted(a, { cwd: hit.path, worktreeMatched: true });
   }
 
   // No match (or not a repo): pass --worktree through and attach --name.
-  a.passthrough.push('--worktree', a.worktreeArg);
-  if (!nameInPassthrough(a.passthrough)) {
-    a.passthrough.push('--name', a.worktreeArg);
-  }
+  const withWt = [...a.passthrough, '--worktree', a.worktreeArg];
+  const passthrough = nameInPassthrough(withWt)
+    ? withWt
+    : [...withWt, '--name', a.worktreeArg];
+  return withIntercepted(a, { passthrough, worktreeMatched: false });
 }

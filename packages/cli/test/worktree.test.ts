@@ -14,7 +14,11 @@
 // mock at module level or spawn real git processes.
 
 import { describe, expect, test } from 'bun:test';
-import type { Args } from '../src/args.js';
+import {
+  brandResolved,
+  type BaseArgs,
+  type ResolvedArgs,
+} from '../src/args.js';
 import {
   applyWorktreeIntercept,
   findWorktree,
@@ -53,11 +57,12 @@ function worktreeListOutput(paths: string[], ...branches: string[]): string {
 }
 
 /**
- * baseArgs supplies the boilerplate Args fields each test would otherwise
- * have to spell out. Tests override the fields they care about.
+ * baseArgs supplies the boilerplate `ResolvedArgs` fields each test would
+ * otherwise have to spell out. The intercept stage takes a `ResolvedArgs`
+ * (post-resolve, pre-intercept), so that's the brand applied here.
  */
-function baseArgs(overrides: Partial<Args> = {}): Args {
-  return {
+function baseArgs(overrides: Partial<BaseArgs> = {}): ResolvedArgs {
+  return brandResolved({
     cwd: '/p/main',
     extraDirs: [],
     passthrough: [],
@@ -65,9 +70,8 @@ function baseArgs(overrides: Partial<Args> = {}): Args {
     worktreeSet: false,
     worktreeArg: '',
     usedNoopFallback: false,
-    worktreeMatched: false,
     ...overrides,
-  };
+  });
 }
 
 // ── findWorktree ───────────────────────────────────────────────────────────
@@ -174,17 +178,28 @@ describe('listWorktrees', () => {
 // ── applyWorktreeIntercept ─────────────────────────────────────────────────
 
 describe('applyWorktreeIntercept', () => {
-  test('worktreeSet=false short-circuits — no git, no mutation', () => {
+  test('worktreeSet=false short-circuits — no git, returned value carries through unchanged', () => {
     let called = false;
     const runner: GitRunner = (_dir, ..._args) => {
       called = true;
       return '';
     };
     const a = baseArgs({ cwd: '/p/main' });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.cwd).toBe('/p/main');
-    expect(a.passthrough).toEqual([]);
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.cwd).toBe('/p/main');
+    expect(out.passthrough).toEqual([]);
+    expect(out.worktreeMatched).toBe(false);
     expect(called).toBe(false);
+  });
+
+  test('input is not mutated — pipeline is immutable', () => {
+    const runner = fakeGitRunner(worktreeListOutput(['/repo/main', '/repo/feat']));
+    const a = baseArgs({ cwd: '/repo/main', worktreeSet: true, worktreeArg: 'feat' });
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    // The input's cwd remained the original value; the new value is on the
+    // returned InterceptedArgs.
+    expect(a.cwd).toBe('/repo/main');
+    expect(out.cwd).toBe('/repo/feat');
   });
 
   test('bare -w (worktreeArg="") pushes --worktree through unchanged', () => {
@@ -194,20 +209,20 @@ describe('applyWorktreeIntercept', () => {
       return '';
     };
     const a = baseArgs({ cwd: '/p/main', worktreeSet: true, worktreeArg: '' });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.worktreeMatched).toBe(false);
-    expect(a.passthrough).toContain('--worktree');
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.worktreeMatched).toBe(false);
+    expect(out.passthrough).toContain('--worktree');
     expect(called).toBe(false);
   });
 
   test('matched existing worktree → cwd swapped, --worktree NOT pushed', () => {
     const runner = fakeGitRunner(worktreeListOutput(['/repo/main', '/repo/feat']));
     const a = baseArgs({ cwd: '/repo/main', worktreeSet: true, worktreeArg: 'feat' });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.cwd).toBe('/repo/feat');
-    expect(a.worktreeMatched).toBe(true);
-    expect(a.passthrough).not.toContain('--worktree');
-    expect(a.passthrough).not.toContain('-w');
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.cwd).toBe('/repo/feat');
+    expect(out.worktreeMatched).toBe(true);
+    expect(out.passthrough).not.toContain('--worktree');
+    expect(out.passthrough).not.toContain('-w');
   });
 
   test('relative cwd resolves against shellCWD before querying git', () => {
@@ -232,11 +247,11 @@ describe('applyWorktreeIntercept', () => {
       worktreeSet: true,
       worktreeArg: 'newfeature',
     });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.worktreeMatched).toBe(false);
-    expect(a.passthrough).toContain('--worktree');
-    expect(a.passthrough).toContain('newfeature');
-    expect(a.passthrough).toContain('--name');
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.worktreeMatched).toBe(false);
+    expect(out.passthrough).toContain('--worktree');
+    expect(out.passthrough).toContain('newfeature');
+    expect(out.passthrough).toContain('--name');
   });
 
   test('unmatched but --name already in passthrough → no duplicate --name', () => {
@@ -247,8 +262,8 @@ describe('applyWorktreeIntercept', () => {
       worktreeArg: 'newfeature',
       passthrough: ['--name', 'myname'],
     });
-    applyWorktreeIntercept(a, '/shell', runner);
-    const nameCount = a.passthrough.filter((t) => t === '--name').length;
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    const nameCount = out.passthrough.filter((t) => t === '--name').length;
     expect(nameCount).toBe(1);
   });
 
@@ -258,10 +273,10 @@ describe('applyWorktreeIntercept', () => {
       worktreeSet: true,
       worktreeArg: 'newfeature',
     });
-    applyWorktreeIntercept(a, '/shell', fakeGitRunner(''));
-    expect(a.worktreeMatched).toBe(false);
-    expect(a.passthrough).toContain('--worktree');
-    expect(a.passthrough).toContain('--name');
+    const out = applyWorktreeIntercept(a, '/shell', fakeGitRunner(''));
+    expect(out.worktreeMatched).toBe(false);
+    expect(out.passthrough).toContain('--worktree');
+    expect(out.passthrough).toContain('--name');
   });
 
   test('matches by branch (custom convention <repo>+<wtname>)', () => {
@@ -278,9 +293,9 @@ describe('applyWorktreeIntercept', () => {
       worktreeSet: true,
       worktreeArg: 'feat-x',
     });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.cwd).toBe('/home/tom/src/proj@user+feat-x');
-    expect(a.worktreeMatched).toBe(true);
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.cwd).toBe('/home/tom/src/proj@user+feat-x');
+    expect(out.worktreeMatched).toBe(true);
   });
 
   test('matches by stripped branch (default .claude/worktrees convention)', () => {
@@ -296,8 +311,8 @@ describe('applyWorktreeIntercept', () => {
       worktreeSet: true,
       worktreeArg: 'feat-x',
     });
-    applyWorktreeIntercept(a, '/shell', runner);
-    expect(a.cwd).toBe('/repo/.claude/worktrees/feat-x');
-    expect(a.worktreeMatched).toBe(true);
+    const out = applyWorktreeIntercept(a, '/shell', runner);
+    expect(out.cwd).toBe('/repo/.claude/worktrees/feat-x');
+    expect(out.worktreeMatched).toBe(true);
   });
 });

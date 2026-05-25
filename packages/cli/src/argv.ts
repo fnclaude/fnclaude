@@ -18,7 +18,7 @@
 
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import type { Args } from './args.js';
+import type { InterceptedArgs } from './args.js';
 import {
   nameInPassthrough as _nameInPassthrough,
   settingSourcesInPassthrough,
@@ -116,17 +116,23 @@ export function withAppendedSystemPrompts(
 // ── buildArgv ──────────────────────────────────────────────────────────────
 
 /**
- * buildArgv constructs the argv slice to exec claude with, given the parsed
- * fnclaude args, the user's shell cwd (used to resolve relative extra-dir
- * paths), the loaded config, and the set of prompt fragments loaded from
- * the install dir.
+ * buildArgv constructs the argv slice to exec claude with, given the
+ * fnclaude args at their final pipeline stage (`InterceptedArgs` — the
+ * intercept must have run so `worktreeMatched` is meaningful), the user's
+ * shell cwd (used to resolve relative extra-dir paths), the loaded config,
+ * and the set of prompt fragments loaded from the install dir.
+ *
+ * Accepting `InterceptedArgs` makes the ordering invariant a compile-time
+ * check: passing a `ParsedArgs` or `ResolvedArgs` is a type error,
+ * preventing the auto-tmux gate from reading a stale `worktreeMatched`
+ * value the parse stage couldn't know.
  *
  * `shellCWD` is the process working directory at fnclaude startup —
  * normally `process.cwd()`. It's threaded through (rather than reached for
  * directly) so tests can pin it without `chdir`-ing.
  */
 export function buildArgv(
-  a: Args,
+  a: InterceptedArgs,
   shellCWD: string,
   cfg: Config,
   prompts: PromptSet,

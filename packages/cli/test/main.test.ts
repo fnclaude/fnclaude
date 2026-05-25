@@ -8,13 +8,27 @@
 
 import { describe, expect, test } from 'bun:test';
 import { PassThrough, Writable } from 'node:stream';
-import type { Args } from '../src/args.js';
+import {
+  brandIntercepted,
+  type InterceptedArgs,
+  type ResolvedArgs,
+} from '../src/args.js';
 import { defaultConfig, type Config } from '../src/config.js';
 import type { HandoffSpec } from '../src/handoff.js';
 import type { RunDeps, run as runType } from '../src/main.js';
 import { run } from '../src/main.js';
 import type { RunOptions, RunResult } from '../src/pty.js';
 import type { ResolveOpts, ResolveResult } from '../src/resolver.js';
+
+/**
+ * Default applyWorktreeIntercept stub: the new signature is pure (takes a
+ * `ResolvedArgs`, returns an `InterceptedArgs`). The simplest faithful stub
+ * stamps the input as intercepted with `worktreeMatched: false`, which is
+ * what the pre-refactor mutator effectively did when it short-circuited.
+ */
+function defaultInterceptStub(a: ResolvedArgs): InterceptedArgs {
+  return brandIntercepted({ ...a, worktreeMatched: false });
+}
 
 function makeBuf(): { stream: NodeJS.WriteStream; chunks: string[] } {
   const chunks: string[] = [];
@@ -54,7 +68,7 @@ function baseDeps(extras: Partial<RunDeps> = {}): RunDeps {
       warnings: [],
     }),
     resolve: async (opts: ResolveOpts): Promise<ResolveResult> => ({ path: opts.input }),
-    applyWorktreeIntercept: () => undefined,
+    applyWorktreeIntercept: defaultInterceptStub,
     generateName: async () => 'fake-name',
     runWithPTY: async (_opts: RunOptions): Promise<RunResult> => ({
       exitCode: 0,
@@ -166,8 +180,9 @@ describe('run() pipeline composition', () => {
           events.push('resolve');
           return { path: '/some/abs/path' };
         },
-        applyWorktreeIntercept: () => {
+        applyWorktreeIntercept: (a) => {
           events.push('worktree');
+          return defaultInterceptStub(a);
         },
         generateName: async () => {
           events.push('autoname');
@@ -257,13 +272,14 @@ describe('run() pipeline composition', () => {
   });
 
   test('Resolve workspace propagates to the worktree intercept', async () => {
-    let argsCaptured: Args | null = null;
+    let argsCaptured: ResolvedArgs | null = null;
     const code = await run(
       baseDeps({
         argv: ['my-repo+staging'],
         resolve: async () => ({ path: '/resolved/my-repo', workspace: 'staging' }),
         applyWorktreeIntercept: (a) => {
-          argsCaptured = { ...a };
+          argsCaptured = a;
+          return defaultInterceptStub(a);
         },
       }),
     );
@@ -274,13 +290,14 @@ describe('run() pipeline composition', () => {
   });
 
   test('Resolve workspace does NOT override an explicit -w flag', async () => {
-    let argsCaptured: Args | null = null;
+    let argsCaptured: ResolvedArgs | null = null;
     const code = await run(
       baseDeps({
         argv: ['my-repo+ws-from-suffix', '-w', 'explicit-wt'],
         resolve: async () => ({ path: '/resolved/my-repo', workspace: 'ws-from-suffix' }),
         applyWorktreeIntercept: (a) => {
-          argsCaptured = { ...a };
+          argsCaptured = a;
+          return defaultInterceptStub(a);
         },
       }),
     );

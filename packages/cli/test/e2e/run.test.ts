@@ -242,11 +242,10 @@ describe('run() e2e — full-stack argv construction', () => {
     // auto-attach --name (the latter when --name isn't already set).
     const { deps, out } = makeCapturingDeps({
       argv: ['/some/abs/path', '-w', 'my-feature'],
-      applyWorktreeIntercept: (a, shellCWD) => {
+      applyWorktreeIntercept: (a, shellCWD) =>
         // GitRunner: (dir, ...args) => stdout-string. Empty string = no
         // worktrees, no match → intercept pushes --worktree + --name.
-        realApplyWorktreeIntercept(a, shellCWD, () => '');
-      },
+        realApplyWorktreeIntercept(a, shellCWD, () => ''),
     });
     await run(deps);
 
@@ -263,15 +262,14 @@ describe('run() e2e — full-stack argv construction', () => {
     const matchedPath = '/some/abs/path/.worktrees/my-feature';
     const { deps, out } = makeCapturingDeps({
       argv: ['/some/abs/path', '-w', 'my-feature'],
-      applyWorktreeIntercept: (a, shellCWD) => {
+      applyWorktreeIntercept: (a, shellCWD) =>
         realApplyWorktreeIntercept(
           a,
           shellCWD,
           // `git worktree list --porcelain` shape — one block per worktree.
           () =>
             `worktree ${matchedPath}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/my-feature\n\n`,
-        );
-      },
+        ),
     });
     await run(deps);
 
