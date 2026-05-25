@@ -8,14 +8,18 @@
 //     pass a GitRunner in, with `defaultGitRunner` exported for production
 //     use. Both shapes give tests deterministic control without an env or
 //     module-state assumption.
-//   - applyWorktreeIntercept mutates Args in place to match the Go signature
-//     `*Args`. This keeps the call site in run() simple: `applyWorktreeIntercept(args, cwd)`
-//     reads naturally, and Args is a single-owner container at that point in
-//     the lifecycle — no aliasing concerns.
+//   - applyWorktreeIntercept is a pure stage transition: takes a
+//     `ResolvedArgs`, returns an `InterceptedArgs` that carries the new
+//     `worktreeMatched` invariant. The cwd / passthrough overrides flow
+//     through `withIntercepted`; nothing is mutated in place.
 
-import { execFileSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
-import type { Args } from './args.js';
+import {
+  withIntercepted,
+  type InterceptedArgs,
+  type ResolvedArgs,
+} from './args.js';
+import { nameInPassthrough } from './passthrough.js';
 
 /**
  * GitRunner is a thin wrapper around `git -C <dir> <args...>`. Returns the
@@ -26,14 +30,30 @@ import type { Args } from './args.js';
 export type GitRunner = (dir: string, ...args: string[]) => string;
 
 /**
- * Production GitRunner. Spawns git synchronously (same shape as Go's
- * `exec.Command(...).Output()` posture in the reference).
+ * Production GitRunner. Spawns git synchronously via Bun.spawnSync — same
+ * mechanism the rest of the codebase uses for its child-process work
+ * (autoname, resolver, clipboard, spawn). Node's `execFileSync` here was
+ * the lone holdout; switching unifies the spawn layer.
+ *
+ * Behaviour preserved from the prior `execFileSync` version:
+ *   - On a successful run (exit 0), returns the UTF-8-decoded stdout.
+ *   - On non-zero exit, throws an Error with the git stderr verbatim —
+ *     callers (listWorktrees) catch any thrown value and treat it as
+ *     "no match possible", so the exact shape of the error doesn't matter
+ *     beyond being throwable.
+ *   - If `git` isn't on PATH, Bun.spawnSync throws ENOENT itself (same
+ *     posture as execFileSync did).
  */
 export const defaultGitRunner: GitRunner = (dir, ...args) => {
-  return execFileSync('git', ['-C', dir, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const proc = Bun.spawnSync(['git', '-C', dir, ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
+  if (proc.exitCode !== 0) {
+    const stderr = proc.stderr?.toString('utf8') ?? '';
+    throw new Error(`git -C ${dir} ${args.join(' ')} exited ${proc.exitCode}: ${stderr.trim()}`);
+  }
+  return proc.stdout?.toString('utf8') ?? '';
 };
 
 /**
@@ -127,30 +147,37 @@ function basename(p: string): string {
 }
 
 /**
- * applyWorktreeIntercept applies the -w / --worktree intercept logic to a.
- * It may modify a.cwd, a.passthrough, and a.worktreeMatched in place.
+ * applyWorktreeIntercept applies the -w / --worktree intercept logic.
  *
- *   1. worktreeSet=false → no-op.
- *   2. Bare -w (worktreeArg="") → push --worktree through unchanged.
- *   3. Existing worktree matched → swap a.cwd to the worktree, set
+ * Pure function: takes a `ResolvedArgs`, returns a new `InterceptedArgs`.
+ * No input is mutated. The four cases:
+ *
+ *   1. worktreeSet=false → carry through with worktreeMatched=false.
+ *   2. Bare -w (worktreeArg="") → append --worktree to passthrough,
+ *      worktreeMatched=false.
+ *   3. Existing worktree matched → swap cwd to the worktree path, set
  *      worktreeMatched=true, suppress --worktree.
- *   4. Otherwise → push --worktree <name> through, plus --name <name>
- *      (when --name isn't already set).
+ *   4. Otherwise → append --worktree <name>, plus --name <name> when
+ *      --name isn't already set; worktreeMatched=false.
  *
  * `shellCWD` is the process working directory at fnclaude startup, used
- * to resolve a relative a.cwd to an absolute path before querying git.
+ * to resolve a relative `cwd` to an absolute path before querying git.
  */
 export function applyWorktreeIntercept(
-  a: Args,
+  a: ResolvedArgs,
   shellCWD: string,
   runner: GitRunner = defaultGitRunner,
-): void {
-  if (!a.worktreeSet) return;
+): InterceptedArgs {
+  if (!a.worktreeSet) {
+    return withIntercepted(a, { worktreeMatched: false });
+  }
 
   // Bare -w with no name: push --worktree back through unchanged.
   if (a.worktreeArg === '') {
-    a.passthrough.push('--worktree');
-    return;
+    return withIntercepted(a, {
+      passthrough: [...a.passthrough, '--worktree'],
+      worktreeMatched: false,
+    });
   }
 
   // Resolve absolute cwd for git queries.
@@ -161,26 +188,13 @@ export function applyWorktreeIntercept(
   const hit = findWorktree(listWorktrees(dir, runner), a.worktreeArg);
   if (hit) {
     // Existing worktree matched: swap cwd, suppress -w.
-    a.cwd = hit.path;
-    a.worktreeMatched = true;
-    return;
+    return withIntercepted(a, { cwd: hit.path, worktreeMatched: true });
   }
 
   // No match (or not a repo): pass --worktree through and attach --name.
-  a.passthrough.push('--worktree', a.worktreeArg);
-  if (!nameInPassthrough(a.passthrough)) {
-    a.passthrough.push('--name', a.worktreeArg);
-  }
-}
-
-/**
- * nameInPassthrough — local copy of the helper in argParser.ts. Replicated
- * to avoid an import cycle (argParser → buildArgv → worktree → argParser).
- * Both copies must agree; the shared contract is "--name or -n, bare or
- * =value, anywhere in the slice."
- */
-function nameInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--name' || t === '-n' || t.startsWith('--name=') || t.startsWith('-n='),
-  );
+  const withWt = [...a.passthrough, '--worktree', a.worktreeArg];
+  const passthrough = nameInPassthrough(withWt)
+    ? withWt
+    : [...withWt, '--name', a.worktreeArg];
+  return withIntercepted(a, { passthrough, worktreeMatched: false });
 }

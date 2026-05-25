@@ -14,7 +14,12 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Args } from '../src/args.js';
+import {
+  brandIntercepted,
+  type BaseArgs,
+  type InterceptedArgs,
+  type InterceptedFields,
+} from '../src/args.js';
 import {
   buildArgv,
   buildFnclaudeMCPConfigJSON,
@@ -50,8 +55,10 @@ const emptyPromptSet: PromptSet = {
   noopRouter: '',
 };
 
-function baseArgs(overrides: Partial<Args> = {}): Args {
-  return {
+function baseArgs(
+  overrides: Partial<BaseArgs & InterceptedFields> = {},
+): InterceptedArgs {
+  return brandIntercepted({
     cwd: '/p/main',
     extraDirs: [],
     passthrough: [],
@@ -61,7 +68,7 @@ function baseArgs(overrides: Partial<Args> = {}): Args {
     usedNoopFallback: false,
     worktreeMatched: false,
     ...overrides,
-  };
+  });
 }
 
 function tmp(prefix: string): string {
