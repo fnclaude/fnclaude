@@ -2,11 +2,11 @@
 
 Configurable TUI front-end for Claude Code. Bidirectional stream-json driver, repaint-on-toggle visibility filters (Alt+1-8), pretty markdown via [glow](https://github.com/charmbracelet/glow).
 
+> Previously published as `fnclaude-renderer` on npm. Renamed to `@fnclaude/renderer` when imported into the [fnclaude monorepo](https://github.com/fnrhombus/fnclaude).
+
 ## Status
 
 Pre-v1. Active development. v0 ships the renderer in standalone wrapper mode — `fnclaude-renderer ...` spawns claude internally, renders the stream.
-
-> Previously published as `fnclaude-renderer` on npm. Renamed to `@fnclaude/renderer` when imported into the [fnclaude monorepo](https://github.com/fnclaude/fnclaude).
 
 ## Goals
 
@@ -17,33 +17,19 @@ Pre-v1. Active development. v0 ships the renderer in standalone wrapper mode —
 
 ## Install
 
-### npm
-
 ```sh
+bun add -g @fnclaude/renderer
+# or
 npm install -g @fnclaude/renderer
-# then
-fnclaude-renderer ...
 ```
-
-### Arch Linux (AUR)
-
-```sh
-yay -S fnclaude-renderer-bin
-```
-
-### Other platforms
-
-Download the pre-built binary for your platform from the [latest release](https://github.com/fnclaude/fnclaude/releases/latest):
-
-- Linux x86_64 / arm64
-- macOS x86_64 (Intel) / arm64 (Apple Silicon)
-- Windows x86_64 / arm64
-
-Extract and place `fnclaude-renderer` on your `$PATH`.
 
 ### Optional: glow
 
 [glow](https://github.com/charmbracelet/glow) renders assistant markdown with syntax highlighting. If it's on your `$PATH` it gets used automatically; otherwise raw markdown is shown.
+
+## Platform support
+
+Supported on **Linux** and **macOS**. Windows support is untested.
 
 ## Keybinds
 

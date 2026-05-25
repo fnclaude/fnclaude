@@ -34,11 +34,19 @@ to npm `@latest` automatically, with no manual promotion step.
 | `ci.yml` | `verify` (lint/test/build), `release-please` (opens/updates release PRs on push to main), publish (runs on release-PR merge) |
 | `auto-merge.yml` | Enables auto-merge on every non-draft PR |
 
+## Platform support
+
+Supported on **Linux** and **macOS**. The codebase has a Windows fallback path (`spawn + process.exit` instead of `process.execve`) but it has never been exercised — treat it as untested. If you run on Windows, expect breakage.
+
 ## Install
 
 ```sh
 bun add fnclaude
 ```
+
+## Support
+
+File bugs and feature requests on [GitHub Issues](https://github.com/fnrhombus/fnclaude/issues). No other support channels exist.
 
 ## See also
 
