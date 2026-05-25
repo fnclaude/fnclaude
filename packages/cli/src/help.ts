@@ -135,5 +135,5 @@ Examples:
   fnclaude ~/src/proj -- "fix the bug"    # auto-name from prompt
   fnclaude -A docs/ ~/src/proj -V         # ergonomic flag form
 
-For more, see https://github.com/fnrhombus/fnclaude
+For more, see https://github.com/fnclaude/fnclaude
 `;
