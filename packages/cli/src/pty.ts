@@ -12,7 +12,7 @@
 
 import { mkdir, rmdir, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import type { Config } from './config.js';
 import type { HandoffSpec } from './handoff.js';
 import { isFlag, isMagicWord, preserveArgs, splitLeadingMagic } from './args/preserve.js';
@@ -119,8 +119,18 @@ export interface CrossCwdMatch {
 
 /**
  * Scan `tail` for the cross-cwd redirect message. Returns null when no
- * match is found. When multiple matches appear (unlikely but defensive),
- * the LAST match wins.
+ * match is found OR when the captured `dest` fails safety validation.
+ * When multiple matches appear (unlikely but defensive), the LAST match
+ * wins.
+ *
+ * Security note: the `dest` capture flows into `silentRelaunch` and
+ * becomes the cwd for the relaunched process. The PTY stream is not a
+ * trusted channel — a hostile MCP tool (or any subprocess that prints to
+ * claude's terminal) can emit a fake "To resume, run: cd /tmp/evil &&
+ * claude --resume <uuid>" line and steer the parent into relaunching in
+ * an attacker-controlled directory. We refuse to act on a dest unless
+ * it's an absolute path that survives canonicalisation unchanged and
+ * contains no null bytes / `..` segments.
  */
 export function detectCrossCwd(tail: Buffer): CrossCwdMatch | null {
   // Decode as Latin-1 so every byte maps to a code unit; the regex matches
@@ -137,7 +147,32 @@ export function detectCrossCwd(tail: Buffer): CrossCwdMatch | null {
     last = m;
   }
   if (last === null) return null;
-  return { dest: last[1]!, uuid: last[2]! };
+  const dest = last[1]!;
+  if (!isSafeDest(dest)) return null;
+  return { dest, uuid: last[2]! };
+}
+
+/**
+ * Reject `dest` values that shouldn't be honored as relaunch cwds:
+ *  - contains a null byte
+ *  - is not an absolute path (a relative dest would resolve against
+ *    whatever the current cwd happens to be — non-obvious to a user
+ *    reading the relaunch and easy to abuse)
+ *  - contains a `..` segment delimited by `/` (path traversal)
+ *  - doesn't round-trip through `path.resolve` (catches `/foo/./bar`,
+ *    trailing slashes, and any other non-canonical form a peer might
+ *    cook up to slip past parent-segment detection)
+ *
+ * On Windows we'd also want backslash handling; the cross-cwd-resume
+ * flow is POSIX-only by design (the Windows PTY stub disables it) so
+ * this validator targets POSIX paths.
+ */
+function isSafeDest(dest: string): boolean {
+  if (dest.includes('\x00')) return false;
+  if (!isAbsolute(dest)) return false;
+  if (dest.split('/').includes('..')) return false;
+  if (resolvePath(dest) !== dest) return false;
+  return true;
 }
 
 // ── reconstructArgv ────────────────────────────────────────────────────────
