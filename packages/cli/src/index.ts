@@ -100,7 +100,7 @@ export { NOOP_HANDOFF_TEMPLATE, defaultNoopDir, seedNoop } from './noop.js';
 export { silentRelaunch, silentRelaunchHandoff, spawnAndExit } from './silentRelaunch.js';
 
 // Top-level run loop + entry point.
-export { main, run, type RunDeps } from './main.js';
+export { main, run, type RunConfig, type RunDeps, type RunIO } from './main.js';
 
 // PTY runner + shared helpers (ring buffer, cross-cwd detection,
 // reconstructArgv, ensureCWD).
