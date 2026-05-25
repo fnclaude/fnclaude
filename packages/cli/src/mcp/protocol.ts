@@ -76,41 +76,14 @@ export const ActionError: Action = 'error';
 // ── Request ────────────────────────────────────────────────────────────────
 
 /**
- * Request sent from the MCP subprocess to the parent listener.
+ * Shared override fields applicable to OpRestart / OpSwitch / OpSpawn.
  *
- * The wire shape uses snake_case keys (matching Go's `json:` tags). All
- * non-required fields are optional on the wire; the listener tolerates
- * missing keys.
- *
- * Override fields (Model/Effort/PermissionMode/AllowedTools/Agent and the
- * four bools) are applicable to OpRestart/OpSwitch/OpSpawn. Empty/undef
- * string values mean "preserve what was on the original command line"
- * (for restart/transfer) or "don't pass this flag" (for spawn). For
- * boolean fields: undefined = preserve existing; true = ensure present;
- * false = ensure absent.
+ * Empty/undef string values mean "preserve what was on the original
+ * command line" (for restart/transfer) or "don't pass this flag" (for
+ * spawn). For boolean fields: undefined = preserve existing; true =
+ * ensure present; false = ensure absent.
  */
-export interface Request {
-  op: Op;
-
-  /** OpRestart: required UUID — the current Claude session. */
-  session_id?: string;
-
-  /** OpSwitch / OpSpawn: destination project ref. */
-  destination?: string;
-  /** OpSwitch / OpSpawn: 3-6 word kebab-case session topic. */
-  name?: string;
-  /** OpSwitch / OpSpawn: continuity summary content. */
-  summary?: string;
-  /**
-   * Deprecated; no longer read by the server. Left on the type so older
-   * clients that still serialize confirmed=true don't break.
-   */
-  confirmed?: boolean;
-
-  /** OpCopy: text to write to the clipboard. */
-  text?: string;
-
-  // Overrides.
+export interface RequestOverrides {
   model?: string;
   effort?: string;
   permission_mode?: string;
@@ -120,6 +93,73 @@ export interface Request {
   chrome?: boolean | null;
   ide?: boolean | null;
   verbose?: boolean | null;
+}
+
+/**
+ * Discriminated union of Request variants — exactly one shape per Op.
+ * Adding a new Op requires extending this union *and* every `switch`
+ * over `req.op` (the dispatcher uses an exhaustive-never check so the
+ * compiler enforces this).
+ *
+ * The wire shape uses snake_case keys (matching Go's `json:` tags). All
+ * non-required fields are optional on the wire; the listener tolerates
+ * missing keys.
+ */
+export type Request =
+  | RestartRequest
+  | SwitchRequest
+  | SpawnRequest
+  | CopyRequest;
+
+/** OpRestart: restart the current session in place. */
+export interface RestartRequest extends RequestOverrides {
+  op: 'restart';
+  /** Required UUID — the current Claude session. */
+  session_id?: string;
+}
+
+/** OpSwitch: kill claude and relaunch at destination. */
+export interface SwitchRequest extends RequestOverrides {
+  op: 'switch';
+  /** Destination project ref. */
+  destination?: string;
+  /** 3-6 word kebab-case session topic. */
+  name?: string;
+  /** Continuity summary content. */
+  summary?: string;
+  /**
+   * Optional UUID for live-permission-mode auto-capture. Used to read the
+   * session JSONL when no explicit permission_mode override was set.
+   */
+  session_id?: string;
+  /**
+   * Deprecated; no longer read by the server. Left on the type so older
+   * clients that still serialize confirmed=true don't break.
+   */
+  confirmed?: boolean;
+}
+
+/** OpSpawn: launch a sibling fnclaude in a new window. */
+export interface SpawnRequest extends RequestOverrides {
+  op: 'spawn';
+  /** Destination project ref. */
+  destination?: string;
+  /** 3-6 word kebab-case session topic. */
+  name?: string;
+  /** Continuity summary content. */
+  summary?: string;
+  /**
+   * Deprecated; no longer read by the server. Left on the type so older
+   * clients that still serialize confirmed=true don't break.
+   */
+  confirmed?: boolean;
+}
+
+/** OpCopy: write text to the clipboard. Carries no override fields. */
+export interface CopyRequest {
+  op: 'copy_to_clipboard';
+  /** Text to write to the clipboard. */
+  text?: string;
 }
 
 // ── Response ───────────────────────────────────────────────────────────────

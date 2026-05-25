@@ -14,10 +14,13 @@ import { connect, type Socket } from 'node:net';
 import type { Readable, Writable } from 'node:stream';
 import {
   encodeRequest,
-  type Op,
   readResponse,
+  type CopyRequest,
   type Request,
   type Response,
+  type RestartRequest,
+  type SpawnRequest,
+  type SwitchRequest,
 } from './protocol.js';
 import pkg from '../../package.json' with { type: 'json' };
 
@@ -420,8 +423,8 @@ async function callRestart(
     );
     return;
   }
-  const req: Request = {
-    op: 'restart' satisfies Op,
+  const req: RestartRequest = {
+    op: 'restart',
     session_id: sid,
     model: readStringArg(args, 'model'),
     effort: readStringArg(args, 'effort'),
@@ -446,8 +449,8 @@ async function callSwitch(
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
-  const req: Request = {
-    op: 'switch' satisfies Op,
+  const req: SwitchRequest = {
+    op: 'switch',
     destination: readStringArg(args, 'destination'),
     name: readStringArg(args, 'name'),
     summary: readStringArg(args, 'summary'),
@@ -476,8 +479,8 @@ async function callSpawn(
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
-  const req: Request = {
-    op: 'spawn' satisfies Op,
+  const req: SpawnRequest = {
+    op: 'spawn',
     destination: readStringArg(args, 'destination'),
     name: readStringArg(args, 'name'),
     summary: readStringArg(args, 'summary'),
@@ -505,8 +508,8 @@ async function callCopy(
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
-  const req: Request = {
-    op: 'copy_to_clipboard' satisfies Op,
+  const req: CopyRequest = {
+    op: 'copy_to_clipboard',
     text: readStringArg(args, 'text'),
   };
   await dialAndRelay(opts, dial, id, req);

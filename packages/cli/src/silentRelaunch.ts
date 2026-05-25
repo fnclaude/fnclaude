@@ -18,7 +18,7 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import { clearScreen, reconstructArgv } from './pty.js';
-import { selfPath } from './spawn.js';
+import { resolveSelfPath } from './paths.js';
 
 // `process.execve` is a Bun-native POSIX-only API (1.3.14+). @types/bun
 // hasn't typed it yet — declare the shape inline so TS strict mode is happy.
@@ -53,7 +53,7 @@ export function silentRelaunch(
 ): void {
   let self: string;
   try {
-    self = selfPath();
+    self = resolveSelfPath();
   } catch (err) {
     process.stderr.write(
       `fnclaude: cannot determine executable, cannot relaunch: ${(err as Error).message}\n`,
@@ -84,7 +84,7 @@ export function silentRelaunchHandoff(
 ): void {
   let self: string;
   try {
-    self = selfPath();
+    self = resolveSelfPath();
   } catch (err) {
     process.stderr.write(
       `fnclaude: cannot determine executable, cannot relaunch: ${(err as Error).message}\n`,

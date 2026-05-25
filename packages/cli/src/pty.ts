@@ -57,18 +57,24 @@ export class RingBuffer {
   write(p: Buffer | Uint8Array | string): void {
     const data = typeof p === 'string' ? Buffer.from(p) : Buffer.from(p);
     if (data.length === 0) return;
-    // Hot path for small writes: per-byte loop matches Go's reference impl.
-    // For large writes (> cap) skip ahead so we don't churn over discarded
-    // bytes that will immediately be overwritten.
-    let start = 0;
+    // For oversize writes (> cap) skip ahead — the prefix we'd write would
+    // be immediately overwritten by the suffix. Land on a clean state where
+    // pos = 0, full = true, and we copy the trailing `cap` bytes in one go.
+    let src = 0;
     if (data.length > this.cap) {
-      start = data.length - this.cap;
+      src = data.length - this.cap;
       this.full = true;
       this.pos = 0;
     }
-    for (let i = start; i < data.length; i++) {
-      this.buf[this.pos] = data[i] as number;
-      this.pos = (this.pos + 1) % this.cap;
+    // Copy in up to two chunks: from src to end-of-buf, then wrapped around
+    // from start-of-buf for the remainder. `Buffer.copy` is a memcpy under
+    // the hood — substantially cheaper than the per-byte assignment loop
+    // this replaces, for the same final buffer state.
+    while (src < data.length) {
+      const writable = Math.min(data.length - src, this.cap - this.pos);
+      data.copy(this.buf, this.pos, src, src + writable);
+      src += writable;
+      this.pos = (this.pos + writable) % this.cap;
       if (this.pos === 0) this.full = true;
     }
   }
@@ -117,16 +123,17 @@ export interface CrossCwdMatch {
  * the LAST match wins.
  */
 export function detectCrossCwd(tail: Buffer): CrossCwdMatch | null {
-  // Reset regex internal state — crossCwdRe is `g`-flagged.
-  crossCwdRe.lastIndex = 0;
   // Decode as Latin-1 so every byte maps to a code unit; the regex matches
   // ASCII anchors so the multi-byte representation of any non-ASCII bytes
   // never participates in a match. This is the JS equivalent of Go's
   // []byte-scanning behavior.
   const s = tail.toString('latin1');
-  let last: RegExpExecArray | null = null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex loop
-  for (let m: RegExpExecArray | null; (m = crossCwdRe.exec(s)) !== null; ) {
+  // matchAll iterates from a fresh internal cursor each call — no
+  // module-level `lastIndex` to reset. The exported `crossCwdRe` stays
+  // `g`-flagged (matchAll requires it) but is only ever consumed as an
+  // anchor for tests / the source-of-truth comparison.
+  let last: RegExpMatchArray | null = null;
+  for (const m of s.matchAll(crossCwdRe)) {
     last = m;
   }
   if (last === null) return null;

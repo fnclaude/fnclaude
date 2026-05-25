@@ -20,9 +20,12 @@ import { handoffContentPath, type HandoffSpec } from '../handoff.js';
 import { readLivePermissionMode } from '../sessionState.js';
 import {
   encodeResponse,
-  type Op,
+  type CopyRequest,
   type Request,
   type Response,
+  type RestartRequest,
+  type SpawnRequest,
+  type SwitchRequest,
   readRequest,
 } from './protocol.js';
 import {
@@ -246,7 +249,7 @@ export class SocketListener {
   }
 
   private async dispatch(req: Request): Promise<Response> {
-    switch (req.op as Op) {
+    switch (req.op) {
       case 'restart':
         return this.handleRestart(req);
       case 'switch':
@@ -255,17 +258,24 @@ export class SocketListener {
         return this.handleSpawn(req);
       case 'copy_to_clipboard':
         return this.handleCopy(req);
-      default:
+      default: {
+        // Exhaustiveness: adding a new Op variant to Request without
+        // handling it here becomes a compile error on this line. The
+        // runtime branch defends against malformed wire input that
+        // squeezes through with an unknown op.
+        const _exhaustive: never = req;
+        void _exhaustive;
         return {
           action: 'error',
-          error: `unsupported op ${JSON.stringify(req.op)}`,
+          error: `unsupported op ${JSON.stringify((req as { op: unknown }).op)}`,
         };
+      }
     }
   }
 
   // ── handleRestart ───────────────────────────────────────────────────────
 
-  private async handleRestart(req: Request): Promise<Response> {
+  private async handleRestart(req: RestartRequest): Promise<Response> {
     const sid = req.session_id ?? '';
     if (sid === '') {
       return {
@@ -305,7 +315,7 @@ export class SocketListener {
 
   // ── handleSwitch ────────────────────────────────────────────────────────
 
-  private async handleSwitch(req: Request): Promise<Response> {
+  private async handleSwitch(req: SwitchRequest): Promise<Response> {
     if (this.cfg.auto.handoff === 'never') {
       return this.handleSwitchNeverMode(req);
     }
@@ -347,7 +357,7 @@ export class SocketListener {
 
   // ── handleSpawn ─────────────────────────────────────────────────────────
 
-  private async handleSpawn(req: Request): Promise<Response> {
+  private async handleSpawn(req: SpawnRequest): Promise<Response> {
     if (this.cfg.auto.handoff === 'never') {
       return this.handleSpawnNeverMode(req);
     }
@@ -395,7 +405,7 @@ export class SocketListener {
 
   // ── never-mode handlers ─────────────────────────────────────────────────
 
-  private async handleSwitchNeverMode(req: Request): Promise<Response> {
+  private async handleSwitchNeverMode(req: SwitchRequest): Promise<Response> {
     const summaryPath = handoffContentPath();
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
@@ -424,7 +434,7 @@ export class SocketListener {
     };
   }
 
-  private async handleSpawnNeverMode(req: Request): Promise<Response> {
+  private async handleSpawnNeverMode(req: SpawnRequest): Promise<Response> {
     const summaryPath = handoffContentPath();
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
@@ -449,7 +459,7 @@ export class SocketListener {
 
   // ── handleCopy ──────────────────────────────────────────────────────────
 
-  private async handleCopy(req: Request): Promise<Response> {
+  private async handleCopy(req: CopyRequest): Promise<Response> {
     const { ok } = await this.deps.copyToClipboard(req.text ?? '');
     return { action: 'done', clipboard_ok: ok };
   }

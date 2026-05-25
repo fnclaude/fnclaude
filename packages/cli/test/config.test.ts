@@ -118,27 +118,41 @@ describe('configFilePath', () => {
 // ── normalizeTmuxMode / normalizeHandoffMode ───────────────────────────────
 
 describe('normalizeTmuxMode', () => {
-  test('cases', () => {
-    expect(normalizeTmuxMode('never')).toBe('never');
-    expect(normalizeTmuxMode('worktree')).toBe('worktree');
-    expect(normalizeTmuxMode('')).toBe('never');
-    expect(normalizeTmuxMode('always')).toBe('never');
-    expect(normalizeTmuxMode('garbage')).toBe('never');
+  test('valid values pass through without warning', () => {
+    expect(normalizeTmuxMode('never')).toEqual({ value: 'never', warning: null });
+    expect(normalizeTmuxMode('worktree')).toEqual({ value: 'worktree', warning: null });
+  });
+  test('empty string defaults to "never" without warning', () => {
+    expect(normalizeTmuxMode('')).toEqual({ value: 'never', warning: null });
+  });
+  test('invalid value falls back to "never" with a warning', () => {
+    const r = normalizeTmuxMode('always');
+    expect(r.value).toBe('never');
+    expect(r.warning).toContain('auto.tmux="always"');
+    const r2 = normalizeTmuxMode('garbage');
+    expect(r2.value).toBe('never');
+    expect(r2.warning).toContain('garbage');
   });
 });
 
 describe('normalizeHandoffMode', () => {
-  test('cases', () => {
-    expect(normalizeHandoffMode('never')).toBe('never');
-    expect(normalizeHandoffMode('ask')).toBe('ask');
-    expect(normalizeHandoffMode('0')).toBe('0');
-    expect(normalizeHandoffMode('5')).toBe('5');
-    expect(normalizeHandoffMode('30')).toBe('30');
-    expect(normalizeHandoffMode('')).toBe('ask');
-    expect(normalizeHandoffMode('-1')).toBe('ask');
-    expect(normalizeHandoffMode('foo')).toBe('ask');
-    expect(normalizeHandoffMode('5.5')).toBe('ask');
-    expect(normalizeHandoffMode('3s')).toBe('ask');
+  test('valid values pass through without warning', () => {
+    expect(normalizeHandoffMode('never')).toEqual({ value: 'never', warning: null });
+    expect(normalizeHandoffMode('ask')).toEqual({ value: 'ask', warning: null });
+    expect(normalizeHandoffMode('0')).toEqual({ value: '0', warning: null });
+    expect(normalizeHandoffMode('5')).toEqual({ value: '5', warning: null });
+    expect(normalizeHandoffMode('30')).toEqual({ value: '30', warning: null });
+  });
+  test('empty string defaults to "ask" without warning', () => {
+    expect(normalizeHandoffMode('')).toEqual({ value: 'ask', warning: null });
+  });
+  test('invalid values fall back to "ask" with a warning', () => {
+    for (const v of ['-1', 'foo', '5.5', '3s']) {
+      const r = normalizeHandoffMode(v);
+      expect(r.value).toBe('ask');
+      expect(r.warning).not.toBeNull();
+      expect(r.warning).toContain(v);
+    }
   });
 });
 
@@ -149,7 +163,7 @@ describe('loadConfig', () => {
     const dir = makeTmp();
     process.env.XDG_CONFIG_HOME = dir;
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     const def = defaultConfig();
     expect(cfg.name.model).toBe(def.name.model);
     expect(cfg.auto.tmux).toBe(def.auto.tmux);
@@ -166,7 +180,7 @@ quiet_missing_api_key = true
 tmux = "worktree"
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.name.model).toBe('claude-opus-4-5');
     expect(cfg.name.timeout).toBe(10_000);
     expect(cfg.name.quietMissingAPIKey).toBe(true);
@@ -181,14 +195,14 @@ dangerously_skip_permissions = true
 ide = "always"
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.auto.tmux).toBe('worktree');
   });
 
   test('malformed file → defaults', () => {
     writeConfigFile(`this is not valid toml ][[[`);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     const def = defaultConfig();
     expect(cfg.name.model).toBe(def.name.model);
   });
@@ -204,7 +218,7 @@ tmux = "worktree"
     clearConfigEnv();
     process.env.FNCLAUDE_NAME_MODEL = 'claude-sonnet-4-5';
     process.env.FNCLAUDE_TMUX = 'never';
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.name.model).toBe('claude-sonnet-4-5');
     expect(cfg.auto.tmux).toBe('never');
   });
@@ -214,7 +228,7 @@ tmux = "worktree"
     process.env.XDG_CONFIG_HOME = dir;
     clearConfigEnv();
     process.env.FNCLAUDE_NAME_TIMEOUT = '15s';
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.name.timeout).toBe(15_000);
   });
 
@@ -224,7 +238,7 @@ tmux = "worktree"
 tmux = "worktree"
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.auto.tmux).toBe('worktree');
     expect(cfg.name.model).toBe('claude-haiku-4-5');
   });
@@ -235,7 +249,7 @@ tmux = "worktree"
 timeout = "not-a-duration"
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.name.timeout).toBe(defaultConfig().name.timeout);
   });
 
@@ -244,7 +258,7 @@ timeout = "not-a-duration"
     process.env.XDG_CONFIG_HOME = dir;
     clearConfigEnv();
     process.env.FNCLAUDE_NAME_TIMEOUT = 'garbage';
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.name.timeout).toBe(defaultConfig().name.timeout);
   });
 
@@ -253,7 +267,7 @@ timeout = "not-a-duration"
     process.env.XDG_CONFIG_HOME = dir;
     clearConfigEnv();
     process.env.FNCLAUDE_QUIET_MISSING_API_KEY = '1';
-    expect(loadConfig().name.quietMissingAPIKey).toBe(true);
+    expect(loadConfig().config.name.quietMissingAPIKey).toBe(true);
   });
 
   test('spawn command from file', () => {
@@ -262,7 +276,7 @@ timeout = "not-a-duration"
 spawn_command = "kitty @ launch --type=os-window {bin} {dest} --name {name} @{summary}"
 `);
     clearConfigEnv();
-    expect(loadConfig().auto.spawnCommand).toBe(
+    expect(loadConfig().config.auto.spawnCommand).toBe(
       'kitty @ launch --type=os-window {bin} {dest} --name {name} @{summary}',
     );
   });
@@ -274,7 +288,7 @@ spawn_command = "from-file {bin} {dest}"
 `);
     clearConfigEnv();
     process.env.FNCLAUDE_SPAWN_COMMAND = 'from-env {bin} {dest}';
-    expect(loadConfig().auto.spawnCommand).toBe('from-env {bin} {dest}');
+    expect(loadConfig().config.auto.spawnCommand).toBe('from-env {bin} {dest}');
   });
 
   test('handoff from file', () => {
@@ -283,7 +297,7 @@ spawn_command = "from-file {bin} {dest}"
 handoff = "5"
 `);
     clearConfigEnv();
-    expect(loadConfig().auto.handoff).toBe('5');
+    expect(loadConfig().config.auto.handoff).toBe('5');
   });
 
   test('handoff env overrides file', () => {
@@ -293,14 +307,14 @@ handoff = "5"
 `);
     clearConfigEnv();
     process.env.FNCLAUDE_HANDOFF = 'never';
-    expect(loadConfig().auto.handoff).toBe('never');
+    expect(loadConfig().config.auto.handoff).toBe('never');
   });
 
   test('handoff unset → ask', () => {
     const dir = makeTmp();
     process.env.XDG_CONFIG_HOME = dir;
     clearConfigEnv();
-    expect(loadConfig().auto.handoff).toBe('ask');
+    expect(loadConfig().config.auto.handoff).toBe('ask');
   });
 
   test('invalid handoff normalizes to ask', () => {
@@ -309,7 +323,7 @@ handoff = "5"
 handoff = "-1"
 `);
     clearConfigEnv();
-    expect(loadConfig().auto.handoff).toBe('ask');
+    expect(loadConfig().config.auto.handoff).toBe('ask');
   });
 
   test('invalid tmux normalizes to never', () => {
@@ -318,7 +332,7 @@ handoff = "-1"
 tmux = "always"
 `);
     clearConfigEnv();
-    expect(loadConfig().auto.tmux).toBe('never');
+    expect(loadConfig().config.auto.tmux).toBe('never');
   });
 
   // exec.env
@@ -334,7 +348,7 @@ tmux = "always"
 model = "claude-haiku-4-5"
 `);
     clearConfigEnv();
-    expect(Object.keys(loadConfig().exec.env ?? {}).length).toBe(0);
+    expect(Object.keys(loadConfig().config.exec.env ?? {}).length).toBe(0);
   });
 
   test('exec.env single entry', () => {
@@ -343,7 +357,7 @@ model = "claude-haiku-4-5"
 FNCLAUDE_INVOCATION = "1"
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.exec.env?.FNCLAUDE_INVOCATION).toBe('1');
     expect(Object.keys(cfg.exec.env ?? {}).length).toBe(1);
   });
@@ -356,7 +370,7 @@ SOME_DOWNSTREAM_FLAG = "true"
 EMPTY_VAL = ""
 `);
     clearConfigEnv();
-    const cfg = loadConfig();
+    const { config: cfg } = loadConfig();
     expect(cfg.exec.env).toEqual({
       FNCLAUDE_INVOCATION: '1',
       SOME_DOWNSTREAM_FLAG: 'true',

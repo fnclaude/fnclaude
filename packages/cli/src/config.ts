@@ -22,7 +22,14 @@ function home(): string {
 // ── public types ───────────────────────────────────────────────────────────
 
 export type TmuxMode = 'never' | 'worktree';
-export type HandoffMode = 'never' | 'ask' | string; // or a non-negative integer-as-string
+/**
+ * `'never'`, `'ask'`, or a non-negative integer-as-string (e.g. `'5'`).
+ *
+ * The template-literal `${number}` variant narrows correctly: a bare
+ * `string` would collapse the union, so runtime validation gates env-var
+ * and config-file inputs into this type via `normalizeHandoffMode`.
+ */
+export type HandoffMode = 'never' | 'ask' | `${number}`;
 
 export interface NameConfig {
   /** Model used for the noop name session. */
@@ -122,33 +129,47 @@ export function parseBoolEnv(v: string): boolean {
 }
 
 /**
- * normalizeTmuxMode validates against the supported set and falls back to
- * "never" for anything else, emitting a stderr warning (except for the
- * empty-string case, which is the absent-value default path).
+ * Result of a normalize-mode call: the validated value plus an optional
+ * warning describing any fallback that was applied. Callers thread the
+ * warning into their own returned warnings list rather than mutating a
+ * module-global sink.
  */
-export function normalizeTmuxMode(v: string): TmuxMode {
-  if (v === 'never' || v === 'worktree') return v;
-  if (v === '') return 'never';
-  warn(
-    `fnclaude: auto.tmux=${JSON.stringify(v)} is not a valid mode (use "never" or "worktree"), falling back to "never"`,
-  );
-  return 'never';
+export interface NormalizeResult<T> {
+  value: T;
+  warning: string | null;
+}
+
+/**
+ * normalizeTmuxMode validates against the supported set and falls back to
+ * "never" for anything else, returning the fallback value and an optional
+ * warning describing what was rejected (the empty-string case is the
+ * absent-value default path and produces no warning).
+ */
+export function normalizeTmuxMode(v: string): NormalizeResult<TmuxMode> {
+  if (v === 'never' || v === 'worktree') return { value: v, warning: null };
+  if (v === '') return { value: 'never', warning: null };
+  return {
+    value: 'never',
+    warning: `fnclaude: auto.tmux=${JSON.stringify(v)} is not a valid mode (use "never" or "worktree"), falling back to "never"`,
+  };
 }
 
 /**
  * normalizeHandoffMode validates against the supported set and falls back
- * to "ask" for anything else (with a stderr warning, except empty string).
- * Valid: "never", "ask", or a non-negative integer (as a string).
+ * to "ask" for anything else (with an optional warning, except empty
+ * string). Valid: "never", "ask", or a non-negative integer (as a string).
  */
-export function normalizeHandoffMode(v: string): HandoffMode {
-  if (v === 'never' || v === 'ask') return v;
-  if (v === '') return 'ask';
-  // Non-negative integer (no decimal, no unit).
-  if (/^\d+$/.test(v)) return v;
-  warn(
-    `fnclaude: auto.handoff=${JSON.stringify(v)} is not a valid mode (use "never", "ask", or a non-negative integer), falling back to "ask"`,
-  );
-  return 'ask';
+export function normalizeHandoffMode(v: string): NormalizeResult<HandoffMode> {
+  if (v === 'never' || v === 'ask') return { value: v, warning: null };
+  if (v === '') return { value: 'ask', warning: null };
+  // Non-negative integer (no decimal, no unit). The regex guarantees the
+  // template-literal shape, which TS's type narrowing can't infer from a
+  // .test() call alone — so assert it explicitly once.
+  if (/^\d+$/.test(v)) return { value: v as `${number}`, warning: null };
+  return {
+    value: 'ask',
+    warning: `fnclaude: auto.handoff=${JSON.stringify(v)} is not a valid mode (use "never", "ask", or a non-negative integer), falling back to "ask"`,
+  };
 }
 
 /**
@@ -188,23 +209,6 @@ export function parseDuration(s: string): number | null {
   return total;
 }
 
-// Deferred stderr warnings — fnclaude collects these during config load
-// and flushes them via the shared warnings sink at a sensible time (after
-// claude exits, in run()). The local `deferredWarnings` export is kept
-// for backward compatibility with callers that imported it; it shadows
-// the shared sink's view of config-emitted warnings only.
-export const deferredWarnings: string[] = [];
-
-// Defer-import the shared warnings module so config remains import-cycle-
-// safe and any test that loads config in isolation still works without
-// the warnings module having been initialized.
-import { warn as globalWarn } from './warnings.js';
-
-function warn(msg: string): void {
-  deferredWarnings.push(msg);
-  globalWarn(msg);
-}
-
 // ── raw TOML shape (mirrors the Go rawConfig) ──────────────────────────────
 
 interface RawConfig {
@@ -229,17 +233,37 @@ interface RawConfig {
 // ── loadConfig ─────────────────────────────────────────────────────────────
 
 /**
+ * Result of `loadConfig` — the merged Config plus any non-fatal warnings
+ * raised during the load (malformed file, invalid mode value, bogus
+ * duration, etc.). The caller threads warnings into the deferred-flush
+ * mechanism in `main.ts`; this module owns no global mutable state.
+ */
+export interface LoadConfigResult {
+  config: Config;
+  warnings: readonly string[];
+}
+
+/**
  * loadConfig loads the configuration from the config file and environment
  * variables, merging over built-in defaults. Order of precedence:
  *
  *   env var > config file > built-in default
  *
- * A missing config file is not an error. A malformed config file queues a
- * warning and falls back to defaults.
+ * A missing config file is not an error. A malformed config file produces
+ * a warning and falls back to defaults.
  */
-export function loadConfig(): Config {
+export function loadConfig(): LoadConfigResult {
   const cfg = defaultConfig();
+  const warnings: string[] = [];
   const path = configFilePath();
+
+  const recordNormalize = <T>(
+    r: NormalizeResult<T>,
+    set: (v: T) => void,
+  ): void => {
+    set(r.value);
+    if (r.warning !== null) warnings.push(r.warning);
+  };
 
   if (existsSync(path)) {
     let raw: RawConfig | null = null;
@@ -247,7 +271,7 @@ export function loadConfig(): Config {
       const body = readFileSync(path, 'utf8');
       raw = Bun.TOML.parse(body) as RawConfig;
     } catch (err) {
-      warn(
+      warnings.push(
         `fnclaude: config file ${path} is malformed, using defaults: ${(err as Error).message}`,
       );
       raw = null;
@@ -259,7 +283,7 @@ export function loadConfig(): Config {
         if (d !== null) {
           cfg.name.timeout = d;
         } else {
-          warn(
+          warnings.push(
             `fnclaude: invalid timeout ${JSON.stringify(raw.name.timeout)} in config, using default`,
           );
         }
@@ -268,10 +292,14 @@ export function loadConfig(): Config {
         cfg.name.quietMissingAPIKey = raw.name.quiet_missing_api_key;
       }
       if (typeof raw.auto?.tmux === 'string' && raw.auto.tmux !== '') {
-        cfg.auto.tmux = raw.auto.tmux as TmuxMode;
+        recordNormalize(normalizeTmuxMode(raw.auto.tmux), (v) => {
+          cfg.auto.tmux = v;
+        });
       }
       if (typeof raw.auto?.handoff === 'string' && raw.auto.handoff !== '') {
-        cfg.auto.handoff = raw.auto.handoff;
+        recordNormalize(normalizeHandoffMode(raw.auto.handoff), (v) => {
+          cfg.auto.handoff = v;
+        });
       }
       if (
         typeof raw.auto?.spawn_command === 'string' &&
@@ -293,7 +321,7 @@ export function loadConfig(): Config {
     if (d !== null) {
       cfg.name.timeout = d;
     } else {
-      warn(
+      warnings.push(
         `fnclaude: invalid FNCLAUDE_NAME_TIMEOUT ${JSON.stringify(e.FNCLAUDE_NAME_TIMEOUT)}, using current value`,
       );
     }
@@ -301,14 +329,19 @@ export function loadConfig(): Config {
   if (e.FNCLAUDE_QUIET_MISSING_API_KEY) {
     cfg.name.quietMissingAPIKey = parseBoolEnv(e.FNCLAUDE_QUIET_MISSING_API_KEY);
   }
-  if (e.FNCLAUDE_TMUX) cfg.auto.tmux = e.FNCLAUDE_TMUX as TmuxMode;
-  if (e.FNCLAUDE_HANDOFF) cfg.auto.handoff = e.FNCLAUDE_HANDOFF;
+  if (e.FNCLAUDE_TMUX) {
+    recordNormalize(normalizeTmuxMode(e.FNCLAUDE_TMUX), (v) => {
+      cfg.auto.tmux = v;
+    });
+  }
+  if (e.FNCLAUDE_HANDOFF) {
+    recordNormalize(normalizeHandoffMode(e.FNCLAUDE_HANDOFF), (v) => {
+      cfg.auto.handoff = v;
+    });
+  }
   if (e.FNCLAUDE_SPAWN_COMMAND) cfg.auto.spawnCommand = e.FNCLAUDE_SPAWN_COMMAND;
 
-  cfg.auto.tmux = normalizeTmuxMode(cfg.auto.tmux);
-  cfg.auto.handoff = normalizeHandoffMode(cfg.auto.handoff);
-
-  return cfg;
+  return { config: cfg, warnings };
 }
 
 // ── envFromConfig ─────────────────────────────────────────────────────────

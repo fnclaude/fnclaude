@@ -40,9 +40,9 @@ function baseDeps(extras: Partial<RunDeps> = {}): RunDeps {
     cwd: '/tmp/cwd',
     lookupClaude: () => '/usr/bin/claude',
     seedNoop: async () => undefined,
-    loadConfig: () => defaultConfig(),
-    loadRepoSettings: () => ({}),
-    loadHostAliases: () => ({}),
+    loadConfig: () => ({ config: defaultConfig(), warnings: [] }),
+    loadRepoSettings: () => ({ settings: {}, warnings: [] }),
+    loadHostAliases: () => ({ aliases: {}, warnings: [] }),
     loadPrompts: () => ({
       prompts: {
         agentPitfall: '',
@@ -156,7 +156,7 @@ describe('run() pipeline composition', () => {
         },
         loadConfig: () => {
           events.push('loadConfig');
-          return defaultConfig();
+          return { config: defaultConfig(), warnings: [] };
         },
         loadPrompts: () => {
           events.push('loadPrompts');

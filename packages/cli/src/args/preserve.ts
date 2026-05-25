@@ -16,7 +16,7 @@
  * port mirrors every case 1:1.
  */
 
-import type { Request } from '../mcp/protocol.js';
+import type { RequestOverrides } from '../mcp/protocol.js';
 
 // ── Magic-word vocabularies (must match argParser.ts) ──────────────────────
 
@@ -219,7 +219,7 @@ export const transferDenyBareOK: ReadonlySet<string> = new Set([
  */
 export function applyOverrides(
   preserved: readonly string[],
-  req: Request,
+  req: RequestOverrides,
 ): string[] {
   let out = preserved.slice();
 
