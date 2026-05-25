@@ -17,7 +17,7 @@ fnclaude bundles `@fnclaude/cli` and `@fnclaude/renderer` as a single umbrella p
 
 ## Compatibility
 
-**Runtime requirement:** fnclaude requires **Bun** for session execution. The CLI and renderer are distributed as JavaScript bundles, installable via npm or Bun, but at runtime the terminal session manager uses Bun's PTY integration for reliable shell interaction. A working Bun installation (0.0.250 or later) is required to run `fnc` commands.
+**Runtime requirement:** fnclaude requires **Bun** for session execution. The CLI and renderer are distributed as JavaScript bundles, installable via npm or Bun, but at runtime the terminal session manager uses Bun's PTY integration for reliable shell interaction. A working Bun installation (1.1.0 or later) is required to run `fnc` commands.
 
 ## What's included
 

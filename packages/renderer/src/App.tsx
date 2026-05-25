@@ -307,7 +307,7 @@ export function App(props: AppProps): React.ReactElement {
           if (event.type === "result") {
             return <ResultRender key={key} event={event} />;
           }
-          // system / rate_limit_event: header-only, always shown.
+          // system / rate_limit_event: not rendered in the transcript.
           if (event.type === "system") {
             return null;
           }
