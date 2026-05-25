@@ -63,10 +63,10 @@ export interface WorktreeInfo {
   /** Absolute filesystem path of the worktree. */
   path: string;
   /**
-   * Bare branch name (e.g. "feat-x" or "worktree-feat-x"); "" if the
+   * Bare branch name (e.g. "feat-x" or "worktree-feat-x"); undefined if the
    * worktree is detached.
    */
-  branch: string;
+  branch: string | undefined;
 }
 
 /**
@@ -86,7 +86,7 @@ export function listWorktrees(dir: string, runner: GitRunner = defaultGitRunner)
   const result: WorktreeInfo[] = [];
   for (const block of out.split('\n\n')) {
     let path = '';
-    let branch = '';
+    let branch: string | undefined;
     for (const line of block.split('\n')) {
       if (line.startsWith('worktree ')) {
         path = line.slice('worktree '.length).trim();
@@ -114,20 +114,21 @@ export function listWorktrees(dir: string, runner: GitRunner = defaultGitRunner)
  *   3. Basename of the path    == query  (last-resort fallback for worktrees
  *      whose branch was renamed or whose creator skipped the convention)
  *
- * Returns null when no entry matches. Empty `query` short-circuits to null
- * so that detached worktrees (branch="") can't be matched by accident.
+ * Returns null when no entry matches. Undefined `query` short-circuits to
+ * null so that detached worktrees (branch=undefined) can't be matched by
+ * accident.
  */
 export function findWorktree(
   worktrees: readonly WorktreeInfo[],
-  query: string,
+  query: string | undefined,
 ): WorktreeInfo | null {
-  if (query === '') return null;
+  if (query === undefined) return null;
 
   for (const wt of worktrees) {
     if (wt.branch === query) return wt;
   }
   for (const wt of worktrees) {
-    if (wt.branch !== '' && stripWorktreePrefix(wt.branch) === query) return wt;
+    if (wt.branch !== undefined && stripWorktreePrefix(wt.branch) === query) return wt;
   }
   for (const wt of worktrees) {
     if (basename(wt.path) === query) return wt;
@@ -153,7 +154,7 @@ function basename(p: string): string {
  * No input is mutated. The four cases:
  *
  *   1. worktreeSet=false → carry through with worktreeMatched=false.
- *   2. Bare -w (worktreeArg="") → append --worktree to passthrough,
+ *   2. Bare -w (worktreeArg=undefined) → append --worktree to passthrough,
  *      worktreeMatched=false.
  *   3. Existing worktree matched → swap cwd to the worktree path, set
  *      worktreeMatched=true, suppress --worktree.
@@ -173,7 +174,7 @@ export function applyWorktreeIntercept(
   }
 
   // Bare -w with no name: push --worktree back through unchanged.
-  if (a.worktreeArg === '') {
+  if (a.worktreeArg === undefined) {
     return withIntercepted(a, {
       passthrough: [...a.passthrough, '--worktree'],
       worktreeMatched: false,

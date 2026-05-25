@@ -72,7 +72,7 @@ function baseArgs(overrides: Partial<BaseArgs> = {}): ResolvedArgs {
     passthrough: [],
     noTmux: false,
     worktreeSet: false,
-    worktreeArg: '',
+    worktreeArg: undefined,
     usedNoopFallback: false,
     ...overrides,
   });
@@ -121,9 +121,9 @@ describe('findWorktree', () => {
     expect(findWorktree(wts, 'nope')).toBeNull();
   });
 
-  test('detached worktree (branch="") not matched by empty query', () => {
-    const wts: WorktreeInfo[] = [{ path: '/repo/wt1', branch: '' }];
-    expect(findWorktree(wts, '')).toBeNull();
+  test('detached worktree (branch=undefined) not matched by undefined query', () => {
+    const wts: WorktreeInfo[] = [{ path: '/repo/wt1', branch: undefined }];
+    expect(findWorktree(wts, undefined)).toBeNull();
   });
 });
 
@@ -141,16 +141,16 @@ describe('listWorktrees', () => {
     ]);
   });
 
-  test('detached worktree leaves branch empty', () => {
+  test('detached worktree leaves branch undefined', () => {
     // The Go reference only strips `branch refs/heads/...`; anything else
-    // (detached HEAD entries that emit "detached" instead) leaves branch="".
+    // (detached HEAD entries that emit "detached" instead) leaves branch=undefined.
     const out =
       'worktree /repo/main\nHEAD abc123\nbranch refs/heads/main\n\n' +
       'worktree /repo/detached\nHEAD def456\ndetached\n';
     const wts = listWorktrees('/repo/main', fakeGitRunner(out));
     expect(wts).toEqual([
       { path: '/repo/main', branch: 'main' },
-      { path: '/repo/detached', branch: '' },
+      { path: '/repo/detached', branch: undefined },
     ]);
   });
 
@@ -206,13 +206,13 @@ describe('applyWorktreeIntercept', () => {
     expect(out.cwd).toBe('/repo/feat');
   });
 
-  test('bare -w (worktreeArg="") pushes --worktree through unchanged', () => {
+  test('bare -w (worktreeArg=undefined) pushes --worktree through unchanged', () => {
     let called = false;
     const runner: GitRunner = (_dir, ..._args) => {
       called = true;
       return '';
     };
-    const a = baseArgs({ cwd: '/p/main', worktreeSet: true, worktreeArg: '' });
+    const a = baseArgs({ cwd: '/p/main', worktreeSet: true, worktreeArg: undefined });
     const out = applyWorktreeIntercept(a, '/shell', runner);
     expect(out.worktreeMatched).toBe(false);
     expect(out.passthrough).toContain('--worktree');

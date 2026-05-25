@@ -58,7 +58,7 @@ export function sessionJSONLPath(launchCWD: string, sessionID: string): string {
  * scan with last-wins semantics is correct (and adequate at the file
  * sizes real sessions reach).
  *
- * Returns `""` if the file is missing, unreadable, or contains no
+ * Returns `undefined` if the file is missing, unreadable, or contains no
  * permission-mode records. Callers should fall back to startup-arg
  * preservation in that case.
  *
@@ -70,15 +70,15 @@ export function sessionJSONLPath(launchCWD: string, sessionID: string): string {
 export function readLivePermissionMode(
   launchCWD: string,
   sessionID: string,
-): string {
+): string | undefined {
   const path = sessionJSONLPath(launchCWD, sessionID);
   let data: string;
   try {
     data = readFileSync(path, 'utf8');
   } catch {
-    return '';
+    return undefined;
   }
-  let latest = '';
+  let latest: string | undefined;
   for (const line of data.split('\n')) {
     if (line.length === 0) continue;
     let r: { type?: unknown; permissionMode?: unknown };

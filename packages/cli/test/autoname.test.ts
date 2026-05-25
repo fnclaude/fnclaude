@@ -56,14 +56,14 @@ describe('extractPrompt', () => {
   test('skips empty tokens before first non-empty', () => {
     expect(extractPrompt(['--', '', 'second'])).toBe('second');
   });
-  test('no separator → empty string', () => {
-    expect(extractPrompt(['fix the bug'])).toBe('');
+  test('no separator → undefined', () => {
+    expect(extractPrompt(['fix the bug'])).toBeUndefined();
   });
-  test('separator with no tokens → empty string', () => {
-    expect(extractPrompt(['--'])).toBe('');
+  test('separator with no tokens → undefined', () => {
+    expect(extractPrompt(['--'])).toBeUndefined();
   });
-  test('separator with only empty tokens → empty string', () => {
-    expect(extractPrompt(['--', '', ''])).toBe('');
+  test('separator with only empty tokens → undefined', () => {
+    expect(extractPrompt(['--', '', ''])).toBeUndefined();
   });
 });
 
@@ -122,11 +122,11 @@ describe('sanitizeSlug', () => {
   test('4-segment input capped at 3', () => {
     expect(sanitizeSlug('fix-login-bug-now')).toBe('fix-login-bug');
   });
-  test('empty string → empty string', () => {
-    expect(sanitizeSlug('')).toBe('');
+  test('empty string → undefined', () => {
+    expect(sanitizeSlug('')).toBeUndefined();
   });
-  test('only non-slug chars → empty string', () => {
-    expect(sanitizeSlug("'''")).toBe('');
+  test('only non-slug chars → undefined', () => {
+    expect(sanitizeSlug("'''")).toBeUndefined();
   });
 });
 

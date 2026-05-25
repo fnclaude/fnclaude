@@ -75,9 +75,9 @@ export interface BaseArgs {
 
   /**
    * WorktreeArg is the name/value given with -w / --worktree (or the 2nd
-   * positional / +workspace suffix), or "" if the flag was bare.
+   * positional / +workspace suffix), or undefined if the flag was bare.
    */
-  readonly worktreeArg: string;
+  readonly worktreeArg: string | undefined;
 
   /**
    * UsedNoopFallback is true when CWD was filled by the noop fallback (no

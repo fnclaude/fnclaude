@@ -305,7 +305,7 @@ export class SocketListener {
       !flagPresent(withOverrides, '--permission-mode')
     ) {
       const live = readLivePermissionMode(this.launchCWD, sid);
-      if (live !== '') {
+      if (live !== undefined) {
         withOverrides = [...withOverrides, '--permission-mode', live];
       }
     }
@@ -351,7 +351,7 @@ export class SocketListener {
       sid !== ''
     ) {
       const live = readLivePermissionMode(this.launchCWD, sid);
-      if (live !== '') {
+      if (live !== undefined) {
         withOverrides = [...withOverrides, '--permission-mode', live];
       }
     }

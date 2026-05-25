@@ -177,7 +177,7 @@ export function parseArgs(argv: readonly string[], home: string): ParsedArgs {
   const passthrough: string[] = [];
   let noTmux = false;
   let worktreeSet = false;
-  let worktreeArg = '';
+  let worktreeArg: string | undefined;
 
   // Magic slots: filled at most once each, in strict order.
   let magicModel = '';
