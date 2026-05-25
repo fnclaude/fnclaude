@@ -135,6 +135,53 @@ describe('lifecycle', () => {
     expect(statSync(fx.spec.socketPath).isSocket()).toBe(true);
     await l.close();
   });
+
+  test('socket file is created with 0600 mode (owner-only rw)', async () => {
+    // Hardening: the parent-listener AF_UNIX socket carries handoff
+    // commands (restart / switch / spawn) that re-exec fnclaude with
+    // attacker-influenceable argv. Any other UID on the host being able
+    // to dial it is a privilege escalation surface. We pin the socket
+    // permissions to 0600 so the kernel rejects non-owner connect()s
+    // regardless of the process umask at launch time.
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: fx.launchCWD,
+    });
+    try {
+      const st = statSync(fx.spec.socketPath);
+      // mask the file-type bits, keep the permission bits
+      const perms = st.mode & 0o777;
+      expect(perms.toString(8)).toBe('600');
+    } finally {
+      await l.close();
+    }
+  });
+
+  test('socket mode survives a permissive umask at start', async () => {
+    // Regression target for the umask-default failure mode: with a
+    // permissive umask (002 or 022), node's createServer() would otherwise
+    // leave the socket world-readable / group-writable. The chmod-after-
+    // bind path must clamp it back to 0600 regardless.
+    const fx = mkFixture('ask');
+    const savedUmask = process.umask(0o000);
+    try {
+      const l = await SocketListener.start({
+        spec: fx.spec,
+        cfg: fx.cfg,
+        launchCWD: fx.launchCWD,
+      });
+      try {
+        const perms = statSync(fx.spec.socketPath).mode & 0o777;
+        expect(perms.toString(8)).toBe('600');
+      } finally {
+        await l.close();
+      }
+    } finally {
+      process.umask(savedUmask);
+    }
+  });
 });
 
 // ── OpRestart ──────────────────────────────────────────────────────────────
