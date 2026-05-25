@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.2...cli-v0.7.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* minor adjustments to trigger [@latest](https://github.com/latest) publishes for all three packages ([#71](https://github.com/fnclaude/fnclaude/issues/71)) ([9957c66](https://github.com/fnclaude/fnclaude/commit/9957c66652ae2fdeaa4fc968e3cf3a3eff5d5a67))
+
 ## [0.7.2](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.1...cli-v0.7.2) (2026-05-23)
 
 

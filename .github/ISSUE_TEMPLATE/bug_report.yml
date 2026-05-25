@@ -1,0 +1,69 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Short summary
+      description: One sentence describing what's broken.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro steps
+      description: Minimal steps to reproduce. Include the exact command you ran.
+      placeholder: |
+        1. Run `fnc ...`
+        2. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Paste the full error output if there is one.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "e.g. macOS 14.5, Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: bun_version
+    attributes:
+      label: Bun version
+      placeholder: "bun --version output"
+    validations:
+      required: true
+
+  - type: input
+    id: fnclaude_version
+    attributes:
+      label: fnclaude version
+      placeholder: "fnc --version output"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant — config files, logs, etc.
+    validations:
+      required: false

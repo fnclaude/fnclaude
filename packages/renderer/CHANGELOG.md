@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.1...renderer-v2.0.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* minor adjustments to trigger [@latest](https://github.com/latest) publishes for all three packages ([#71](https://github.com/fnclaude/fnclaude/issues/71)) ([9957c66](https://github.com/fnclaude/fnclaude/commit/9957c66652ae2fdeaa4fc968e3cf3a3eff5d5a67))
+
 ## [2.0.1](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.0...renderer-v2.0.1) (2026-05-23)
 
 

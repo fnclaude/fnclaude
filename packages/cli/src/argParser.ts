@@ -16,7 +16,7 @@
  */
 
 import { join as pathJoin } from 'node:path';
-import type { Args } from './args.js';
+import { brandParsed, type ParsedArgs } from './args.js';
 
 // ── Magic-word vocabularies ────────────────────────────────────────────────
 
@@ -163,11 +163,15 @@ export function parseShortFlag(arg: string, rest: readonly string[]): ParseShort
  * parseArgs is the canonical argv parser. `home` is the user's home dir
  * (typically `os.homedir()`); it's used to derive the noop fallback path.
  *
+ * Returns a `ParsedArgs` — the first stage of the immutable argv pipeline.
+ * Notably absent: `worktreeMatched`. That value only becomes meaningful
+ * after the intercept stage and is part of `InterceptedArgs` instead.
+ *
  * Throws Error on invalid input (too many positionals, missing values,
  * collapsed-group misuse, two subcommands, etc.). The Go original returns
  * `(Args, error)`; TS uses throw for the natural shape.
  */
-export function parseArgs(argv: readonly string[], home: string): Args {
+export function parseArgs(argv: readonly string[], home: string): ParsedArgs {
   let firstPath = '';
   const extraDirs: string[] = [];
   const passthrough: string[] = [];
@@ -339,7 +343,7 @@ export function parseArgs(argv: readonly string[], home: string): Args {
   const cwd = firstPathSet ? firstPath : defaultNoopDir(home);
   const usedNoopFallback = !firstPathSet;
 
-  return {
+  return brandParsed({
     cwd,
     extraDirs,
     passthrough: finalPassthrough,
@@ -347,34 +351,17 @@ export function parseArgs(argv: readonly string[], home: string): Args {
     worktreeSet,
     worktreeArg,
     usedNoopFallback,
-    worktreeMatched: false,
-  };
+  });
 }
 
-// ── Passthrough inspection helpers (used downstream by buildArgv etc.) ─────
+// ── Passthrough inspection helpers ─────────────────────────────────────────
+//
+// The canonical implementations live in passthrough.ts. Re-exported here
+// for back-compat with callers that grew up importing them from argParser.
+// New code should import from passthrough.ts directly.
 
-/**
- * True when any token is `--setting-sources` or starts with `--setting-sources=`.
- */
-export function settingSourcesInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--setting-sources' || t.startsWith('--setting-sources='),
-  );
-}
-
-/**
- * True when the exact token appears, or any `token=<anything>` form.
- */
-export function tokenInPassthrough(passthrough: readonly string[], long: string): boolean {
-  const prefix = `${long}=`;
-  return passthrough.some((t) => t === long || t.startsWith(prefix));
-}
-
-/**
- * True when --name or -n (bare or =value) appears anywhere in passthrough.
- */
-export function nameInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--name' || t === '-n' || t.startsWith('--name=') || t.startsWith('-n='),
-  );
-}
+export {
+  nameInPassthrough,
+  settingSourcesInPassthrough,
+  tokenInPassthrough,
+} from './passthrough.js';

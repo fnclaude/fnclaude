@@ -18,12 +18,12 @@
 
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import type { Args } from './args.js';
+import type { InterceptedArgs } from './args.js';
 import {
   nameInPassthrough as _nameInPassthrough,
   settingSourcesInPassthrough,
   tokenInPassthrough,
-} from './argParser.js';
+} from './passthrough.js';
 import type { Config } from './config.js';
 import { resolveSelfPath } from './paths.js';
 import { isInteractiveSession, selectFragments, type PromptSet } from './prompts.js';
@@ -31,7 +31,7 @@ import { isInteractiveSession, selectFragments, type PromptSet } from './prompts
 // Re-export the passthrough inspection helpers from their canonical home so
 // callers can reach them via "./argv.js" — mirrors the Go reference where
 // they sit next to buildArgv. The single-source-of-truth implementation
-// stays in argParser.ts.
+// stays in passthrough.ts.
 export { settingSourcesInPassthrough, tokenInPassthrough };
 
 // ── MCP self-injection ─────────────────────────────────────────────────────
@@ -116,17 +116,23 @@ export function withAppendedSystemPrompts(
 // ── buildArgv ──────────────────────────────────────────────────────────────
 
 /**
- * buildArgv constructs the argv slice to exec claude with, given the parsed
- * fnclaude args, the user's shell cwd (used to resolve relative extra-dir
- * paths), the loaded config, and the set of prompt fragments loaded from
- * the install dir.
+ * buildArgv constructs the argv slice to exec claude with, given the
+ * fnclaude args at their final pipeline stage (`InterceptedArgs` — the
+ * intercept must have run so `worktreeMatched` is meaningful), the user's
+ * shell cwd (used to resolve relative extra-dir paths), the loaded config,
+ * and the set of prompt fragments loaded from the install dir.
+ *
+ * Accepting `InterceptedArgs` makes the ordering invariant a compile-time
+ * check: passing a `ParsedArgs` or `ResolvedArgs` is a type error,
+ * preventing the auto-tmux gate from reading a stale `worktreeMatched`
+ * value the parse stage couldn't know.
  *
  * `shellCWD` is the process working directory at fnclaude startup —
  * normally `process.cwd()`. It's threaded through (rather than reached for
  * directly) so tests can pin it without `chdir`-ing.
  */
 export function buildArgv(
-  a: Args,
+  a: InterceptedArgs,
   shellCWD: string,
   cfg: Config,
   prompts: PromptSet,
@@ -193,5 +199,5 @@ export function buildArgv(
 }
 
 // Re-export so callers that already import nameInPassthrough from argv.ts
-// (parity with the Go file layout) don't have to reach into argParser.
+// (parity with the Go file layout) don't have to reach into passthrough.
 export const nameInPassthrough = _nameInPassthrough;
