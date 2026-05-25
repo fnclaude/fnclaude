@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.17](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.16...fnclaude-v0.0.17) (2026-05-25)
+
+
+### Bug Fixes
+
+* minor adjustments to trigger [@latest](https://github.com/latest) publishes for all three packages ([#71](https://github.com/fnclaude/fnclaude/issues/71)) ([9957c66](https://github.com/fnclaude/fnclaude/commit/9957c66652ae2fdeaa4fc968e3cf3a3eff5d5a67))
+
 ## [0.0.16](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.15...fnclaude-v0.0.16) (2026-05-23)
 
 
