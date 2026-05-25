@@ -351,30 +351,14 @@ export function parseArgs(argv: readonly string[], home: string): Args {
   };
 }
 
-// ── Passthrough inspection helpers (used downstream by buildArgv etc.) ─────
+// ── Passthrough inspection helpers ─────────────────────────────────────────
+//
+// The canonical implementations live in passthrough.ts. Re-exported here
+// for back-compat with callers that grew up importing them from argParser.
+// New code should import from passthrough.ts directly.
 
-/**
- * True when any token is `--setting-sources` or starts with `--setting-sources=`.
- */
-export function settingSourcesInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--setting-sources' || t.startsWith('--setting-sources='),
-  );
-}
-
-/**
- * True when the exact token appears, or any `token=<anything>` form.
- */
-export function tokenInPassthrough(passthrough: readonly string[], long: string): boolean {
-  const prefix = `${long}=`;
-  return passthrough.some((t) => t === long || t.startsWith(prefix));
-}
-
-/**
- * True when --name or -n (bare or =value) appears anywhere in passthrough.
- */
-export function nameInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--name' || t === '-n' || t.startsWith('--name=') || t.startsWith('-n='),
-  );
-}
+export {
+  nameInPassthrough,
+  settingSourcesInPassthrough,
+  tokenInPassthrough,
+} from './passthrough.js';

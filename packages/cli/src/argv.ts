@@ -23,7 +23,7 @@ import {
   nameInPassthrough as _nameInPassthrough,
   settingSourcesInPassthrough,
   tokenInPassthrough,
-} from './argParser.js';
+} from './passthrough.js';
 import type { Config } from './config.js';
 import { resolveSelfPath } from './paths.js';
 import { isInteractiveSession, selectFragments, type PromptSet } from './prompts.js';
@@ -31,7 +31,7 @@ import { isInteractiveSession, selectFragments, type PromptSet } from './prompts
 // Re-export the passthrough inspection helpers from their canonical home so
 // callers can reach them via "./argv.js" — mirrors the Go reference where
 // they sit next to buildArgv. The single-source-of-truth implementation
-// stays in argParser.ts.
+// stays in passthrough.ts.
 export { settingSourcesInPassthrough, tokenInPassthrough };
 
 // ── MCP self-injection ─────────────────────────────────────────────────────
@@ -193,5 +193,5 @@ export function buildArgv(
 }
 
 // Re-export so callers that already import nameInPassthrough from argv.ts
-// (parity with the Go file layout) don't have to reach into argParser.
+// (parity with the Go file layout) don't have to reach into passthrough.
 export const nameInPassthrough = _nameInPassthrough;

@@ -16,6 +16,7 @@
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import type { Args } from './args.js';
+import { nameInPassthrough } from './passthrough.js';
 
 /**
  * GitRunner is a thin wrapper around `git -C <dir> <args...>`. Returns the
@@ -171,16 +172,4 @@ export function applyWorktreeIntercept(
   if (!nameInPassthrough(a.passthrough)) {
     a.passthrough.push('--name', a.worktreeArg);
   }
-}
-
-/**
- * nameInPassthrough — local copy of the helper in argParser.ts. Replicated
- * to avoid an import cycle (argParser → buildArgv → worktree → argParser).
- * Both copies must agree; the shared contract is "--name or -n, bare or
- * =value, anywhere in the slice."
- */
-function nameInPassthrough(passthrough: readonly string[]): boolean {
-  return passthrough.some(
-    (t) => t === '--name' || t === '-n' || t.startsWith('--name=') || t.startsWith('-n='),
-  );
 }
