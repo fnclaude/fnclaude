@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.7](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.6...cli-v0.7.7) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** resolve prompts via module location so umbrella install works ([#92](https://github.com/fnclaude/fnclaude/issues/92)) ([7312592](https://github.com/fnclaude/fnclaude/commit/7312592df2496aa702ff28c1f167579b14732f3e))
+* **cli:** three security fixes from review (socket mode, request validation, cwd anchor) ([#79](https://github.com/fnclaude/fnclaude/issues/79)) ([819980d](https://github.com/fnclaude/fnclaude/commit/819980d9520be53b5ad7c405d5d8305cf6d05898))
+
 ## [0.7.6](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.5...cli-v0.7.6) (2026-05-27)
 
 
