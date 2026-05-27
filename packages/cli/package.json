@@ -1,6 +1,6 @@
 {
   "name": "@fnclaude/cli",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "fnclaude CLI implementation (TypeScript rewrite, in progress)",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,7 @@
   "files": [
     "bin",
     "dist",
+    "prompts",
     "src"
   ],
   "scripts": {
@@ -30,6 +31,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
-    "node-pty": "1.1.0"
+    "node-pty": "1.2.0-beta.13"
   }
 }

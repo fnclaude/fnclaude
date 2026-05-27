@@ -6,11 +6,16 @@
  *
  * Ported from src/pty_run_unix.go in the Go reference (fnclaude@fnrhombus).
  *
- * Library choice: `node-pty` (Microsoft, MIT, currently v1.1.0). Verified
- * to load under Bun 1.3.x via the N-API compat layer — both spawn() and the
- * onData/onExit/kill surface work as documented. There's no native Bun PTY
- * primitive yet; if/when Bun ships one, this file is the natural place to
- * swap implementations behind the shared RunOptions API.
+ * Library choice: `node-pty` (Microsoft, MIT, currently v1.2.0-beta.13).
+ * Pinned to a 1.2.0 beta because 1.1.0 ships only macOS + Windows
+ * prebuilds; 1.2.0-beta.2 is the first version with linux-{x64,arm64}
+ * prebuilds. Without them, `npm i -g @fnclaude/cli` forces every Linux
+ * user to install Python + make + a C++ toolchain so node-gyp can rebuild
+ * the native binding at install time. Verified to load under Bun 1.3.x
+ * via the N-API compat layer — both spawn() and the onData/onExit/kill
+ * surface work as documented. There's no native Bun PTY primitive yet;
+ * if/when Bun ships one, this file is the natural place to swap
+ * implementations behind the shared RunOptions API.
  *
  * Lifecycle: each setup phase that needs an undo step returns a small
  * disposable wrapper (`using` / `await using`). The orchestration function
