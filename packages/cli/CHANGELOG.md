@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/fnclaude/fnclaude/compare/cli-v1.1.0...cli-v1.1.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** place --append-system-prompt before `--` sentinel ([#117](https://github.com/fnclaude/fnclaude/issues/117)) ([a848455](https://github.com/fnclaude/fnclaude/commit/a84845589ccc6bb71cfa90313696f454ef4445d0))
+
 ## [1.1.0](https://github.com/fnclaude/fnclaude/compare/cli-v1.0.1...cli-v1.1.0) (2026-05-27)
 
 
