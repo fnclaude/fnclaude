@@ -1,0 +1,140 @@
+#compdef fnc
+
+# Zsh completion for fnc.
+#
+# Install: copy or symlink this file to a directory in $fpath, then run
+# `compinit` (or restart your shell).
+
+# Helper: emit basenames of all git worktrees in the current repo.
+# Outputs nothing (no error) when not in a git repo.
+_fnc_worktree_names() {
+    local -a names
+    local line
+    while IFS= read -r line; do
+        if [[ "$line" == worktree\ * ]]; then
+            names+=( "${line#worktree }" )
+        fi
+    done < <(git worktree list --porcelain 2>/dev/null)
+    # Extract basenames
+    local -a basenames
+    local p
+    for p in "${names[@]}"; do
+        basenames+=( "${p:t}" )
+    done
+    compadd -a basenames
+}
+
+_fnc() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    # Magic positional words are position-sensitive:
+    #   position 1: model alias (opus / sonnet / haiku)
+    #   position 2: effort level (only when position 1 was a model alias)
+    # After the magic slots, the remaining positionals are:
+    #   1st remaining → cwd (directory)
+    #   2nd remaining → worktree name (same as -w)
+    #   3rd+ remaining → error at runtime; no offer.
+    #
+    # Subcommand-style positionals (resume / res / continue / con / fork / fk)
+    # may appear at any positional slot without consuming the remaining-slot
+    # count.
+    #
+    # This completion uses static slot numbers (1, 2, 3, 4) so it doesn't
+    # walk argv to compute "effective remaining slot" — it just offers a
+    # broad superset at each typed-word index and lets the user pick.
+
+    local -a model_aliases effort_levels permission_modes subcommand_tokens
+
+    model_aliases=(
+        'opus:use claude-opus model'
+        'sonnet:use claude-sonnet model'
+        'haiku:use claude-haiku model'
+    )
+
+    effort_levels=(
+        'low:low effort'
+        'medium:medium effort'
+        'high:high effort'
+        'xhigh:extra-high effort'
+        'max:maximum effort'
+    )
+
+    subcommand_tokens=(
+        'resume:show session picker (--resume)'
+        'res:show session picker (--resume)'
+        'continue:resume most recent session (--continue)'
+        'con:resume most recent session (--continue)'
+        'fork:fork the current session (--resume --fork-session)'
+        'fk:fork the current session (--resume --fork-session)'
+    )
+
+    permission_modes=(
+        'acceptEdits:accept file edits automatically'
+        'auto:automatic permission handling'
+        'bypassPermissions:bypass all permission checks'
+        'default:default permission handling'
+        'dontAsk:never ask for permission'
+        'plan:plan mode (read-only)'
+    )
+
+    _arguments -C \
+        '(-A --also)'{-A,--also}'[add an extra directory]:extra directory:_files -/' \
+        '--no-tmux[disable tmux integration]' \
+        '(-B --brief)'{-B,--brief}'[brief output mode]' \
+        '(-C --chrome)'{-C,--chrome}'[open in Chrome]' \
+        '(-D --dangerously-skip-permissions)'{-D,--dangerously-skip-permissions}'[skip all permission prompts]' \
+        '(-F --fork-session)'{-F,--fork-session}'[fork the current session]' \
+        '(-G --agent)'{-G,--agent}'[run a named agent]:agent name' \
+        '(-I --ide)'{-I,--ide}'[enable IDE integration]' \
+        '(-M --permission-mode)'{-M,--permission-mode}'[set permission mode]:mode:('"${(j: :)permission_modes[@]%%:*}"')' \
+        '(-P --from-pr)'{-P,--from-pr}'[start from a PR]::PR number or URL' \
+        '(-R --remote-control)'{-R,--remote-control}'[enable remote control]::control name' \
+        '(-T --tmux)'{-T,--tmux}'[set tmux mode]::tmux variant:(classic)' \
+        '(-V --verbose)'{-V,--verbose}'[verbose output]' \
+        '(-W --allowedTools)'{-W,--allowedTools}'[restrict allowed tools]:tool spec' \
+        '(-w --worktree)'{-w,--worktree}'[use git worktree]:worktree name:_fnc_worktree_names' \
+        \
+        '1: :->pos1' \
+        '2: :->pos2' \
+        '3: :->pos3' \
+        '4: :->pos4' \
+        && return 0
+
+    case "$state" in
+        pos1)
+            # First positional: model alias, subcommand, or directory.
+            _alternative \
+                'models:model alias:_describe "model alias" model_aliases' \
+                'subcommands:subcommand:_describe "subcommand" subcommand_tokens' \
+                'dirs:directory:_files -/'
+            ;;
+        pos2)
+            # Second positional: effort level (if pos1 was a model alias),
+            # subcommand, worktree name (if pos1 was the cwd), or directory.
+            # We optimistically offer the union.
+            _alternative \
+                'efforts:effort level:_describe "effort level" effort_levels' \
+                'subcommands:subcommand:_describe "subcommand" subcommand_tokens' \
+                'worktrees:worktree name:_fnc_worktree_names' \
+                'dirs:directory:_files -/'
+            ;;
+        pos3)
+            # Third positional: cwd (after model+effort), worktree (after
+            # model+cwd), or subcommand. Offer the union.
+            _alternative \
+                'subcommands:subcommand:_describe "subcommand" subcommand_tokens' \
+                'worktrees:worktree name:_fnc_worktree_names' \
+                'dirs:directory:_files -/'
+            ;;
+        pos4)
+            # Fourth positional: only valid as the worktree slot when both
+            # magic positionals were eaten. Offer worktree names + subcommand.
+            _alternative \
+                'subcommands:subcommand:_describe "subcommand" subcommand_tokens' \
+                'worktrees:worktree name:_fnc_worktree_names'
+            ;;
+    esac
+}
+
+_fnc "$@"

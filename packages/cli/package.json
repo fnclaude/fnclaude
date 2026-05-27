@@ -16,7 +16,9 @@
   },
   "files": [
     "bin",
+    "completions",
     "dist",
+    "LICENSE",
     "prompts",
     "src"
   ],
