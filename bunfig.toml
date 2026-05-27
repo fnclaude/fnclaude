@@ -1,0 +1,15 @@
+# Monorepo-root Bun config.
+#
+# Bun reads bunfig.toml from the invocation directory only — there's no
+# ancestor walk and no per-package merge. CI runs tests via
+# `moon run :test`, which cd's into each package and picks up that
+# package's bunfig (e.g. packages/renderer/bunfig.toml sets FORCE_COLOR=1
+# via its preload). But the project's TDD workflow has contributors
+# running `bun test` from the repo root, where neither bunfig is loaded
+# and the renderer's ANSI assertions fail.
+#
+# This file mirrors the renderer's preload at the root so root-level
+# `bun test` behaves identically to per-package invocation.
+
+[test]
+preload = "./test/preload.ts"
