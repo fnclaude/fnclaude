@@ -200,12 +200,149 @@ export function encodeResponse(resp: Response): Buffer {
  * The line may or may not include the terminating '\n'; both are accepted
  * (matches Go's bufio.ReadBytes which keeps the delimiter).
  *
- * Throws on malformed JSON.
+ * Throws on malformed JSON or on payloads that fail boundary validation
+ * (see `validateRequest` for the rules). Wire input is untrusted —
+ * anything that knows the socket path can submit JSON, and the dispatcher
+ * acts on it (re-exec, file writes, clipboard). Validate before handing
+ * to the dispatcher rather than scattering checks across handlers.
  */
 export function decodeRequest(line: string | Buffer): Request {
   const text = typeof line === 'string' ? line : line.toString('utf8');
   const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return JSON.parse(trimmed) as Request;
+  const raw: unknown = JSON.parse(trimmed);
+  return validateRequest(raw);
+}
+
+// ── Request validation ─────────────────────────────────────────────────────
+
+/**
+ * Maximum byte length for each string field on a Request. Values are sized
+ * to the field's job:
+ *   - overrides (model, effort, permission_mode, agent): short identifiers
+ *   - allowed_tools: comma-joined tool names, room for ~30 longest
+ *   - session_id: UUID-shaped, but we don't pre-validate the shape here
+ *     (that lives in the handler so the error message can mention UUID)
+ *   - destination / name: filesystem paths / kebab-case names
+ *   - text (clipboard): bounded for typical clipboard payloads
+ *   - summary: continuity blob — generous but bounded; a malicious peer
+ *     submitting hundreds of MB would otherwise wedge the writeFile path
+ */
+const STRING_LIMITS: Record<string, number> = {
+  // Shared overrides
+  model: 64,
+  effort: 64,
+  permission_mode: 64,
+  allowed_tools: 4096,
+  agent: 256,
+  // Restart / switch / spawn
+  session_id: 128,
+  destination: 4096,
+  name: 256,
+  summary: 1024 * 1024, // 1 MiB
+  // Copy
+  text: 1024 * 1024, // 1 MiB
+};
+
+/** Discriminated union of fields legal for each Op. */
+const STRING_FIELDS_BY_OP: Record<Op, readonly string[]> = {
+  restart: ['session_id', 'model', 'effort', 'permission_mode', 'allowed_tools', 'agent'],
+  switch: [
+    'destination',
+    'name',
+    'summary',
+    'session_id',
+    'model',
+    'effort',
+    'permission_mode',
+    'allowed_tools',
+    'agent',
+  ],
+  spawn: [
+    'destination',
+    'name',
+    'summary',
+    'model',
+    'effort',
+    'permission_mode',
+    'allowed_tools',
+    'agent',
+  ],
+  copy_to_clipboard: ['text'],
+};
+
+const BOOL_FIELDS: readonly string[] = ['brief', 'chrome', 'ide', 'verbose', 'confirmed'];
+
+/** Field names that are filesystem paths and must reject ".." traversal. */
+const PATH_FIELDS: readonly string[] = ['destination'];
+
+const KNOWN_OPS: readonly Op[] = ['restart', 'switch', 'spawn', 'copy_to_clipboard'];
+
+/**
+ * Validate a parsed JSON value as a Request. Returns the validated value
+ * (typed as Request) on success; throws Error with a human-readable
+ * reason on failure. The caller (`decodeRequest`) is the only intended
+ * entry point — handlers consume the typed Request and trust its shape.
+ *
+ * Checks performed:
+ *  1. Value is a plain object (not array, null, or scalar).
+ *  2. `op` is one of the four known string discriminants.
+ *  3. Every string field on the per-op allowlist is either absent or a
+ *     string under its byte-length cap, with no null bytes.
+ *  4. Path-shaped fields (`destination`) additionally reject `..`
+ *     segments (delimited by `/` or string ends).
+ *  5. Boolean override fields are either absent, true, false, or null
+ *     (null is treated as "preserve existing" by handlers).
+ *
+ * Unknown extra keys are tolerated (forward compatibility with newer
+ * clients) but their values are not validated.
+ */
+export function validateRequest(value: unknown): Request {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('request must be a JSON object');
+  }
+  const obj = value as Record<string, unknown>;
+  const op = obj.op;
+  if (typeof op !== 'string' || !KNOWN_OPS.includes(op as Op)) {
+    throw new Error(`unknown op ${JSON.stringify(op)}`);
+  }
+  const allowed = STRING_FIELDS_BY_OP[op as Op];
+  for (const field of allowed) {
+    const v = obj[field];
+    if (v === undefined) continue;
+    if (typeof v !== 'string') {
+      throw new Error(`field ${field} must be a string`);
+    }
+    if (v.includes('\x00')) {
+      throw new Error(`field ${field} contains a null byte`);
+    }
+    const cap = STRING_LIMITS[field] ?? 1024;
+    if (Buffer.byteLength(v, 'utf8') > cap) {
+      throw new Error(`field ${field} exceeds max length ${cap}`);
+    }
+    if (PATH_FIELDS.includes(field) && hasParentSegment(v)) {
+      throw new Error(`field ${field} contains a path-traversal segment ("..")`);
+    }
+  }
+  for (const field of BOOL_FIELDS) {
+    const v = obj[field];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'boolean') {
+      throw new Error(`field ${field} must be a boolean`);
+    }
+  }
+  return obj as unknown as Request;
+}
+
+/**
+ * Returns true when the path contains a literal `..` segment — i.e. `..`
+ * delimited by `/` (or by start/end of the string). Catches `../etc`,
+ * `/foo/../bar`, `foo/..`, and bare `..`; ignores `foo..bar` and any
+ * other substring where `..` is part of a larger name.
+ */
+function hasParentSegment(p: string): boolean {
+  // Split on '/' is sufficient — POSIX path semantics, and a Windows
+  // backslash path would never be a legitimate destination on the wire.
+  return p.split('/').includes('..');
 }
 
 /** Decode one newline-terminated JSON line into a Response. */

@@ -14,7 +14,7 @@
  */
 
 import { createServer, type Server, type Socket } from 'node:net';
-import { writeFile, unlink } from 'node:fs/promises';
+import { writeFile, unlink, chmod } from 'node:fs/promises';
 import type { Config } from '../config.js';
 import { handoffContentPath, type HandoffSpec } from '../handoff.js';
 import {
@@ -144,6 +144,15 @@ export class SocketListener {
    * Open the AF_UNIX listener at spec.socketPath and start the accept
    * loop. Best-effort removes any stale socket file from a prior crashed
    * invocation at this path (net listen errors with EADDRINUSE otherwise).
+   *
+   * The socket file is chmod'd to 0600 immediately after bind so other
+   * UIDs on the host cannot dial it. Node's createServer() does NOT honor
+   * a mode option for AF_UNIX paths — it inherits the process umask, which
+   * defaults to 022 (world-readable) or worse depending on caller. We
+   * tighten unconditionally rather than rely on umask discipline at every
+   * launch site. The race window between bind and chmod is small (single
+   * tick) but real; we accept it as the trade vs. a per-process umask
+   * dance that would still leak any *other* file created in the same tick.
    */
   static async start(opts: StartOptions): Promise<SocketListener> {
     try {
@@ -169,6 +178,23 @@ export class SocketListener {
       server.once('listening', onOk);
       server.listen(opts.spec.socketPath);
     });
+    // Tighten the socket to owner-only rw — see method-level note above.
+    // Windows AF_UNIX implementations don't honor POSIX modes; the chmod
+    // call is a no-op there but harmless.
+    try {
+      await chmod(opts.spec.socketPath, 0o600);
+    } catch (err) {
+      // Don't leave a world-readable socket up if we can't tighten it.
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      try {
+        await unlink(opts.spec.socketPath);
+      } catch {
+        // already gone
+      }
+      throw new Error(
+        `failed to chmod socket to 0600 at ${opts.spec.socketPath}: ${(err as Error).message}`,
+      );
+    }
     return listener;
   }
 
