@@ -3,7 +3,8 @@
 // CWD encoding for Claude Code's project dir naming scheme, and JSONL
 // permission-mode last-wins scan over a session log.
 
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -91,4 +92,127 @@ export function readLivePermissionMode(
     }
   }
   return latest;
+}
+
+/**
+ * Overrides that may have landed alongside the restart. When any of these
+ * are set the appended reminder names them so the resumed model can briefly
+ * acknowledge the change before continuing the pre-restart work.
+ */
+export interface RestartReminderOverrides {
+  model?: string;
+  effort?: string;
+  permissionMode?: string;
+  agent?: string;
+  /** True iff `--ide` is being added on the relaunch. */
+  ide?: boolean;
+}
+
+/**
+ * Read the trailing entries of `data` and return the most recent `uuid`
+ * field, or `null` if none found. Used to link the appended reminder into
+ * the JSONL parent-chain.
+ */
+function lastEntryUUID(data: string): string | null {
+  const lines = data.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line || line.length === 0) continue;
+    let parsed: { uuid?: unknown };
+    try {
+      parsed = JSON.parse(line) as typeof parsed;
+    } catch {
+      continue;
+    }
+    if (typeof parsed.uuid === 'string' && parsed.uuid.length > 0) {
+      return parsed.uuid;
+    }
+  }
+  return null;
+}
+
+/** Render the system-reminder body text, optionally naming overrides. */
+export function renderRestartReminderContent(
+  overrides?: RestartReminderOverrides,
+): string {
+  const parts: string[] = [];
+  if (overrides?.model && overrides.model !== '') {
+    parts.push(`model swap to ${overrides.model}`);
+  }
+  if (overrides?.effort && overrides.effort !== '') {
+    parts.push(`effort=${overrides.effort}`);
+  }
+  if (overrides?.permissionMode && overrides.permissionMode !== '') {
+    parts.push(`permission-mode=${overrides.permissionMode}`);
+  }
+  if (overrides?.agent && overrides.agent !== '') {
+    parts.push(`agent=${overrides.agent}`);
+  }
+  if (overrides?.ide) {
+    parts.push('--ide connected');
+  }
+  const overrideClause =
+    parts.length > 0
+      ? ` Restart-specific overrides applied: ${parts.join(', ')} — acknowledge briefly, then continue.`
+      : '';
+  return (
+    '<system-reminder>\n' +
+    'This session was restarted via fnc_restart (all prior context and the ' +
+    'session JSONL are preserved). Resume the work that was in flight ' +
+    'before the restart — finish the task, monitor what you were ' +
+    'monitoring, surface results — rather than treating this as a fresh ' +
+    'session.' +
+    overrideClause +
+    '\n</system-reminder>'
+  );
+}
+
+/**
+ * Append an `isMeta:true` user-message bearing a `<system-reminder>` block
+ * to the session JSONL at `launchCWD` / `sessionID`. Best-effort: missing
+ * or unreadable JSONL is silently tolerated (the restart should still
+ * proceed; the reminder is a UX nicety, not a hard requirement).
+ *
+ * Shape matches the entries Claude Code itself emits for inline reminders
+ * — `type:"user"`, `message:{role:"user",content:"<system-reminder>…</system-reminder>"}`,
+ * `isMeta:true`. The `parentUuid` is linked to the most recent entry's
+ * `uuid` so the resumed session reads it as a fresh terminal user turn.
+ */
+export function appendRestartReminder(
+  launchCWD: string,
+  sessionID: string,
+  overrides?: RestartReminderOverrides,
+): void {
+  const path = sessionJSONLPath(launchCWD, sessionID);
+  let existing: string;
+  try {
+    existing = readFileSync(path, 'utf8');
+  } catch {
+    // No JSONL — nothing to append to. The relaunched claude will start
+    // fresh anyway, so the reminder would be off-target.
+    return;
+  }
+  const parentUuid = lastEntryUUID(existing);
+  const entry = {
+    parentUuid,
+    isSidechain: false,
+    type: 'user' as const,
+    message: {
+      role: 'user' as const,
+      content: renderRestartReminderContent(overrides),
+    },
+    isMeta: true,
+    uuid: randomUUID(),
+    timestamp: new Date().toISOString(),
+    userType: 'external' as const,
+    cwd: launchCWD,
+    sessionId: sessionID,
+  };
+  try {
+    appendFileSync(path, `${JSON.stringify(entry)}\n`);
+  } catch {
+    // Best-effort — disk full, permission denied, raced unlink, etc. The
+    // restart proceeds; user gets the historical "Restarted." idle behavior
+    // rather than a hard failure.
+  }
 }

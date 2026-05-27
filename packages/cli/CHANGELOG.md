@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.3...cli-v0.7.4) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** inject resume-continue system-reminder on fnc_restart ([#84](https://github.com/fnclaude/fnclaude/issues/84)) ([7fdaa2c](https://github.com/fnclaude/fnclaude/commit/7fdaa2c169d49e6454ac020e8f820d70e103b166)), closes [#77](https://github.com/fnclaude/fnclaude/issues/77)
+
 ## [0.7.3](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.2...cli-v0.7.3) (2026-05-25)
 
 
