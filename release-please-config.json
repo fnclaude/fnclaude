@@ -8,7 +8,7 @@
       "release-type": "node",
       "package-name": "@fnclaude/cli",
       "changelog-path": "CHANGELOG.md",
-      "release-as": "1.0.0"
+      "release-as": "1.0.1"
     },
     "packages/fnclaude": {
       "release-type": "node",
