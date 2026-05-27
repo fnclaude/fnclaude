@@ -1,0 +1,1 @@
+When using the Task / Agent tool with isolation set to "worktree", do not name the main repo's absolute path in the spawn prompt — the agent will cd there and silently bypass its isolated worktree. Phrase locations as "your worktree" or "this directory", and verify with git log on the worktree branch after the agent reports done.

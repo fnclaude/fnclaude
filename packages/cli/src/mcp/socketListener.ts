@@ -17,7 +17,10 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { writeFile, unlink, chmod } from 'node:fs/promises';
 import type { Config } from '../config.js';
 import { handoffContentPath, type HandoffSpec } from '../handoff.js';
-import { readLivePermissionMode } from '../sessionState.js';
+import {
+  appendRestartReminder,
+  readLivePermissionMode,
+} from '../sessionState.js';
 import {
   encodeResponse,
   type CopyRequest,
@@ -333,6 +336,17 @@ export class SocketListener {
       }
     }
     const { magic, rest } = splitLeadingMagic(withOverrides);
+
+    // Append a system-reminder to the session JSONL so the resumed model
+    // sees a fresh directive to continue the in-flight work rather than
+    // treat the restart as a hard reset and idle (issue #77).
+    appendRestartReminder(this.launchCWD, sid, {
+      model: req.model,
+      effort: req.effort,
+      permissionMode: req.permission_mode,
+      agent: req.agent,
+      ide: req.ide === true,
+    });
 
     const argv = [...magic, this.launchCWD, '--resume', sid, ...rest];
     this.stashArgv(argv);
