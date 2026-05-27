@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.8](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.7...cli-v0.7.8) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** bundle host-aliases defaults in source so npm install works ([#93](https://github.com/fnclaude/fnclaude/issues/93)) ([c70e6d8](https://github.com/fnclaude/fnclaude/commit/c70e6d861da9f0e2892e7c1673ef9849ac37db7c))
+
 ## [0.7.7](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.6...cli-v0.7.7) (2026-05-27)
 
 
