@@ -19,11 +19,19 @@
 
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 const HERE = import.meta.dir;
 const BIN = resolve(HERE, '..', 'bin', 'fnc.js');
+
+const umbrellaPkg = JSON.parse(
+  readFileSync(resolve(HERE, '..', 'package.json'), 'utf8'),
+) as { name: string; version: string };
+const cliPkg = JSON.parse(
+  readFileSync(resolve(HERE, '..', '..', 'cli', 'package.json'), 'utf8'),
+) as { name: string; version: string };
 
 interface RunResult {
   exitCode: number;
@@ -64,7 +72,25 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
   test('under Bun, --version succeeds (happy path)', async () => {
     const r = await spawnShim('bun', ['--version']);
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toMatch(/^fnclaude \S+\n$/);
+    expect(r.stdout).toMatch(/^fnclaude \S+/);
+  });
+
+  test('--version reports the umbrella version, not cli version', async () => {
+    // Regression: previously the umbrella's bin delegated straight to
+    // cli's bin, so `fnc --version` would print `fnclaude <cli-version>`
+    // — confusing for users who installed `fnclaude@<umbrella-version>`
+    // and expect that version to surface. The umbrella owns its own
+    // --version handler.
+    const r = await spawnShim('bun', ['--version']);
+    expect(r.exitCode).toBe(0);
+    // Leading token: `fnclaude <umbrella-version>`.
+    expect(r.stdout.startsWith(`fnclaude ${umbrellaPkg.version}`)).toBe(true);
+    // Sanity: when umbrella and cli versions differ (the case that
+    // motivated the bug), the umbrella's version is the one out front —
+    // not cli's.
+    if (umbrellaPkg.version !== cliPkg.version) {
+      expect(r.stdout.startsWith(`fnclaude ${cliPkg.version}`)).toBe(false);
+    }
   });
 
   test('under Node with bun on PATH, re-execs and succeeds', async () => {
@@ -74,7 +100,7 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
     // exit code, same stdout shape, no Bun-degraded warnings on stderr.
     const r = await spawnShim('node', ['--version']);
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toMatch(/^fnclaude \S+\n$/);
+    expect(r.stdout).toMatch(/^fnclaude \S+/);
     // The signature warning from the silent-degradation failure mode
     // ("Bun is not defined" thrown by Bun.TOML.parse). It would only fire
     // if the CLI ran under Node — which is exactly what the re-exec is
@@ -85,6 +111,12 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
   });
 
   test('under Node with bun NOT on PATH, emits directive error and exits non-zero', async () => {
+    // Use --help rather than --version as the trigger arg: --version now
+    // short-circuits BEFORE the Bun preflight (since it only needs file
+    // reads and shouldn't fail just because Bun is missing), so it can't
+    // exercise the directive-error path. --help still falls through to
+    // the preflight and hits cli's bin under Bun.
+    //
     // Strip every bun-providing dir from PATH so the shim's preflight
     // can't find it. CI runners commonly stack multiple bun installations
     // on PATH simultaneously (mise's installs dir, proto's shim dir,
@@ -138,7 +170,7 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
       );
     }
 
-    const r = await spawnShim('node', ['--version'], {
+    const r = await spawnShim('node', ['--help'], {
       env: { ...process.env, PATH: filteredPath },
       timeoutMs: 5_000,
     });
