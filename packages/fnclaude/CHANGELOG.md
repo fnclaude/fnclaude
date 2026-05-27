@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.18...fnclaude-v1.0.0) (2026-05-27)
+
+
+### Features
+
+* **cli:** ship shell completions + bundle LICENSE in tarballs ([#94](https://github.com/fnclaude/fnclaude/issues/94)) ([9c5cfad](https://github.com/fnclaude/fnclaude/commit/9c5cfad91df69201709b9830b1d5b1de1bec72f9))
+
 ## [0.0.18](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.17...fnclaude-v0.0.18) (2026-05-27)
 
 
