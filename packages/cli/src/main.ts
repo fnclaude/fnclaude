@@ -50,6 +50,7 @@ import { seedNoop } from './noop.js';
 import { silentRelaunch, silentRelaunchHandoff } from './silentRelaunch.js';
 import { applyWorktreeIntercept, type GitRunner } from './worktree.js';
 import { flushWarnings } from './warnings.js';
+import { errorMessage } from './errors.js';
 
 /**
  * `RunIO` — process-shaped seams. Streams, paths, the launch environment,
@@ -77,8 +78,8 @@ export interface RunIO {
   /** Shell cwd at startup. */
   cwd?: string;
 
-  /** PATH lookup for the claude binary; returns null when not found. */
-  lookupClaude?: (name: string) => string | null;
+  /** PATH lookup for the claude binary; returns undefined when not found. */
+  lookupClaude?: (name: string) => string | undefined;
   /** Override the run-with-pty step. */
   runWithPTY?: typeof runWithPTY;
   /** Override the silent-relaunch step (cross-cwd resume). */
@@ -144,18 +145,19 @@ export interface RunDeps {
   data?: RunConfig;
 }
 
-function lookupClaudeFromPath(name: string): string | null {
-  // Bun's PATH lookup: Bun.which() returns null when not found.
-  // Falls back to a synchronous probe via process.env.PATH if needed.
+function lookupClaudeFromPath(name: string): string | undefined {
+  // Bun's PATH lookup: Bun.which() returns null when not found. Coerce to
+  // undefined to keep the absent-value sentinel consistent with the rest of
+  // the codebase.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bunWhich = (globalThis as any).Bun?.which;
   if (typeof bunWhich === 'function') {
-    return bunWhich(name);
+    return bunWhich(name) ?? undefined;
   }
   // Fallback: walk PATH ourselves. Avoid `which` shell-out — synchronous and
   // brittle. Use spawnSync('which', [name]) only if Bun.which is unavailable
   // and we're not on Windows.
-  return null;
+  return undefined;
 }
 
 /**
@@ -232,7 +234,7 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     try {
       parsed = parseArgs(argv, home);
     } catch (err) {
-      stderr.write(`${(err as Error).message}\n`);
+      stderr.write(`${errorMessage(err)}\n`);
       return 1;
     }
 
@@ -241,7 +243,7 @@ export async function run(deps: RunDeps = {}): Promise<number> {
       try {
         await seedNoopFn(parsed.cwd);
       } catch (err) {
-        warnings.push(`fnclaude: noop seed failed: ${(err as Error).message}`);
+        warnings.push(`fnclaude: noop seed failed: ${errorMessage(err)}`);
       }
     }
 
@@ -309,14 +311,13 @@ export async function run(deps: RunDeps = {}): Promise<number> {
               hostAliases: aliases,
             }));
       } catch (err) {
-        stderr.write(`${(err as Error).message}\n`);
+        stderr.write(`${errorMessage(err)}\n`);
         return 1;
       }
       // If the user's reference had a +workspace suffix AND they didn't
       // pass -w explicitly, propagate the workspace to the intercept
       // layer.
-      const promoteWorkspace =
-        result.workspace !== undefined && result.workspace !== '' && !parsed.worktreeSet;
+      const promoteWorkspace = !!result.workspace && !parsed.worktreeSet;
       resolved = withResolved(parsed, {
         cwd: result.path,
         ...(promoteWorkspace
@@ -351,9 +352,9 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     if (shouldAutoName(named.passthrough)) {
       const prompt = extractPrompt(named.passthrough);
       const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
-      let llmFn: LlmClientFn | undefined;
-      if (apiKey !== '') llmFn = defaultLlmClient(apiKey);
-      else llmFn = claudeCliFn(cfg.name.model);
+      const llmFn: LlmClientFn = apiKey
+        ? defaultLlmClient(apiKey)
+        : claudeCliFn(cfg.name.model);
       const name = await generateNameFn(prompt, cfg.name, apiKey, llmFn);
       named = withPassthroughUpdate(named, {
         passthrough: ['--name', name, ...named.passthrough],
@@ -380,7 +381,7 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     const claudeArgv = buildArgv(sanitized, shellCWD, cfg, prompts);
 
     // ── Verify claude is on PATH before starting the PTY. ────────────────
-    if (lookupClaude('claude') === null) {
+    if (lookupClaude('claude') === undefined) {
       stderr.write(`fnclaude: claude not found in PATH\n`);
       return 1;
     }
@@ -400,7 +401,7 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     });
 
     // ── Auto-handoff fires first. ────────────────────────────────────────
-    if (handoffArgv !== null && handoffArgv.length > 0) {
+    if (handoffArgv !== undefined && handoffArgv.length > 0) {
       // Flush deferred warnings before relaunch since execve replaces the
       // process image (the deferred flush below would be skipped).
       flushOnce();
@@ -410,9 +411,9 @@ export async function run(deps: RunDeps = {}): Promise<number> {
     }
 
     // ── Cross-cwd redirect detection. ────────────────────────────────────
-    if (tail !== null) {
+    if (tail !== undefined) {
       const hit = detectCrossCwd(tail);
-      if (hit !== null) {
+      if (hit !== undefined) {
         flushOnce();
         relaunch(argv, hit.dest, hit.uuid);
         // Same fallthrough as above.
@@ -434,7 +435,7 @@ export async function main(): Promise<void> {
   try {
     code = await run();
   } catch (err) {
-    process.stderr.write(`fnclaude: fatal: ${(err as Error).message}\n`);
+    process.stderr.write(`fnclaude: fatal: ${errorMessage(err)}\n`);
     code = 1;
   }
   process.exit(code);

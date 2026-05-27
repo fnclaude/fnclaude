@@ -27,6 +27,7 @@
 
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import { envFromConfig } from '../config.js';
+import { errorMessage } from '../errors.js';
 import { handoffEnv } from '../handoff.js';
 import { SocketListener } from '../mcp/socketListener.js';
 import {
@@ -113,7 +114,7 @@ class CwdHandle {
     try {
       await this.h.cleanup();
     } catch (err) {
-      process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
+      process.stderr.write(`fnclaude: ${errorMessage(err)}\n`);
     }
   }
 
@@ -148,7 +149,7 @@ class PtyHandle {
 
 /**
  * Raw mode on the controlling TTY. Restores to whatever the original
- * `isRaw` was. Returns null when stdin isn't a real TTY (test harness,
+ * `isRaw` was. Returns undefined when stdin isn't a real TTY (test harness,
  * piped invocation) — disposable then becomes a no-op via `?.`.
  */
 class RawModeHandle {
@@ -157,15 +158,15 @@ class RawModeHandle {
     private readonly wasRaw: boolean,
   ) {}
 
-  static enter(): RawModeHandle | null {
-    if (!isTTY(process.stdin)) return null;
+  static enter(): RawModeHandle | undefined {
+    if (!isTTY(process.stdin)) return undefined;
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
     try {
       stdin.setRawMode(true);
     } catch {
       // not a real TTY in some test harnesses — skip raw mode silently
-      return null;
+      return undefined;
     }
     return new RawModeHandle(stdin, wasRaw);
   }
@@ -213,8 +214,8 @@ class WinchForwarder {
 class StdinPump {
   private constructor(private readonly handler: (chunk: Buffer) => void) {}
 
-  static start(pty: IPty): StdinPump | null {
-    if (!isTTY(process.stdin)) return null;
+  static start(pty: IPty): StdinPump | undefined {
+    if (!isTTY(process.stdin)) return undefined;
     const handler = (chunk: Buffer): void => {
       try {
         pty.write(chunk);
@@ -240,7 +241,7 @@ class StdinPump {
  * if it hasn't fired yet.
  */
 class HandoffKill {
-  private timer: NodeJS.Timeout | null = null;
+  private timer: NodeJS.Timeout | undefined;
 
   private constructor() {}
 
@@ -264,7 +265,7 @@ class HandoffKill {
   }
 
   [Symbol.dispose](): void {
-    if (this.timer !== null) clearTimeout(this.timer);
+    if (this.timer !== undefined) clearTimeout(this.timer);
   }
 }
 
@@ -277,13 +278,13 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // takes file + args separately (mirrors exec.Command).
   if (claudeArgv.length === 0) {
     process.stderr.write('fnclaude: empty argv passed to runWithPTY\n');
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
 
   // Build the env. Order matches Go: os env → exec.env → handoff env.
   // Last-wins on dupes, so handoff env beats user-supplied dupes.
   const envExtras: string[] = [...envFromConfig(cfg)];
-  if (handoff !== null) {
+  if (handoff !== undefined) {
     envExtras.push(...handoffEnv(handoff.mode, handoff.socketPath));
   }
   const childEnv = envArrayToObject(process.env, envExtras);
@@ -292,22 +293,22 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // moment claude (and thus the `fnclaude mcp` subprocess) starts. On
   // listener-startup failure we abort the run — handoff is core behavior,
   // not optional.
-  let listener: ListenerHandle | null;
+  let listener: ListenerHandle | undefined;
   try {
     listener =
-      handoff !== null
+      handoff !== undefined
         ? await ListenerHandle.start({
             spec: handoff,
             cfg,
             launchCWD,
             origArgs: handoff.originalArgs,
           })
-        : null;
+        : undefined;
   } catch (err) {
     process.stderr.write(
-      `fnclaude: socket listener failed to start: ${(err as Error).message}\n`,
+      `fnclaude: socket listener failed to start: ${errorMessage(err)}\n`,
     );
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
   // Bind into `await using` scope. Declared first → disposed last, after
   // we've extracted the handoff argv below.
@@ -320,8 +321,8 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   try {
     cwd = await CwdHandle.ensure(launchCWD);
   } catch (err) {
-    process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    process.stderr.write(`fnclaude: ${errorMessage(err)}\n`);
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
   await using _cwd = cwd;
 
@@ -341,9 +342,9 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
     // cwd + listener will be cleaned up by their `using` disposers on the
     // way out of this scope.
     process.stderr.write(
-      `fnclaude: failed to start claude with PTY: ${(err as Error).message}\n`,
+      `fnclaude: failed to start claude with PTY: ${errorMessage(err)}\n`,
     );
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
   using pty = new PtyHandle(ptyRaw);
 
@@ -382,7 +383,8 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // SIGTERM + brief grace + SIGKILL mirrors the legacy SIGUSR1 path
   // — the listener marks "switch fired" and the parent gets out of
   // the PTY loop ASAP.
-  using _handoffKill = listener !== null ? HandoffKill.arm(listener.inner, pty.inner) : null;
+  using _handoffKill =
+    listener !== undefined ? HandoffKill.arm(listener.inner, pty.inner) : undefined;
 
   // Wait for the child to exit. Use a one-shot guard so we capture only
   // the FIRST exit event — node-pty under Bun has been observed to emit
@@ -420,7 +422,8 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   // Extract handoff argv BEFORE the listener's disposer fires (which will
   // close the socket). The listener disposer runs last because it was
   // declared first in this scope.
-  const handoffArgv = listener !== null ? listener.inner.getHandoffArgv() : null;
+  const handoffArgv =
+    listener !== undefined ? listener.inner.getHandoffArgv() : undefined;
 
   return { exitCode, tail: ring.bytes(), handoffArgv };
 }

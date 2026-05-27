@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { parseRepoRef } from '../src/repoRef.js';
 
-// Mirrors src/repo_ref_test.go. parseRepoRef returns null instead of throwing
-// when the input is unparseable (TS callers branch on null rather than
-// catching).
+// Mirrors src/repo_ref_test.go. parseRepoRef returns undefined instead of
+// throwing when the input is unparseable (TS callers branch on undefined
+// rather than catching).
 
 describe('parseRepoRef', () => {
   test('bare name', () => {
     const r = parseRepoRef('arch-setup');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.name).toBe('arch-setup');
     expect(r!.owner).toBe('');
     expect(r!.host).toBe('');
@@ -17,21 +17,21 @@ describe('parseRepoRef', () => {
 
   test('name@owner (Tom local convention)', () => {
     const r = parseRepoRef('arch-setup@fnrhombus');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.name).toBe('arch-setup');
     expect(r!.owner).toBe('fnrhombus');
   });
 
   test('owner/name', () => {
     const r = parseRepoRef('fnrhombus/arch-setup');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.name).toBe('arch-setup');
   });
 
   test('gh:owner/name shorthand', () => {
     const r = parseRepoRef('gh:fnrhombus/arch-setup');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.host).toBe('github.com');
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.name).toBe('arch-setup');
@@ -39,7 +39,7 @@ describe('parseRepoRef', () => {
 
   test('https URL', () => {
     const r = parseRepoRef('https://github.com/fnrhombus/arch-setup');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.host).toBe('github.com');
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.name).toBe('arch-setup');
@@ -47,13 +47,13 @@ describe('parseRepoRef', () => {
 
   test('https URL with .git suffix', () => {
     const r = parseRepoRef('https://github.com/fnrhombus/arch-setup.git');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.name).toBe('arch-setup');
   });
 
   test('ssh URL', () => {
     const r = parseRepoRef('ssh://git@github.com/fnrhombus/arch-setup.git');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.host).toBe('github.com');
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.name).toBe('arch-setup');
@@ -61,7 +61,7 @@ describe('parseRepoRef', () => {
 
   test('git@host:owner/name.git', () => {
     const r = parseRepoRef('git@github.com:fnrhombus/arch-setup.git');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.host).toBe('github.com');
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.name).toBe('arch-setup');
@@ -69,7 +69,7 @@ describe('parseRepoRef', () => {
 
   test('git@host:owner/name (no .git)', () => {
     const r = parseRepoRef('git@gitlab.com:org/name');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.host).toBe('gitlab.com');
     expect(r!.owner).toBe('org');
     expect(r!.name).toBe('name');
@@ -77,7 +77,7 @@ describe('parseRepoRef', () => {
 
   test('name@owner+workspace', () => {
     const r = parseRepoRef('arch-setup@fnrhombus+my-feature');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.name).toBe('arch-setup');
     expect(r!.owner).toBe('fnrhombus');
     expect(r!.workspace).toBe('my-feature');
@@ -85,38 +85,38 @@ describe('parseRepoRef', () => {
 
   test('bare name with workspace', () => {
     const r = parseRepoRef('arch-setup+my-feature');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.name).toBe('arch-setup');
     expect(r!.workspace).toBe('my-feature');
   });
 
-  test('empty workspace after + returns null', () => {
-    expect(parseRepoRef('arch-setup+')).toBeNull();
+  test('empty workspace after + returns undefined', () => {
+    expect(parseRepoRef('arch-setup+')).toBeUndefined();
   });
 
-  test('empty input returns null', () => {
-    expect(parseRepoRef('')).toBeNull();
+  test('empty input returns undefined', () => {
+    expect(parseRepoRef('')).toBeUndefined();
   });
 
   test('multiple slashes are rejected', () => {
-    expect(parseRepoRef('a/b/c')).toBeNull();
+    expect(parseRepoRef('a/b/c')).toBeUndefined();
   });
 
   test('original is preserved', () => {
     const r = parseRepoRef('arch-setup@fnrhombus+wt');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.original).toBe('arch-setup@fnrhombus+wt');
   });
 
   test('effective host defaults to github.com for bare name', () => {
     const r = parseRepoRef('arch-setup');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.effectiveHost).toBe('github.com');
   });
 
   test('effective host preserves explicit host', () => {
     const r = parseRepoRef('https://gitlab.com/org/name');
-    expect(r).not.toBeNull();
+    expect(r).not.toBeUndefined();
     expect(r!.effectiveHost).toBe('gitlab.com');
   });
 
@@ -129,7 +129,7 @@ describe('parseRepoRef', () => {
     ];
     for (const c of cases) {
       const r = parseRepoRef(c.in);
-      expect(r).not.toBeNull();
+      expect(r).not.toBeUndefined();
       expect(r!.hasResolvedOwner).toBe(c.hasOwner);
     }
   });

@@ -7,7 +7,7 @@
 // '/' is allowed so git-style nested refs (feat/foo, team/x/y/z) pass
 // through and produce nested worktree paths.
 //
-// Returns null when:
+// Returns undefined when:
 //   - the input is empty
 //   - the input starts with '/' (would escape the configured path prefix)
 //   - the result reduces to empty after sanitization
@@ -21,9 +21,9 @@ const RE_PATH_SAFE_BAD = /[^A-Za-z0-9._/-]+/g;
 const RE_DASH_RUN = /-{2,}/g;
 const RE_SLASH_RUN = /\/{2,}/g;
 
-export function sanitizeName(s: string): string | null {
-  if (s === '') return null;
-  if (s.startsWith('/')) return null;
+export function sanitizeName(s: string): string | undefined {
+  if (s === '') return undefined;
+  if (s.startsWith('/')) return undefined;
 
   let out = s.replace(RE_PATH_SAFE_BAD, '-');
   out = out.replace(RE_DASH_RUN, '-');
@@ -31,8 +31,8 @@ export function sanitizeName(s: string): string | null {
   out = trimLeftAny(out, '-.');
   out = trimRightAny(out, '-/');
 
-  if (out === '') return null;
-  if (out.includes('..')) return null;
+  if (out === '') return undefined;
+  if (out.includes('..')) return undefined;
   return out;
 }
 
@@ -71,7 +71,7 @@ export function sanitizeNamesInPassthrough(p: readonly string[]): SanitizeNamesR
     if ((t === '--name' || t === '-n') && i + 1 < out.length) {
       const val = out[i + 1]!;
       const decision = decideSanitize(val);
-      if (decision.warning !== null) warnings.push(decision.warning);
+      if (decision.warning !== undefined) warnings.push(decision.warning);
       if (decision.replace) out[i + 1] = decision.cleaned;
       i++; // skip the value slot
       continue;
@@ -79,14 +79,14 @@ export function sanitizeNamesInPassthrough(p: readonly string[]): SanitizeNamesR
     if (t.startsWith('--name=')) {
       const val = t.slice('--name='.length);
       const decision = decideSanitize(val);
-      if (decision.warning !== null) warnings.push(decision.warning);
+      if (decision.warning !== undefined) warnings.push(decision.warning);
       if (decision.replace) out[i] = `--name=${decision.cleaned}`;
       continue;
     }
     if (t.startsWith('-n=')) {
       const val = t.slice('-n='.length);
       const decision = decideSanitize(val);
-      if (decision.warning !== null) warnings.push(decision.warning);
+      if (decision.warning !== undefined) warnings.push(decision.warning);
       if (decision.replace) out[i] = `-n=${decision.cleaned}`;
       continue;
     }
@@ -96,13 +96,13 @@ export function sanitizeNamesInPassthrough(p: readonly string[]): SanitizeNamesR
 
 interface SanitizeDecision {
   cleaned: string;
-  warning: string | null;
+  warning: string | undefined;
   replace: boolean;
 }
 
 function decideSanitize(val: string): SanitizeDecision {
   const cleaned = sanitizeName(val);
-  if (cleaned === null) {
+  if (cleaned === undefined) {
     return {
       cleaned: val,
       warning: `fnclaude: --name ${JSON.stringify(val)} has no path-safe characters; passing through unchanged`,
@@ -110,7 +110,7 @@ function decideSanitize(val: string): SanitizeDecision {
     };
   }
   if (cleaned === val) {
-    return { cleaned: '', warning: null, replace: false };
+    return { cleaned: '', warning: undefined, replace: false };
   }
   return {
     cleaned,

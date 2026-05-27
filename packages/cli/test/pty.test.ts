@@ -37,23 +37,23 @@ To resume, run:
 describe('detectCrossCwd', () => {
   test('exact message: parses dest + uuid', () => {
     const m = detectCrossCwd(Buffer.from(claudeExactMessage));
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/tom/src/arch-setup@fnrhombus');
     expect(m!.uuid).toBe('68aa15ae-af23-4c7a-b59f-5cee07c61790');
   });
 
   test('no match in normal output', () => {
-    expect(detectCrossCwd(Buffer.from('normal claude output\nno resume message'))).toBeNull();
+    expect(detectCrossCwd(Buffer.from('normal claude output\nno resume message'))).toBeUndefined();
   });
 
   test('empty input', () => {
-    expect(detectCrossCwd(Buffer.alloc(0))).toBeNull();
+    expect(detectCrossCwd(Buffer.alloc(0))).toBeUndefined();
   });
 
   test('partial message (only preamble)', () => {
     expect(
       detectCrossCwd(Buffer.from('This conversation is from a different directory.')),
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   test('TUI capture: cursor escapes between words still parse', () => {
@@ -63,7 +63,7 @@ describe('detectCrossCwd', () => {
       '\x1b[1B\x1b[K\rTo resume, run:\x1b[K\r\x1b[1C\x1b[1B' +
       'cd /home/tom/src/fnclaude@fnrhombus && claude --resume 22d4b53f-265f-4455-9e85-2e1afed6244b\x1b[K';
     const m = detectCrossCwd(Buffer.from(tuiCapture));
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/tom/src/fnclaude@fnrhombus');
     expect(m!.uuid).toBe('22d4b53f-265f-4455-9e85-2e1afed6244b');
   });
@@ -76,7 +76,7 @@ To resume, run:
 
 (Command copied to clipboard)`;
     const m = detectCrossCwd(Buffer.from(`${claudeExactMessage}\n${second}`));
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/tom/src/dots@rhombu5');
     expect(m!.uuid).toBe('aaaabbbb-1111-2222-3333-ccccddddeeee');
   });
@@ -84,7 +84,7 @@ To resume, run:
   test('embedded in larger output', () => {
     const prefix = '=== some normal claude output ===\nthinking...\nDone.\n\n';
     const m = detectCrossCwd(Buffer.from(prefix + claudeExactMessage));
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/tom/src/arch-setup@fnrhombus');
   });
 
@@ -106,17 +106,17 @@ To resume, run:
 
   test('null byte in dest is rejected', () => {
     const evil = `To resume, run:\n  cd /home/me/proj\x00/evil && claude --resume 11111111-2222-3333-4444-555555555555\n`;
-    expect(detectCrossCwd(Buffer.from(evil))).toBeNull();
+    expect(detectCrossCwd(Buffer.from(evil))).toBeUndefined();
   });
 
   test('parent-traversal segment in dest is rejected', () => {
     const evil = `To resume, run:\n  cd /home/me/../etc && claude --resume 11111111-2222-3333-4444-555555555555\n`;
-    expect(detectCrossCwd(Buffer.from(evil))).toBeNull();
+    expect(detectCrossCwd(Buffer.from(evil))).toBeUndefined();
   });
 
   test('relative dest is rejected (must be absolute)', () => {
     const evil = `To resume, run:\n  cd evil/path && claude --resume 11111111-2222-3333-4444-555555555555\n`;
-    expect(detectCrossCwd(Buffer.from(evil))).toBeNull();
+    expect(detectCrossCwd(Buffer.from(evil))).toBeUndefined();
   });
 
   test('non-normalised absolute dest is rejected (path.resolve != input)', () => {
@@ -125,13 +125,13 @@ To resume, run:
     // that would otherwise let a malicious peer slip a non-canonical path
     // past parent-segment detection.
     const evil = `To resume, run:\n  cd /home/me/./proj && claude --resume 11111111-2222-3333-4444-555555555555\n`;
-    expect(detectCrossCwd(Buffer.from(evil))).toBeNull();
+    expect(detectCrossCwd(Buffer.from(evil))).toBeUndefined();
   });
 
   test('canonical absolute dest still parses', () => {
     const ok = `To resume, run:\n  cd /home/me/proj && claude --resume 11111111-2222-3333-4444-555555555555\n`;
     const m = detectCrossCwd(Buffer.from(ok));
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/me/proj');
   });
 });
@@ -190,7 +190,7 @@ describe('RingBuffer', () => {
     r.write(msg);
     r.write(trailing);
     const m = detectCrossCwd(r.bytes());
-    expect(m).not.toBeNull();
+    expect(m).not.toBeUndefined();
     expect(m!.dest).toBe('/home/tom/src/arch-setup@fnrhombus');
   });
 });

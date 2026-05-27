@@ -15,6 +15,7 @@
 
 import { spawn as childSpawn } from 'node:child_process';
 import { envFromConfig } from '../config.js';
+import { errorMessage } from '../errors.js';
 import { handoffEnv } from '../handoff.js';
 import { SocketListener } from '../mcp/socketListener.js';
 import { ensureCWD, type RunOptions, type RunResult } from '../pty.js';
@@ -23,13 +24,13 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   const { claudeArgv, launchCWD, cfg, handoff } = opts;
   if (claudeArgv.length === 0) {
     process.stderr.write('fnclaude: empty argv passed to runWithPTY\n');
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
 
   // Build env. Order matches Unix: os env → exec.env → handoff env;
   // last-wins on dupes.
   const envExtras: string[] = [...envFromConfig(cfg)];
-  if (handoff !== null) {
+  if (handoff !== undefined) {
     envExtras.push(...handoffEnv(handoff.mode, handoff.socketPath));
   }
   const childEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -40,8 +41,8 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
   }
 
   // Start the AF_UNIX listener before the child.
-  let listener: SocketListener | null = null;
-  if (handoff !== null) {
+  let listener: SocketListener | undefined;
+  if (handoff !== undefined) {
     try {
       listener = await SocketListener.start({
         spec: handoff,
@@ -51,23 +52,23 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
       });
     } catch (err) {
       process.stderr.write(
-        `fnclaude: socket listener failed to start: ${(err as Error).message}\n`,
+        `fnclaude: socket listener failed to start: ${errorMessage(err)}\n`,
       );
-      return { exitCode: 1, tail: null, handoffArgv: null };
+      return { exitCode: 1, tail: undefined, handoffArgv: undefined };
     }
   }
 
   // Fabricate the cwd tree if missing. Windows can't safely tear the cwd
   // out from under a running child the way Unix can; defer the cleanup
   // until the child exits.
-  let cleanupCWD: (() => Promise<void>) | null = null;
+  let cleanupCWD: (() => Promise<void>) | undefined;
   try {
     const h = await ensureCWD(launchCWD);
     cleanupCWD = h.cleanup;
   } catch (err) {
-    process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
-    if (listener !== null) await listener.close();
-    return { exitCode: 1, tail: null, handoffArgv: null };
+    process.stderr.write(`fnclaude: ${errorMessage(err)}\n`);
+    if (listener !== undefined) await listener.close();
+    return { exitCode: 1, tail: undefined, handoffArgv: undefined };
   }
 
   let exitCode = 0;
@@ -83,7 +84,7 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
     // Handoff: when the listener fires, kill the child. Windows doesn't
     // honor SIGTERM/SIGKILL through Node's signal API; child.kill() maps
     // to TerminateProcess which is the closest equivalent.
-    if (listener !== null) {
+    if (listener !== undefined) {
       void listener.triggered().then(() => {
         try {
           child.kill();
@@ -105,20 +106,20 @@ export async function runWithPTY(opts: RunOptions): Promise<RunResult> {
       });
     });
   } finally {
-    if (cleanupCWD !== null) {
+    if (cleanupCWD !== undefined) {
       try {
         await cleanupCWD();
       } catch (err) {
-        process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
+        process.stderr.write(`fnclaude: ${errorMessage(err)}\n`);
       }
     }
   }
 
-  let handoffArgv: string[] | null = null;
-  if (listener !== null) {
-    handoffArgv = listener.getHandoffArgv();
+  let handoffArgv: string[] | undefined;
+  if (listener !== undefined) {
+    handoffArgv = listener.getHandoffArgv() ?? undefined;
     await listener.close();
   }
 
-  return { exitCode, tail: null, handoffArgv };
+  return { exitCode, tail: undefined, handoffArgv };
 }

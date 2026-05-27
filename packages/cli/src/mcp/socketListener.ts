@@ -16,6 +16,7 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import { writeFile, unlink, chmod } from 'node:fs/promises';
 import type { Config } from '../config.js';
+import { errorMessage } from '../errors.js';
 import { handoffContentPath, type HandoffSpec } from '../handoff.js';
 import {
   appendRestartReminder,
@@ -119,7 +120,7 @@ export class SocketListener {
   private readonly origArgs: readonly string[];
   private readonly deps: SocketListenerDeps;
 
-  private handoffArgv: string[] | null = null;
+  private handoffArgv: string[] | undefined;
   private triggeredResolve!: () => void;
   private readonly triggeredPromise: Promise<void>;
   private triggeredFired = false;
@@ -192,7 +193,7 @@ export class SocketListener {
         // already gone
       }
       throw new Error(
-        `failed to chmod socket to 0600 at ${opts.spec.socketPath}: ${(err as Error).message}`,
+        `failed to chmod socket to 0600 at ${opts.spec.socketPath}: ${errorMessage(err)}`,
       );
     }
     return listener;
@@ -220,13 +221,13 @@ export class SocketListener {
   }
 
   /** Parsed argv (leading "fnclaude" token already dropped) to re-exec. */
-  getHandoffArgv(): string[] | null {
-    return this.handoffArgv === null ? null : this.handoffArgv.slice();
+  getHandoffArgv(): string[] | undefined {
+    return this.handoffArgv === undefined ? undefined : this.handoffArgv.slice();
   }
 
   /** First-wins. Subsequent calls don't overwrite. */
   private stashArgv(argv: string[]): void {
-    if (this.handoffArgv === null) {
+    if (this.handoffArgv === undefined) {
       this.handoffArgv = argv;
     }
     if (!this.triggeredFired) {
@@ -240,20 +241,20 @@ export class SocketListener {
   private async handleConn(sock: Socket): Promise<void> {
     try {
       // Read one Request from the socket's data stream.
-      let req: Request | null;
+      let req: Request | undefined;
       try {
         req = await readRequest(sock);
       } catch (err) {
         sock.write(
           encodeResponse({
             action: 'error',
-            error: `malformed request: ${(err as Error).message}`,
+            error: `malformed request: ${errorMessage(err)}`,
           }),
         );
         sock.end();
         return;
       }
-      if (req === null) {
+      if (req === undefined) {
         // EOF without a line — client disconnected silently. Nothing to respond.
         sock.end();
         return;
@@ -267,7 +268,7 @@ export class SocketListener {
         sock.write(
           encodeResponse({
             action: 'error',
-            error: `handler failure: ${(err as Error).message}`,
+            error: `handler failure: ${errorMessage(err)}`,
           }),
         );
       } catch {
@@ -305,8 +306,8 @@ export class SocketListener {
   // ── handleRestart ───────────────────────────────────────────────────────
 
   private async handleRestart(req: RestartRequest): Promise<Response> {
-    const sid = req.session_id ?? '';
-    if (sid === '') {
+    const sid = req.session_id;
+    if (!sid) {
       return {
         action: 'error',
         error:
@@ -327,7 +328,7 @@ export class SocketListener {
     // Auto-capture live permission-mode from the session JSONL when the
     // caller didn't override AND none was preserved.
     if (
-      (req.permission_mode === undefined || req.permission_mode === '') &&
+      !req.permission_mode &&
       !flagPresent(withOverrides, '--permission-mode')
     ) {
       const live = readLivePermissionMode(this.launchCWD, sid);
@@ -363,20 +364,19 @@ export class SocketListener {
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
     } catch (err) {
-      return { action: 'error', error: `write summary: ${(err as Error).message}` };
+      return { action: 'error', error: `write summary: ${errorMessage(err)}` };
     }
 
     // Preserve user flags minus the transfer denylist, then apply overrides.
     const preserved = preserveArgs(this.origArgs, transferDenyFlags, transferDenyBareOK);
     let withOverrides = applyOverrides(preserved, req);
     // Auto-capture live permission-mode (same pattern as restart).
-    const sid = req.session_id ?? '';
     if (
-      (req.permission_mode === undefined || req.permission_mode === '') &&
+      !req.permission_mode &&
       !flagPresent(withOverrides, '--permission-mode') &&
-      sid !== ''
+      req.session_id
     ) {
-      const live = readLivePermissionMode(this.launchCWD, sid);
+      const live = readLivePermissionMode(this.launchCWD, req.session_id);
       if (live !== undefined) {
         withOverrides = [...withOverrides, '--permission-mode', live];
       }
@@ -405,7 +405,7 @@ export class SocketListener {
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
     } catch (err) {
-      return { action: 'error', error: `write summary: ${(err as Error).message}` };
+      return { action: 'error', error: `write summary: ${errorMessage(err)}` };
     }
 
     // Spawn doesn't preserve startup flags — fresh-start sibling.
@@ -450,7 +450,7 @@ export class SocketListener {
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
     } catch (err) {
-      return { action: 'error', error: `write summary: ${(err as Error).message}` };
+      return { action: 'error', error: `write summary: ${errorMessage(err)}` };
     }
     const preserved = preserveArgs(this.origArgs, transferDenyFlags, transferDenyBareOK);
     const withOverrides = applyOverrides(preserved, req);
@@ -479,7 +479,7 @@ export class SocketListener {
     try {
       await writeFile(summaryPath, req.summary ?? '', { mode: 0o600 });
     } catch (err) {
-      return { action: 'error', error: `write summary: ${(err as Error).message}` };
+      return { action: 'error', error: `write summary: ${errorMessage(err)}` };
     }
     const extraArgs = applyOverrides([], req);
     const dest = req.destination ?? '';

@@ -234,10 +234,10 @@ describe('readRequest / readResponse over async iterable streams', () => {
     expect(got).toEqual({ op: OpSwitch, destination: 'x', name: 'y' });
   });
 
-  test('readResponse returns null on clean EOF', async () => {
+  test('readResponse returns undefined on clean EOF', async () => {
     const stream = Readable.from([] as Buffer[]);
     const got = await readResponse(stream);
-    expect(got).toBeNull();
+    expect(got).toBeUndefined();
   });
 
   test('readRequest stops at first newline (one line per connection)', async () => {

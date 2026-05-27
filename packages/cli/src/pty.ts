@@ -14,6 +14,7 @@ import { mkdir, rmdir, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import type { Config } from './config.js';
+import { errorMessage } from './errors.js';
 import type { HandoffSpec } from './handoff.js';
 import { isFlag, isMagicWord, preserveArgs, splitLeadingMagic } from './args/preserve.js';
 
@@ -118,7 +119,7 @@ export interface CrossCwdMatch {
 }
 
 /**
- * Scan `tail` for the cross-cwd redirect message. Returns null when no
+ * Scan `tail` for the cross-cwd redirect message. Returns undefined when no
  * match is found OR when the captured `dest` fails safety validation.
  * When multiple matches appear (unlikely but defensive), the LAST match
  * wins.
@@ -132,7 +133,7 @@ export interface CrossCwdMatch {
  * it's an absolute path that survives canonicalisation unchanged and
  * contains no null bytes / `..` segments.
  */
-export function detectCrossCwd(tail: Buffer): CrossCwdMatch | null {
+export function detectCrossCwd(tail: Buffer): CrossCwdMatch | undefined {
   // Decode as Latin-1 so every byte maps to a code unit; the regex matches
   // ASCII anchors so the multi-byte representation of any non-ASCII bytes
   // never participates in a match. This is the JS equivalent of Go's
@@ -142,13 +143,13 @@ export function detectCrossCwd(tail: Buffer): CrossCwdMatch | null {
   // module-level `lastIndex` to reset. The exported `crossCwdRe` stays
   // `g`-flagged (matchAll requires it) but is only ever consumed as an
   // anchor for tests / the source-of-truth comparison.
-  let last: RegExpMatchArray | null = null;
+  let last: RegExpMatchArray | undefined;
   for (const m of s.matchAll(crossCwdRe)) {
     last = m;
   }
-  if (last === null) return null;
+  if (last === undefined) return undefined;
   const dest = last[1]!;
-  if (!isSafeDest(dest)) return null;
+  if (!isSafeDest(dest)) return undefined;
   return { dest, uuid: last[2]! };
 }
 
@@ -251,13 +252,13 @@ export interface EnsureCWDHandle {
  * a file, ensureCWD likewise rejects without touching the filesystem.
  */
 export async function ensureCWD(dir: string): Promise<EnsureCWDHandle> {
-  let info: Stats | null = null;
+  let info: Stats | undefined;
   try {
     info = await stat(dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
-  if (info !== null) {
+  if (info !== undefined) {
     if (!info.isDirectory()) {
       throw new Error(`session cwd ${dir} exists but is not a directory`);
     }
@@ -276,13 +277,13 @@ export async function ensureCWD(dir: string): Promise<EnsureCWDHandle> {
     if (parent === p) {
       throw new Error(`session cwd ${dir} does not exist and has no existing ancestor`);
     }
-    let parentInfo: Stats | null = null;
+    let parentInfo: Stats | undefined;
     try {
       parentInfo = await stat(parent);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
-    if (parentInfo !== null) {
+    if (parentInfo !== undefined) {
       if (!parentInfo.isDirectory()) {
         throw new Error(
           `session cwd ${dir} cannot be created: ancestor ${parent} is not a directory`,
@@ -308,7 +309,7 @@ export async function ensureCWD(dir: string): Promise<EnsureCWDHandle> {
         }
       }
       throw new Error(
-        `session cwd ${dir} does not exist and could not be created: ${(err as Error).message}`,
+        `session cwd ${dir} does not exist and could not be created: ${errorMessage(err)}`,
       );
     }
     created.push(level);
@@ -325,7 +326,7 @@ export async function ensureCWD(dir: string): Promise<EnsureCWDHandle> {
         } catch (err) {
           const code = (err as NodeJS.ErrnoException).code;
           if (code === 'ENOENT') continue; // already gone — fine
-          throw new Error(`could not clean up auto-created ${level}: ${(err as Error).message}`);
+          throw new Error(`could not clean up auto-created ${level}: ${errorMessage(err)}`);
         }
       }
     },
@@ -339,13 +340,13 @@ export async function ensureCWD(dir: string): Promise<EnsureCWDHandle> {
  * the moment the child exited; `handoffArgv` is populated only when the
  * socket listener fired `triggered()` and stashed a relaunch argv.
  *
- * On Windows the tail is null (no PTY, no ring buffer, cross-cwd-resume
- * is a no-op).
+ * On Windows the tail is undefined (no PTY, no ring buffer,
+ * cross-cwd-resume is a no-op).
  */
 export interface RunResult {
   exitCode: number;
-  tail: Buffer | null;
-  handoffArgv: string[] | null;
+  tail: Buffer | undefined;
+  handoffArgv: string[] | undefined;
 }
 
 export interface RunOptions {
@@ -357,8 +358,8 @@ export interface RunOptions {
   claudeArgv: string[];
   launchCWD: string;
   cfg: Config;
-  /** Null disables handoff (no env injection, no listener). */
-  handoff: HandoffSpec | null;
+  /** Undefined disables handoff (no env injection, no listener). */
+  handoff: HandoffSpec | undefined;
 }
 
 /**

@@ -87,7 +87,7 @@ export function readLivePermissionMode(
     } catch {
       continue; // malformed line — ignore
     }
-    if (r.type === 'permission-mode' && typeof r.permissionMode === 'string' && r.permissionMode !== '') {
+    if (r.type === 'permission-mode' && typeof r.permissionMode === 'string' && r.permissionMode) {
       latest = r.permissionMode;
     }
   }
@@ -110,10 +110,10 @@ export interface RestartReminderOverrides {
 
 /**
  * Read the trailing entries of `data` and return the most recent `uuid`
- * field, or `null` if none found. Used to link the appended reminder into
- * the JSONL parent-chain.
+ * field, or `undefined` if none found. Used to link the appended reminder
+ * into the JSONL parent-chain.
  */
-function lastEntryUUID(data: string): string | null {
+function lastEntryUUID(data: string): string | undefined {
   const lines = data.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
@@ -128,7 +128,7 @@ function lastEntryUUID(data: string): string | null {
       return parsed.uuid;
     }
   }
-  return null;
+  return undefined;
 }
 
 /** Render the system-reminder body text, optionally naming overrides. */
@@ -136,16 +136,16 @@ export function renderRestartReminderContent(
   overrides?: RestartReminderOverrides,
 ): string {
   const parts: string[] = [];
-  if (overrides?.model && overrides.model !== '') {
+  if (overrides?.model) {
     parts.push(`model swap to ${overrides.model}`);
   }
-  if (overrides?.effort && overrides.effort !== '') {
+  if (overrides?.effort) {
     parts.push(`effort=${overrides.effort}`);
   }
-  if (overrides?.permissionMode && overrides.permissionMode !== '') {
+  if (overrides?.permissionMode) {
     parts.push(`permission-mode=${overrides.permissionMode}`);
   }
-  if (overrides?.agent && overrides.agent !== '') {
+  if (overrides?.agent) {
     parts.push(`agent=${overrides.agent}`);
   }
   if (overrides?.ide) {
@@ -192,7 +192,9 @@ export function appendRestartReminder(
     // fresh anyway, so the reminder would be off-target.
     return;
   }
-  const parentUuid = lastEntryUUID(existing);
+  // JSONL parentUuid is on the wire — keep null encoding for "no parent"
+  // entries to match Claude Code's own writer.
+  const parentUuid = lastEntryUUID(existing) ?? null;
   const entry = {
     parentUuid,
     isSidechain: false,

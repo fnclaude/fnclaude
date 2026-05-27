@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { sanitizeName, sanitizeNamesInPassthrough } from '../src/sanitize.js';
 
 // Mirrors src/sanitize_test.go from the Go reference; sanitizeName is the
-// TS-side rename of sanitizeForPath and returns null instead of (string,
+// TS-side rename of sanitizeForPath and returns undefined instead of (string,
 // false) when sanitization yields nothing usable.
 
-type Case = { name: string; in: string; want: string | null };
+type Case = { name: string; in: string; want: string | undefined };
 
 const sanitizeCases: Case[] = [
   // passthrough
@@ -54,19 +54,19 @@ const sanitizeCases: Case[] = [
   { name: 'diaeresis', in: 'naïve-attempt', want: 'na-ve-attempt' },
 
   // empty results
-  { name: 'empty input', in: '', want: null },
-  { name: 'only spaces', in: '   ', want: null },
-  { name: 'only punct', in: '???', want: null },
-  { name: 'only hyphens', in: '---', want: null },
-  { name: 'only dots', in: '...', want: null },
-  { name: 'only slashes', in: '///', want: null },
-  { name: 'only non-ASCII', in: '日本語', want: null },
+  { name: 'empty input', in: '', want: undefined },
+  { name: 'only spaces', in: '   ', want: undefined },
+  { name: 'only punct', in: '???', want: undefined },
+  { name: 'only hyphens', in: '---', want: undefined },
+  { name: 'only dots', in: '...', want: undefined },
+  { name: 'only slashes', in: '///', want: undefined },
+  { name: 'only non-ASCII', in: '日本語', want: undefined },
 
   // path escape / git ref-format rejections
-  { name: 'leading slash', in: '/foo', want: null },
-  { name: 'path escape via dotdot', in: 'foo/../bar', want: null },
-  { name: 'double-dot anywhere', in: 'foo..bar', want: null },
-  { name: 'trailing double-dot', in: 'foo..', want: null },
+  { name: 'leading slash', in: '/foo', want: undefined },
+  { name: 'path escape via dotdot', in: 'foo/../bar', want: undefined },
+  { name: 'double-dot anywhere', in: 'foo..bar', want: undefined },
+  { name: 'trailing double-dot', in: 'foo..', want: undefined },
 
   // control chars
   { name: 'NUL', in: 'foo\x00bar', want: 'foo-bar' },

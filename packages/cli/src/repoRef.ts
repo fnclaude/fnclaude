@@ -14,10 +14,10 @@
 // Inputs starting with `/` or `~/` are NOT repo refs (they're paths); the
 // caller short-circuits before this function.
 //
-// Returns null when the input is empty or otherwise unparseable. The Go
-// version returns (RepoRef, error); the TS port branches on null instead,
-// which matches the rest of the CLI's "no exceptions for user-input
-// validation" style.
+// Returns undefined when the input is empty or otherwise unparseable. The
+// Go version returns (RepoRef, error); the TS port branches on undefined
+// instead, which matches the rest of the CLI's "no exceptions for
+// user-input validation" style.
 
 export interface RepoRef {
   /**
@@ -56,8 +56,8 @@ const URL_RE =
   /^(?:(?:https?|ssh):\/\/(?:[^@/]+@)?)([^:/]+)\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
 const SCP_RE = /^git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
 
-export function parseRepoRef(input: string): RepoRef | null {
-  if (input === '') return null;
+export function parseRepoRef(input: string): RepoRef | undefined {
+  if (input === '') return undefined;
 
   // Split off workspace suffix first.
   let body = input;
@@ -66,10 +66,12 @@ export function parseRepoRef(input: string): RepoRef | null {
   if (plusIdx >= 0) {
     workspace = body.slice(plusIdx + 1);
     body = body.slice(0, plusIdx);
-    if (workspace === '') return null; // trailing `+` with no workspace
+    if (workspace === '') return undefined; // trailing `+` with no workspace
   }
 
   // URL forms.
+  // RegExp.exec returns null for "no match" — third-party API shape, kept
+  // verbatim rather than coerced.
   const urlMatch = URL_RE.exec(body);
   if (urlMatch !== null) {
     return finalise({
@@ -98,21 +100,21 @@ export function parseRepoRef(input: string): RepoRef | null {
     if (slashIdx > 0 && slashIdx < rest.length - 1) {
       const owner = rest.slice(0, slashIdx);
       const name = rest.slice(slashIdx + 1);
-      if (containsAny(owner, '/@:') || containsAny(name, '/@:')) return null;
+      if (containsAny(owner, '/@:') || containsAny(name, '/@:')) return undefined;
       return finalise({ host: 'github.com', owner, name, workspace, original: input });
     }
-    return null;
+    return undefined;
   }
 
   // owner/name (single slash, no scheme).
   const slashIdx = body.indexOf('/');
   if (slashIdx > 0) {
     // Reject multiple slashes (ambiguous).
-    if (body.indexOf('/', slashIdx + 1) >= 0) return null;
+    if (body.indexOf('/', slashIdx + 1) >= 0) return undefined;
     const owner = body.slice(0, slashIdx);
     const name = body.slice(slashIdx + 1);
-    if (containsAny(owner, '@:') || containsAny(name, '@:')) return null;
-    if (owner === '' || name === '') return null;
+    if (containsAny(owner, '@:') || containsAny(name, '@:')) return undefined;
+    if (owner === '' || name === '') return undefined;
     return finalise({ host: '', owner, name, workspace, original: input });
   }
 
@@ -121,14 +123,14 @@ export function parseRepoRef(input: string): RepoRef | null {
   if (atIdx > 0) {
     const name = body.slice(0, atIdx);
     const owner = body.slice(atIdx + 1);
-    if (containsAny(owner, '@:/') || containsAny(name, '@:/')) return null;
-    if (owner === '' || name === '') return null;
+    if (containsAny(owner, '@:/') || containsAny(name, '@:/')) return undefined;
+    if (owner === '' || name === '') return undefined;
     return finalise({ host: '', owner, name, workspace, original: input });
   }
 
   // Bare name. Defense-in-depth: reject anything that looks like a special
   // form we already had a chance to match.
-  if (containsAny(body, '/@:')) return null;
+  if (containsAny(body, '/@:')) return undefined;
   return finalise({ host: '', owner: '', name: body, workspace, original: input });
 }
 
