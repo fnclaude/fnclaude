@@ -16,6 +16,7 @@ import { statSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { resolveSelfPath } from './paths.js';
 
 export interface PromptSet {
@@ -55,6 +56,16 @@ export interface LoadPromptsResult {
  *     contains the shipped prompts/. This is the production path for any
  *     `npm i -g @fnclaude/cli` install.
  *  4. `<exe-dir>/../share/fnclaude/prompts/` — FHS/AUR install layout.
+ *  5. `<module-dir>/../prompts/` — umbrella-install layout: when invoked
+ *     via `npm i -g fnclaude` (the umbrella package), `process.argv[1]`
+ *     points at the umbrella's `bin/fnc.js`, which `await import`s into
+ *     `@fnclaude/cli/bin/fnc.js`. Candidates 2–4 all anchor at the
+ *     umbrella's exe-dir and miss the cli package entirely. Anchoring at
+ *     this module's own location reliably reaches the cli package root,
+ *     since `prompts.ts` always lives inside `@fnclaude/cli` regardless
+ *     of which bin invoked it. Works for both the `dist/prompts.js`
+ *     (installed) and `src/prompts.ts` (dev) layouts — both sit one
+ *     level under the package root where `prompts/` ships.
  *
  * Symlinks in the exe path are resolved before the search.
  *
@@ -110,10 +121,17 @@ export function findPromptsDir(): FindPromptsDirResult {
   // resolveSelfPath handles the argv[1] / execPath / realpathSync logic.
   const exeDir = dirname(resolveSelfPath());
 
+  // Anchor at this module's own location to catch the umbrella-install
+  // layout where argv[1] points at the fnclaude umbrella's bin/fnc.js
+  // (which delegates into @fnclaude/cli via dynamic import). The exe-dir
+  // candidates miss the cli package in that shape; this one doesn't.
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+
   const candidates = [
     join(exeDir, 'prompts'),
     join(exeDir, '..', 'prompts'),
     join(exeDir, '..', 'share', 'fnclaude', 'prompts'),
+    join(moduleDir, '..', 'prompts'),
   ];
   for (const c of candidates) {
     try {
