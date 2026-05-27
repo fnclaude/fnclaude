@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
-  HOST_ALIASES_SYSTEM_PATH,
+  BUILTIN_HOST_ALIASES,
   hostAliasesUserPath,
+  loadHostAliases,
   mergeHostAliases,
   missingHostShortError,
   readHostAliasesFile,
@@ -13,6 +14,55 @@ import {
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), 'fnclaude-ha-'));
 }
+
+describe('loadHostAliases', () => {
+  test('BUILTIN_HOST_ALIASES covers the canonical 4 forges', () => {
+    // Pin the builtin set explicitly so changes are deliberate (CHANGELOG-
+    // worthy) and the npm-install path always has these without a user file.
+    expect(BUILTIN_HOST_ALIASES).toEqual({
+      'github.com': 'gh',
+      'gitlab.com': 'gl',
+      'bitbucket.org': 'bb',
+      'codeberg.org': 'cb',
+    });
+  });
+
+  test('returns bundled builtin aliases when no user file exists', () => {
+    const home = tmp();
+    const got = loadHostAliases(home);
+    expect(got.aliases['github.com']).toBe('gh');
+    expect(got.aliases['gitlab.com']).toBe('gl');
+    expect(got.aliases['bitbucket.org']).toBe('bb');
+    expect(got.aliases['codeberg.org']).toBe('cb');
+    expect(got.warnings).toEqual([]);
+  });
+
+  test('user file overrides builtin per key', () => {
+    const home = tmp();
+    const userPath = hostAliasesUserPath(home);
+    mkdirSync(dirname(userPath), { recursive: true });
+    writeFileSync(userPath, '{"github.com":"ghd"}');
+    const got = loadHostAliases(home);
+    // user override wins
+    expect(got.aliases['github.com']).toBe('ghd');
+    // other builtins still present
+    expect(got.aliases['gitlab.com']).toBe('gl');
+    expect(got.aliases['bitbucket.org']).toBe('bb');
+    expect(got.aliases['codeberg.org']).toBe('cb');
+    expect(got.warnings).toEqual([]);
+  });
+
+  test('user file can add hosts not in builtins', () => {
+    const home = tmp();
+    const userPath = hostAliasesUserPath(home);
+    mkdirSync(dirname(userPath), { recursive: true });
+    writeFileSync(userPath, '{"git.example.com":"ex"}');
+    const got = loadHostAliases(home);
+    expect(got.aliases['git.example.com']).toBe('ex');
+    // builtins still present
+    expect(got.aliases['github.com']).toBe('gh');
+  });
+});
 
 describe('mergeHostAliases', () => {
   test('empty paths → empty map + no warnings', () => {
@@ -31,13 +81,13 @@ describe('mergeHostAliases', () => {
     expect(got.warnings).toEqual([]);
   });
 
-  test('user overrides system (later wins per key)', () => {
+  test('later file overrides earlier (later wins per key)', () => {
     const dir = tmp();
-    const sys = join(dir, 'sys.json');
-    const usr = join(dir, 'usr.json');
-    writeFileSync(sys, '{"github.com":"gh","gitlab.com":"gl"}');
-    writeFileSync(usr, '{"github.com":"ghub","bitbucket.org":"bb"}');
-    const got = mergeHostAliases([sys, usr]);
+    const a = join(dir, 'a.json');
+    const b = join(dir, 'b.json');
+    writeFileSync(a, '{"github.com":"gh","gitlab.com":"gl"}');
+    writeFileSync(b, '{"github.com":"ghub","bitbucket.org":"bb"}');
+    const got = mergeHostAliases([a, b]);
     expect(got.aliases['github.com']).toBe('ghub');
     expect(got.aliases['gitlab.com']).toBe('gl');
     expect(got.aliases['bitbucket.org']).toBe('bb');
@@ -96,10 +146,10 @@ describe('missingHostShortError', () => {
     expect(e.message).toContain('github.example.com');
   });
 
-  test('mentions both system and user paths', () => {
+  test('mentions user path only (not system path)', () => {
     const e = missingHostShortError('any', '/home/u');
-    expect(e.message).toContain(HOST_ALIASES_SYSTEM_PATH);
     expect(e.message).toContain(hostAliasesUserPath('/home/u'));
+    expect(e.message).not.toContain('/usr/share/fnrhombus');
   });
 
   test('includes JSON example', () => {

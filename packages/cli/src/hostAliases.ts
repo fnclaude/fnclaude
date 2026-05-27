@@ -1,27 +1,34 @@
-// Port of src/host_aliases.go (fnclaude/fnclaude Go reference).
+// Load the {host-short} alias map.
 //
-// Load the {host-short} alias map from up to two layered files. System file
-// ships with fnclaude (canonical defaults, root-owned, regenerated on
-// upgrade); user file optionally overrides per-key. Both files are JSON
-// objects mapping fully-qualified host → short alias.
+// Builtin defaults (BUILTIN_HOST_ALIASES) ship with the package — npm install
+// has no hook to drop a JSON file under /usr/share, so the canonical 4 host
+// mappings live in source. Users override per-key via
+// ~/.local/share/fnrhombus/host-aliases.json.
 //
-// Missing files are silently treated as empty maps. If a user template uses
+// Missing user file is silently treated as empty. If a user template uses
 // {host-short} and the merged map has no entry for the current host, the
 // substitution step calls missingHostShortError() to produce a message
-// naming both file paths and a copy-pasteable JSON example.
+// naming the user file path and a copy-pasteable JSON example.
 
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * Install-dir LUT, owned by the fnclaude package. The AUR PKGBUILD installs
- * the file here with sensible defaults.
+ * Bundled host-alias defaults. These ship with the package and are
+ * always present; the user file (if any) overrides per key.
+ *
+ * Kept in sync with the Go reference's AUR PKGBUILD install fixture.
  */
-export const HOST_ALIASES_SYSTEM_PATH = '/usr/share/fnrhombus/host-aliases.json';
+export const BUILTIN_HOST_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  'github.com': 'gh',
+  'gitlab.com': 'gl',
+  'bitbucket.org': 'bb',
+  'codeberg.org': 'cb',
+});
 
 /**
- * Per-user override path. Wins per-key against the system file.
+ * Per-user override path. Wins per-key against the builtin defaults.
  */
 export function hostAliasesUserPath(home: string): string {
   return join(home, '.local', 'share', 'fnrhombus', 'host-aliases.json');
@@ -39,17 +46,22 @@ export interface LoadHostAliasesResult {
 }
 
 /**
- * Read both files (if present) and merge them, user-level winning per
- * key. Either or both missing returns whatever is available (or empty).
+ * Return the merged alias map: builtin defaults overlaid with the user
+ * file (if present). User entries win per key. Missing user file is the
+ * common path and stays silent.
  */
 export function loadHostAliases(home: string): LoadHostAliasesResult {
-  return mergeHostAliases([HOST_ALIASES_SYSTEM_PATH, hostAliasesUserPath(home)]);
+  const userResult = mergeHostAliases([hostAliasesUserPath(home)]);
+  const merged: Record<string, string> = { ...BUILTIN_HOST_ALIASES };
+  for (const k of Object.keys(userResult.aliases)) {
+    merged[k] = userResult.aliases[k] as string;
+  }
+  return { aliases: merged, warnings: userResult.warnings };
 }
 
 /**
  * Read each path (if it exists) and merge per-key with later entries
- * winning over earlier ones. Callers order system-first, user-second so
- * user wins on conflict.
+ * winning over earlier ones.
  */
 export function mergeHostAliases(paths: string[]): LoadHostAliasesResult {
   const merged: Record<string, string> = {};
@@ -106,9 +118,9 @@ export function readHostAliasesFile(path: string): ReadHostAliasesFileResult {
 
 /**
  * Build the error emitted when a template uses {host-short} but no alias
- * is configured for the current host. Same message shape as the JS
- * plugin's missingHostShortError so users see consistent guidance from
- * either consumer.
+ * is configured for the current host. Points only at the user file path
+ * since builtins already cover the common forges and any further
+ * overrides go in the user file.
  *
  * `home` is injected so callers in tests can pin the user-path output
  * without touching $HOME; production callers should pass `process.env.HOME
@@ -119,9 +131,8 @@ export function missingHostShortError(host: string, home?: string): Error {
   const userPath = hostAliasesUserPath(h);
   return new Error(
     `cannot resolve {host-short} for host ${JSON.stringify(host)}: no alias configured.\n` +
-      `Add an entry to one of:\n` +
-      `  ${HOST_ALIASES_SYSTEM_PATH}  (system, requires sudo)\n` +
-      `  ${userPath}  (user-level, takes precedence on conflict)\n` +
+      `Add an entry to:\n` +
+      `  ${userPath}\n` +
       `Example:\n` +
       `  { "github.com": "gh", "gitlab.com": "gl" }`,
   );
