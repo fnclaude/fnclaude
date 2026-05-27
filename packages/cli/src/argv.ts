@@ -86,6 +86,13 @@ export function buildFnclaudeMCPConfigJSON(noop: boolean): string | null {
  * appended to that existing value. Empty fragments are dropped. Returns
  * `passthrough` unchanged when no non-empty fragments remain.
  *
+ * Sentinel-aware: when `passthrough` contains a `--` end-of-options
+ * sentinel and no existing --append-system-prompt match is found, the new
+ * `--append-system-prompt <joined>` pair is inserted BEFORE the sentinel
+ * so claude parses it as a flag, not as additional prompt text. Without
+ * this, `fnc -- "say hi"` produced `claude … -- say hi --append-system-prompt
+ * <fragments>` and claude swallowed the whole tail as prompt content.
+ *
  * Never mutates the input slice.
  */
 export function withAppendedSystemPrompts(
@@ -109,6 +116,15 @@ export function withAppendedSystemPrompts(
       out[i] = `--append-system-prompt=${existing}\n\n${joined}`;
       return out;
     }
+  }
+  const sentinelAt = passthrough.indexOf('--');
+  if (sentinelAt >= 0) {
+    return [
+      ...passthrough.slice(0, sentinelAt),
+      '--append-system-prompt',
+      joined,
+      ...passthrough.slice(sentinelAt),
+    ];
   }
   return [...passthrough, '--append-system-prompt', joined];
 }

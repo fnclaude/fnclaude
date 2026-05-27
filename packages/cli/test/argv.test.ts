@@ -154,6 +154,47 @@ describe('withAppendedSystemPrompts', () => {
     withAppendedSystemPrompts(input, ['FRAG-A']);
     expect(input).toEqual(['--verbose', '--model', 'sonnet']);
   });
+
+  test('passthrough contains `--` sentinel → fragment inserted BEFORE the sentinel', () => {
+    // Repro of the live `fnc -- "say hi"` argv bug: when the user's
+    // prompt is delimited by `--`, the appended --append-system-prompt
+    // must land in the options section (before `--`), not in the prompt
+    // (after `--`). Landing after `--` makes claude treat the flag and
+    // its value as additional prompt text.
+    expect(
+      withAppendedSystemPrompts(['--name', 'say-hi', '--', 'say hi'], ['FRAG-A']),
+    ).toEqual([
+      '--name',
+      'say-hi',
+      '--append-system-prompt',
+      'FRAG-A',
+      '--',
+      'say hi',
+    ]);
+  });
+
+  test('passthrough is just `--` followed by prompt → fragment inserted before `--`', () => {
+    expect(withAppendedSystemPrompts(['--', 'say hi'], ['FRAG-A'])).toEqual([
+      '--append-system-prompt',
+      'FRAG-A',
+      '--',
+      'say hi',
+    ]);
+  });
+
+  test('only the first `--` is recognized as sentinel — subsequent `--` tokens are prompt text', () => {
+    expect(
+      withAppendedSystemPrompts(['--verbose', '--', 'say', '--', 'hi'], ['FRAG-A']),
+    ).toEqual([
+      '--verbose',
+      '--append-system-prompt',
+      'FRAG-A',
+      '--',
+      'say',
+      '--',
+      'hi',
+    ]);
+  });
 });
 
 // ── buildFnclaudeMCPConfigJSON ─────────────────────────────────────────────
