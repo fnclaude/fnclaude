@@ -145,6 +145,41 @@ export interface RunDeps {
   data?: RunConfig;
 }
 
+/**
+ * Read the user's argv, preferring `FNC_ARGS_JSON` over `process.argv`.
+ *
+ * The umbrella shim (packages/fnclaude/bin/fnc.js) sets `FNC_ARGS_JSON`
+ * on the env it spawns Bun with, because Bun strips the first `--`
+ * from a script's argv (confirmed empirically across `bun script.js`,
+ * `bun --`, `bun run`, and shebang invocations). Passing user args via
+ * the env var sidesteps that — Bun never sees them as its own argv.
+ *
+ * We DELETE the var after consumption so any child processes the cli
+ * spawns (claude, gh, the relaunch chain) don't inherit a stale value.
+ *
+ * Defensive: malformed or wrong-shape values fall through to
+ * `process.argv.slice(2)` rather than throwing — a corrupted env var
+ * shouldn't break the cli, just degrade to the pre-fix behaviour.
+ */
+function readArgvFromEnvOrProcess(): readonly string[] {
+  const envArgs = process.env.FNC_ARGS_JSON;
+  if (envArgs !== undefined) {
+    delete process.env.FNC_ARGS_JSON;
+    try {
+      const parsed: unknown = JSON.parse(envArgs);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((x): x is string => typeof x === 'string')
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Fall through to process.argv.
+    }
+  }
+  return process.argv.slice(2);
+}
+
 function lookupClaudeFromPath(name: string): string | undefined {
   // Bun's PATH lookup: Bun.which() returns null when not found. Coerce to
   // undefined to keep the absent-value sentinel consistent with the rest of
@@ -174,7 +209,7 @@ export async function run(deps: RunDeps = {}): Promise<number> {
   const io = deps.io ?? {};
   const data = deps.data ?? {};
 
-  const argv = io.argv ?? process.argv.slice(2);
+  const argv = io.argv ?? readArgvFromEnvOrProcess();
   const stdout = io.stdout ?? process.stdout;
   const stderr = io.stderr ?? process.stderr;
   const home = io.home ?? process.env.HOME ?? homedir();

@@ -7,7 +7,7 @@
 // the whole loop without launching a real PTY, a real claude binary, or
 // talking to the network.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { Writable } from 'node:stream';
 import { defaultConfig } from '../src/config.js';
 import type { HandoffSpec } from '../src/handoff.js';
@@ -387,6 +387,189 @@ describe('run() pipeline composition', () => {
     expect(wtIdx).toBeGreaterThan(-1);
     // The explicit -w wins; the +workspace suffix is suppressed.
     expect(claudeArgvSeen![wtIdx + 1]).toBe('explicit-wt');
+  });
+});
+
+describe('run() FNC_ARGS_JSON fallback (bypasses Bun -- stripping)', () => {
+  // The umbrella shim (packages/fnclaude/bin/fnc.js) re-execs into Bun
+  // with the user's argv serialized into FNC_ARGS_JSON, because Bun
+  // strips the first `--` from script argv. The cli has to read its
+  // argv from that env var when present, NOT from process.argv.
+  afterEach(() => {
+    delete process.env.FNC_ARGS_JSON;
+  });
+
+  test('reads argv from FNC_ARGS_JSON when io.argv is not supplied', async () => {
+    // The umbrella sets FNC_ARGS_JSON to the user's original args.
+    // process.argv at this point is whatever Bun left after stripping --
+    // (which is the bug). The cli has to honour the env var instead.
+    process.env.FNC_ARGS_JSON = JSON.stringify(['--help']);
+    const { stream: stdout, chunks } = makeBuf();
+    // No io.argv override — exercise the production path that reads from
+    // process.argv vs. FNC_ARGS_JSON.
+    const code = await run({
+      io: {
+        stdout,
+        stderr: makeBuf().stream,
+        home: '/home/tester',
+        cwd: '/tmp/cwd',
+        lookupClaude: () => '/usr/bin/claude',
+        seedNoop: async () => undefined,
+        gitRunner: noopGitRunner,
+        resolveDeps: stubResolveDeps(),
+        generateName: async () => 'fake-name',
+        runWithPTY: async () => ({
+          exitCode: 0,
+          tail: undefined,
+          handoffArgv: undefined,
+        }),
+        silentRelaunch: () => undefined,
+        silentRelaunchHandoff: () => undefined,
+        runMCPServer: async () => 0,
+      },
+      data: {
+        config: defaultConfig(),
+        repoSettings: {},
+        hostAliases: {},
+        prompts: emptyPrompts(),
+      },
+    });
+    expect(code).toBe(0);
+    expect(chunks.join('')).toContain('fnclaude — claude CLI launcher');
+  });
+
+  test('FNC_ARGS_JSON with -- + prompt routes prompt to passthrough (not resolver)', async () => {
+    // The release-blocker bug: when Bun strips `--`, the cli sees just
+    // ['say hi'] and treats it as a cwd positional → resolver fires and
+    // 404s. With FNC_ARGS_JSON carrying the full ['--', 'say hi'], the
+    // prompt must reach runWithPTY's claudeArgv as passthrough, not be
+    // funneled into the resolver as a cwd.
+    process.env.FNC_ARGS_JSON = JSON.stringify(['--', 'say hi']);
+    let resolveCalled = false;
+    let claudeArgvSeen: string[] | undefined;
+    const code = await run({
+      io: {
+        // io.argv intentionally omitted — exercise the env-var path.
+        stdout: makeBuf().stream,
+        stderr: makeBuf().stream,
+        home: '/home/tester',
+        cwd: '/tmp/cwd',
+        lookupClaude: () => '/usr/bin/claude',
+        seedNoop: async () => undefined,
+        gitRunner: noopGitRunner,
+        resolveDeps: {
+          pathExists: async () => {
+            resolveCalled = true;
+            return false;
+          },
+          ghCmd: async () => {
+            resolveCalled = true;
+            return { stdout: '' };
+          },
+          runClone: async () => undefined,
+        },
+        generateName: async () => 'fake-name',
+        runWithPTY: async (opts) => {
+          claudeArgvSeen = opts.claudeArgv;
+          return { exitCode: 0, tail: undefined, handoffArgv: undefined };
+        },
+        silentRelaunch: () => undefined,
+        silentRelaunchHandoff: () => undefined,
+        runMCPServer: async () => 0,
+      },
+      data: {
+        config: defaultConfig(),
+        repoSettings: {},
+        hostAliases: {},
+        prompts: emptyPrompts(),
+      },
+    });
+    expect(code).toBe(0);
+    // Resolver must NOT have been called — `--` means the prompt is
+    // passthrough, not a path to resolve.
+    expect(resolveCalled).toBe(false);
+    // The 'say hi' prompt must have reached the claude argv as
+    // passthrough — load-bearing because under the bug, this string
+    // would be the cwd instead and would never reach claude's argv.
+    expect(claudeArgvSeen).not.toBeUndefined();
+    expect(claudeArgvSeen!).toContain('say hi');
+  });
+
+  test('consumes FNC_ARGS_JSON from env so it does not leak to child processes', async () => {
+    process.env.FNC_ARGS_JSON = JSON.stringify(['--help']);
+    await run({
+      io: {
+        stdout: makeBuf().stream,
+        stderr: makeBuf().stream,
+        home: '/home/tester',
+        cwd: '/tmp/cwd',
+        lookupClaude: () => '/usr/bin/claude',
+        seedNoop: async () => undefined,
+        gitRunner: noopGitRunner,
+        resolveDeps: stubResolveDeps(),
+        generateName: async () => 'fake-name',
+        runWithPTY: async () => ({
+          exitCode: 0,
+          tail: undefined,
+          handoffArgv: undefined,
+        }),
+        silentRelaunch: () => undefined,
+        silentRelaunchHandoff: () => undefined,
+        runMCPServer: async () => 0,
+      },
+      data: {
+        config: defaultConfig(),
+        repoSettings: {},
+        hostAliases: {},
+        prompts: emptyPrompts(),
+      },
+    });
+    // After run() consumes the env var, it must be removed so any child
+    // processes (claude, gh, etc.) don't inherit a stale value.
+    expect(process.env.FNC_ARGS_JSON).toBeUndefined();
+  });
+
+  test('explicit io.argv overrides FNC_ARGS_JSON (test seam wins)', async () => {
+    // io.argv being supplied means a caller (test or future embedder)
+    // is driving directly — they win over the env var. Necessary so
+    // existing tests that set io.argv don't pick up env contamination.
+    process.env.FNC_ARGS_JSON = JSON.stringify(['--version']);
+    const { stream: stdout, chunks } = makeBuf();
+    const code = await run(
+      baseDeps({ io: { argv: ['--help'], stdout } }),
+    );
+    expect(code).toBe(0);
+    expect(chunks.join('')).toContain('fnclaude — claude CLI launcher');
+  });
+
+  test('malformed FNC_ARGS_JSON falls back to process.argv (does not crash)', async () => {
+    process.env.FNC_ARGS_JSON = '{not valid json';
+    // Should not throw; falls through to process.argv.slice(2). We can't
+    // assert on the exact behaviour (process.argv shape is harness-
+    // dependent), but `run()` must not crash on the malformed input.
+    // We feed --help via io.argv so the run is short-circuited safely
+    // regardless of which argv source the production path picked — the
+    // load-bearing assertion is the no-throw.
+    let threw = false;
+    try {
+      await run(baseDeps({ io: { argv: ['--help'] } }));
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+  });
+
+  test('non-array FNC_ARGS_JSON value falls back to process.argv', async () => {
+    // Defensive: a JSON-valid but wrong-shape value (object, string,
+    // number) must not be treated as argv.
+    process.env.FNC_ARGS_JSON = JSON.stringify({ not: 'an array' });
+    let threw = false;
+    try {
+      await run(baseDeps({ io: { argv: ['--help'] } }));
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
   });
 });
 

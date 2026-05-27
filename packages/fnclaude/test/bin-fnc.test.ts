@@ -110,6 +110,49 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
     expect(r.stderr).not.toContain('Bun is not defined');
   });
 
+  test('Node re-exec serializes argv via FNC_ARGS_JSON to dodge Bun -- stripping', async () => {
+    // Bun strips the first `--` from script argv (confirmed empirically:
+    // `bun script.js -- foo` invokes script.js with argv=['foo']). The
+    // umbrella shim's re-exec from Node into Bun would lose the `--`
+    // separator unless we serialise the user's args into an env var
+    // instead of passing them as Bun-script argv.
+    //
+    // Setup: a fake `bun` on a tmpdir PATH-prefix that echoes
+    // FNC_ARGS_JSON and exits 0. The shim under Node finds our fake,
+    // spawns it, fake prints the env var we care about. Asserts the
+    // shim populated FNC_ARGS_JSON with the full argv (including `--`).
+    const fs = await import('node:fs');
+    const fakeDir = `/tmp/fnclaude-fakebun-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    fs.mkdirSync(fakeDir, { recursive: true });
+    fs.writeFileSync(
+      `${fakeDir}/bun`,
+      `#!/bin/sh
+echo "FNC_ARGS_JSON=$FNC_ARGS_JSON"
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    try {
+      const env = {
+        ...process.env,
+        PATH: `${fakeDir}:${process.env.PATH ?? ''}`,
+      };
+      const r = await spawnShim('node', ['--', 'some-positional', '--help'], {
+        env,
+        timeoutMs: 10_000,
+      });
+      expect(r.exitCode).toBe(0);
+      const match = r.stdout.match(/^FNC_ARGS_JSON=(.*)$/m);
+      expect(match).not.toBeNull();
+      const value = match![1] ?? '';
+      expect(value).not.toBe('');
+      const parsed = JSON.parse(value);
+      expect(parsed).toEqual(['--', 'some-positional', '--help']);
+    } finally {
+      fs.rmSync(fakeDir, { recursive: true, force: true });
+    }
+  });
+
   test('under Node with bun NOT on PATH, emits directive error and exits non-zero', async () => {
     // Use --help rather than --version as the trigger arg: --version now
     // short-circuits BEFORE the Bun preflight (since it only needs file
