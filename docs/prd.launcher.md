@@ -21,6 +21,8 @@ Supported effort levels: `low`, `medium`, `high`, `xhigh`, `max`, `auto`.
 
 When you type a model name at position 1 and an effort level at position 2, both are passed to claude. When you type only an effort level at position 1 with no model before it, `opus` is implied — `fnc max ~/src/proj` is equivalent to `fnc opus max ~/src/proj`.
 
+Both the model and the effort level persist across session restart, project switch, and cross-cwd resume — you don't have to retype them. They start fresh on a spawned sibling session unless you specify them in the spawn request.
+
 If you have a directory literally named `opus` or `haiku`, prefix it with `./` to prevent fnclaude from treating it as a model name: `fnclaude ./opus`.
 
 ---
@@ -194,7 +196,7 @@ All settings can also be set via environment variables — see `fnclaude --help`
 
 When you open claude's session picker and select a session from a different project directory, claude normally prints a message telling you to `cd` there and run a command. fnclaude intercepts that message and does it for you — the new session opens in the right directory without you doing anything. From your perspective, the picker just works across all your projects.
 
-This feature is fully supported on Linux and Windows. On macOS it also works, though macOS is a secondary target: fnclaude's daily-driver platform is Linux, with Windows as its first-class peer. All flags and settings from your original invocation are preserved in the relaunch.
+This feature is fully supported on Linux and Windows. On macOS it also works, though macOS is a secondary target: fnclaude's daily-driver platform is Linux, with Windows as its first-class peer. All flags and settings from your original invocation are preserved in the relaunch — model, effort, permission mode, and any other flags you passed.
 
 ---
 

@@ -12,7 +12,7 @@ In any session launched by fnclaude, you can ask claude to switch you to a diffe
 
 Claude handles the transfer: it decides what context from the current conversation is relevant to the destination project — what you asked for, decisions made, files touched, work in flight, open questions — and compresses that into a focused summary. It ends the current session and opens a fresh one in the new project, pre-loaded with that summary as starting context. Your cursor appears in the new session, already in context. Irrelevant parts of the current conversation are left behind; claude makes the call about what to carry.
 
-Model and permission settings from your current session carry over automatically. Override them in the same request if you want something different:
+Model, effort, and permission settings from your current session carry over automatically. Override them in the same request if you want something different:
 
 > "Switch me to ~/src/other-proj with opus and no permission prompts."
 
@@ -42,7 +42,7 @@ Ask claude to restart the session when you want to reset the conversation withou
 
 > "Restart this session."
 
-Claude ends the current session and reopens it in the same directory with the same model, flags, and permissions. The session ID travels with it so `--resume` points at the right conversation. All context is preserved by default — the restart picks up exactly where it left off; if you want a clean slate, say so explicitly and claude will restart without resuming.
+Claude ends the current session and reopens it in the same directory with the same model, effort, flags, and permissions. The session ID travels with it so `--resume` points at the right conversation. All context is preserved by default — the restart picks up exactly where it left off; if you want a clean slate, say so explicitly and claude will restart without resuming.
 
 If you changed your permission mode during the session (via a `/permission-mode` slash command inside claude), the restart picks up the current mode automatically, not the one you launched with.
 
