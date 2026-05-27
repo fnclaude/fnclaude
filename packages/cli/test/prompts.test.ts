@@ -279,4 +279,50 @@ describe('npm-installed package layout', () => {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { files: string[] };
     expect(pkg.files).toContain('prompts');
   });
+
+  // Umbrella-install regression: `npm i -g fnclaude` installs the umbrella's
+  // bin/fnc.js (which only ships bin/, no prompts/) and that bin delegates to
+  // @fnclaude/cli via `await import('@fnclaude/cli/bin/fnc.js')`. Node leaves
+  // process.argv[1] pointing at the umbrella bin, so resolveSelfPath() — and
+  // therefore the original three candidates anchored at exe-dir — all look
+  // around the umbrella package, never at the cli package where prompts/
+  // actually lives. The fix is a fourth candidate anchored at prompts.ts's
+  // own module location, which is always inside the cli package regardless
+  // of which bin invoked it.
+  test('findPromptsDir resolves prompts/ via module location when argv[1] is the umbrella shim', () => {
+    delete process.env.FNC_PROMPTS_DIR;
+
+    // Simulate the umbrella shape: <umbrella-pkg>/bin/fnc.js with NO sibling
+    // prompts/. The cli package — where prompts.ts actually lives — does
+    // ship prompts/ alongside its src/ and dist/, so the module-anchored
+    // candidate should resolve to the real cli/prompts/ in this repo.
+    const fakeUmbrella = mkdtempSync(join(tmpdir(), 'fnc-umbrella-'));
+    const umbrellaBinDir = join(fakeUmbrella, 'bin');
+    mkdirSync(umbrellaBinDir);
+    const umbrellaBin = join(umbrellaBinDir, 'fnc.js');
+    writeFileSync(umbrellaBin, '// umbrella shim placeholder');
+    // Crucially: NO prompts/ anywhere near the umbrella bin. All three
+    // exe-anchored candidates (./prompts, ../prompts, ../share/...) will
+    // miss.
+
+    const savedArgv1 = process.argv[1];
+    process.argv[1] = umbrellaBin;
+    try {
+      const result = findPromptsDir();
+      expect(result.error).toBeNull();
+      expect(result.dir).not.toBeNull();
+      // The resolved dir must contain the real prompt files, proving it
+      // anchored at the cli package, not at the umbrella shim.
+      expect(readFileSync(join(result.dir!, 'agent-pitfall.md'), 'utf8').length).toBeGreaterThan(
+        0,
+      );
+    } finally {
+      if (savedArgv1 === undefined) {
+        process.argv.length = 1;
+      } else {
+        process.argv[1] = savedArgv1;
+      }
+      rmSync(fakeUmbrella, { recursive: true, force: true });
+    }
+  });
 });
