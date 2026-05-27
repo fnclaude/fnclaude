@@ -256,6 +256,33 @@ describe('OpRestart', () => {
     }
   });
 
+  test('drops `--` + original prompt tokens from preserved argv', async () => {
+    // Original session had a prompt after `--`; resuming must NOT replay
+    // it as a new turn after --resume <uuid>.
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: fx.launchCWD,
+      origArgs: ['/some/cwd', '--ide', '--', 'old prompt text', 'continued'],
+    });
+    try {
+      const sid = '01234567-89ab-cdef-0123-456789abcdef';
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'restart',
+        session_id: sid,
+      });
+      expect(resp.action).toBe('done');
+      const argv = l.getHandoffArgv()!;
+      expect(argv).not.toContain('--');
+      expect(argv).not.toContain('old prompt text');
+      expect(argv).not.toContain('continued');
+      expect(argv).toEqual([fx.launchCWD, '--resume', sid, '--ide']);
+    } finally {
+      await l.close();
+    }
+  });
+
   test('model override strips bare magic and appends flag', async () => {
     const fx = mkFixture('ask');
     const l = await SocketListener.start({
@@ -461,6 +488,35 @@ describe('OpSwitch', () => {
       expect(nameIdx).toBeGreaterThan(-1);
       expect(argv[nameIdx + 1]).toBe('new-name');
       expect(argv).not.toContain('old-name');
+    } finally {
+      await l.close();
+    }
+  });
+
+  test('drops `--` + original prompt tokens (transfer shadows @summary otherwise)', async () => {
+    // The transfer's @summary file is supposed to be the new session's
+    // initial prompt — carrying the old `--` + prompt across would
+    // shadow it.
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: fx.launchCWD,
+      origArgs: ['/old/cwd', '--ide', '--', 'old prompt text'],
+    });
+    try {
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'switch',
+        destination: 'dest@owner',
+        name: 'topic',
+        summary: 'summary content',
+      });
+      expect(resp.action).toBe('done');
+      const argv = l.getHandoffArgv()!;
+      expect(argv).not.toContain('--');
+      expect(argv).not.toContain('old prompt text');
+      // The handoff @summary token must remain as the final positional.
+      expect(argv[argv.length - 1]!.startsWith('@')).toBe(true);
     } finally {
       await l.close();
     }
