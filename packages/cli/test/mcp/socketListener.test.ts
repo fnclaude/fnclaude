@@ -884,3 +884,185 @@ describe('live permission-mode auto-capture', () => {
     }
   });
 });
+
+// ── resume-continue system reminder (issue #77) ────────────────────────────
+//
+// On fnc_restart, append an isMeta:true user-message containing a
+// <system-reminder> to the session JSONL before relaunching claude. When
+// claude resumes the JSONL, the reminder appears as the final input —
+// driving the model to continue the in-flight work rather than treat the
+// restart as a hard reset and idle.
+
+describe('resume-continue system reminder', () => {
+  function readJSONL(path: string): Array<Record<string, unknown>> {
+    return readFileSync(path, 'utf8')
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+  }
+
+  function lastUserMessageContent(entry: Record<string, unknown>): string {
+    const msg = entry.message as { role?: string; content?: unknown } | undefined;
+    if (!msg || msg.role !== 'user') return '';
+    return typeof msg.content === 'string' ? msg.content : '';
+  }
+
+  test('handleRestart appends an isMeta system-reminder to the session JSONL', async () => {
+    const tmpHome = mkdtempSync(join(tmpdir(), 'fnclaude-restart-reminder-'));
+    process.env.HOME = tmpHome;
+    const sid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const cwd = join(tmpHome, 'proj');
+    mkdirSync(cwd, { recursive: true });
+    const jsonlPath = writeSessionJSONL(
+      tmpHome,
+      cwd,
+      sid,
+      `${JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'hi' },
+        uuid: 'parent-uuid-0001',
+        sessionId: sid,
+      })}\n`,
+    );
+
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: cwd,
+      origArgs: [cwd],
+    });
+    try {
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'restart',
+        session_id: sid,
+      });
+      expect(resp.action).toBe('done');
+      const entries = readJSONL(jsonlPath);
+      // Original entry preserved, new entry appended.
+      expect(entries.length).toBe(2);
+      const appended = entries[1]!;
+      expect(appended.type).toBe('user');
+      expect(appended.isMeta).toBe(true);
+      const content = lastUserMessageContent(appended);
+      expect(content).toContain('<system-reminder>');
+      expect(content).toContain('</system-reminder>');
+      expect(content.toLowerCase()).toContain('fnc_restart');
+      // Directive to continue in-flight work (key phrase).
+      expect(content.toLowerCase()).toMatch(/resume|continue|in[- ]flight/);
+      // Parent linkage to the prior entry.
+      expect(appended.parentUuid).toBe('parent-uuid-0001');
+      expect(appended.sessionId).toBe(sid);
+    } finally {
+      await l.close();
+    }
+  });
+
+  test('reminder mentions model override when supplied', async () => {
+    const tmpHome = mkdtempSync(join(tmpdir(), 'fnclaude-restart-reminder-'));
+    process.env.HOME = tmpHome;
+    const sid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const cwd = join(tmpHome, 'proj');
+    mkdirSync(cwd, { recursive: true });
+    const jsonlPath = writeSessionJSONL(
+      tmpHome,
+      cwd,
+      sid,
+      `${JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'hi' },
+        uuid: 'parent-uuid-0002',
+        sessionId: sid,
+      })}\n`,
+    );
+
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: cwd,
+      origArgs: [cwd],
+    });
+    try {
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'restart',
+        session_id: sid,
+        model: 'sonnet',
+      });
+      expect(resp.action).toBe('done');
+      const entries = readJSONL(jsonlPath);
+      const content = lastUserMessageContent(entries[entries.length - 1]!);
+      expect(content).toContain('sonnet');
+    } finally {
+      await l.close();
+    }
+  });
+
+  test('reminder mentions --ide when ide override is true', async () => {
+    const tmpHome = mkdtempSync(join(tmpdir(), 'fnclaude-restart-reminder-'));
+    process.env.HOME = tmpHome;
+    const sid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const cwd = join(tmpHome, 'proj');
+    mkdirSync(cwd, { recursive: true });
+    const jsonlPath = writeSessionJSONL(
+      tmpHome,
+      cwd,
+      sid,
+      `${JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'hi' },
+        uuid: 'parent-uuid-0003',
+        sessionId: sid,
+      })}\n`,
+    );
+
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: cwd,
+      origArgs: [cwd],
+    });
+    try {
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'restart',
+        session_id: sid,
+        ide: true,
+      });
+      expect(resp.action).toBe('done');
+      const entries = readJSONL(jsonlPath);
+      const content = lastUserMessageContent(entries[entries.length - 1]!);
+      expect(content).toContain('--ide');
+    } finally {
+      await l.close();
+    }
+  });
+
+  test('missing JSONL: handleRestart still succeeds (no-op append)', async () => {
+    const tmpHome = mkdtempSync(join(tmpdir(), 'fnclaude-restart-reminder-'));
+    process.env.HOME = tmpHome;
+    const sid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const cwd = join(tmpHome, 'proj');
+    mkdirSync(cwd, { recursive: true });
+    // Deliberately do NOT write a JSONL.
+
+    const fx = mkFixture('ask');
+    const l = await SocketListener.start({
+      spec: fx.spec,
+      cfg: fx.cfg,
+      launchCWD: cwd,
+      origArgs: [cwd],
+    });
+    try {
+      const resp = await dialAndRoundtrip(fx.spec.socketPath, {
+        op: 'restart',
+        session_id: sid,
+      });
+      // Restart still completes — missing JSONL is best-effort, not fatal.
+      expect(resp.action).toBe('done');
+      expect(l.getHandoffArgv()).not.toBeNull();
+    } finally {
+      await l.close();
+    }
+  });
+});
