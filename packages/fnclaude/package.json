@@ -13,7 +13,8 @@
     "fnc": "./bin/fnc.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "LICENSE"
   ],
   "scripts": {
     "lint": "echo 'lint stub (fnclaude umbrella)' && exit 0",
