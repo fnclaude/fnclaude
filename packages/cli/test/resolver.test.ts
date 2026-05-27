@@ -10,6 +10,15 @@ interface MockState {
   ghHits: Set<string>; // "owner/name" keys that should "exist" on GitHub
   cloneCalls: Array<{ ownerRepo: string; dest: string }>;
   cloneError?: Error;
+  /**
+   * Captures every `deps.log(msg)` call. If `log` isn't stubbed, the
+   * resolver's production wiring writes "fnclaude: cloning ..." straight to
+   * the test runner's stderr — visually indistinguishable from a real clone
+   * and (back when the audit ran) easy to misread as one. Routing the line
+   * through deps + recording here keeps the test runner silent and lets us
+   * assert intent.
+   */
+  logs: string[];
 }
 
 function makeDeps(init: Partial<MockState> = {}): { deps: ResolveDeps; state: MockState } {
@@ -19,6 +28,7 @@ function makeDeps(init: Partial<MockState> = {}): { deps: ResolveDeps; state: Mo
     orgs: [],
     ghHits: new Set(),
     cloneCalls: [],
+    logs: [],
     ...init,
   };
 
@@ -46,6 +56,9 @@ function makeDeps(init: Partial<MockState> = {}): { deps: ResolveDeps; state: Mo
       if (state.cloneError) throw state.cloneError;
       // Pretend the clone produced the directory.
       state.paths.add(dest);
+    },
+    log: (msg: string) => {
+      state.logs.push(msg);
     },
   };
 
@@ -112,6 +125,12 @@ describe('Resolve — repo hit only', () => {
     expect(r.path).toBe('/home/tom/src/arch-setup@fnrhombus');
     expect(r.justCloned).toBe(true);
     expect(state.cloneCalls).toHaveLength(1);
+    // The "cloning X → Y" log line must go through `deps.log`, not straight
+    // to process.stderr — otherwise `bun test` output is polluted with
+    // lines that look like real clones happening.
+    expect(state.logs).toContainEqual(
+      expect.stringContaining('cloning fnrhombus/arch-setup → /home/tom/src/arch-setup@fnrhombus'),
+    );
   });
 
   test('repo already on disk at template-resolved path: no clone', async () => {
@@ -301,6 +320,43 @@ describe('Resolve — cloneTemplate', () => {
         deps,
       ),
     ).rejects.toThrow(/unknown placeholder/);
+  });
+});
+
+// ── No stderr leak ─────────────────────────────────────────────────────────
+
+describe('Resolve — test isolation', () => {
+  // Regression guard for the audit observation: `bun test` was emitting
+  // "fnclaude: cloning fnrhombus/arch-setup → /home/tom/src/arch-setup@fnrhombus"
+  // to the real stderr. That came from a `process.stderr.write` inside
+  // cloneAndReturn that bypassed the deps seam. The fix routes the line
+  // through `deps.log`; this test pins it down.
+  test('clone path writes nothing to real process.stderr when deps are injected', async () => {
+    const original = process.stderr.write.bind(process.stderr);
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const { deps, state } = makeDeps({ ghHits: new Set(['fnrhombus/arch-setup']) });
+      const r = await Resolve(
+        {
+          input: 'arch-setup',
+          cwd: '/cwd',
+          home: '/home/tom',
+          settings: { cloneTemplate: '~/src/{repo}@{owner}' },
+        },
+        deps,
+      );
+      expect(r.justCloned).toBe(true);
+      expect(state.logs.length).toBeGreaterThan(0);
+      // Nothing should have hit the real stderr during the test.
+      expect(captured.join('')).toBe('');
+    } finally {
+      process.stderr.write = original;
+    }
   });
 });
 

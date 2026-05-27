@@ -48,6 +48,7 @@ function stubResolveDeps(
     pathExists: async () => true,
     ghCmd: async (args) => ({ stdout: ghCmdResults[args.join(' ')] ?? '' }),
     runClone: async () => undefined,
+    log: () => undefined,
   };
 }
 
