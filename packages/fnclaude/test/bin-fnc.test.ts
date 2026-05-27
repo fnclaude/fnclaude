@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 const HERE = import.meta.dir;
@@ -85,34 +85,56 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
   });
 
   test('under Node with bun NOT on PATH, emits directive error and exits non-zero', async () => {
-    // Strip bun from PATH so the shim's preflight can't find it. Locate
-    // bun's actual install directory and exclude that exact path —
-    // earlier name-based heuristics (`/bun/`, `/bun` suffix) were brittle
-    // because the GitHub `setup-bun` action installs to `~/.bun/bin`,
-    // which slips through both. Bun.which resolves via PATH the same way
-    // the preflight's spawnSync('bun', ...) does, so the dir it points
-    // at is exactly what we need to drop.
-    const bunBin = Bun.which('bun');
-    const bunDir = bunBin ? dirname(bunBin) : null;
+    // Strip every bun-providing dir from PATH so the shim's preflight
+    // can't find it. CI runners commonly stack multiple bun installations
+    // on PATH simultaneously (mise's installs dir, proto's shim dir,
+    // setup-bun's `~/.bun/bin`, system package manager dirs, …) — earlier
+    // single-shot strategies (name-based heuristics, `Bun.which('bun')` →
+    // dirname) only removed one of them and left the rest resolving bun.
+    // Iterate: probe → find currently-resolving dir → drop → repeat until
+    // bun is no longer reachable (or we hit the safety cap).
     const origPath = process.env.PATH ?? '';
-    const filteredPath = origPath
-      .split(':')
-      .filter((dir) => dir !== bunDir)
-      .join(':');
+    let filteredPath = origPath;
+    const stripped: string[] = [];
+    const MAX_ITER = 16;
+    for (let i = 0; i < MAX_ITER; i++) {
+      const probe = spawnSync('bun', ['--version'], {
+        env: { ...process.env, PATH: filteredPath },
+        stdio: 'ignore',
+      });
+      if (probe.error || probe.status !== 0) break;
+      // `which` runs under the filtered PATH, so it reports whichever
+      // dir is currently first to resolve bun — exactly the one the
+      // probe above just succeeded against.
+      const which = spawnSync('which', ['bun'], {
+        env: { ...process.env, PATH: filteredPath },
+        encoding: 'utf8',
+      });
+      if (which.error || which.status !== 0) break;
+      const bunBin = which.stdout.trim();
+      if (!bunBin) break;
+      const bunDir = bunBin.substring(0, bunBin.lastIndexOf('/'));
+      if (!bunDir || stripped.includes(bunDir)) break;
+      stripped.push(bunDir);
+      filteredPath = filteredPath
+        .split(':')
+        .filter((dir) => dir !== bunDir)
+        .join(':');
+    }
 
-    // Sanity check: confirm the filter actually hid bun. If a future CI
-    // environment installs bun to multiple PATH entries (or bun is
-    // shimmed by something further down PATH), we'd silently fail the
-    // assertion below with a confusing exitCode-0 result. Fail loudly
-    // here instead.
-    const probe = spawnSync('bun', ['--version'], {
+    // Final sanity check: bun must genuinely be unreachable now. If a
+    // future env stacks more than MAX_ITER bun dirs on PATH (or shims bun
+    // via something `which` can't trace), fail loudly here rather than
+    // silently flunking the assertions below with a confusing
+    // exitCode-0.
+    const finalProbe = spawnSync('bun', ['--version'], {
       env: { ...process.env, PATH: filteredPath },
       stdio: 'ignore',
     });
-    if (!probe.error && probe.status === 0) {
+    if (!finalProbe.error && finalProbe.status === 0) {
       throw new Error(
-        `test setup broken: bun still reachable after stripping ${bunDir} from PATH. ` +
-          `Filtered PATH=${filteredPath}`,
+        `test setup broken: bun still reachable after stripping ${stripped.length} dir(s): ` +
+          `${stripped.join(', ')}. Filtered PATH=${filteredPath}`,
       );
     }
 
