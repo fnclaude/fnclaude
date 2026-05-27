@@ -50,8 +50,11 @@ export interface LoadPromptsResult {
 /**
  * Locate the prompts install dir and read each known fragment. Search order:
  *  1. `$FNC_PROMPTS_DIR` (test/override hook).
- *  2. `<exe-dir>/prompts/` — dev workflow.
- *  3. `<exe-dir>/../share/fnclaude/prompts/` — FHS/AUR install layout.
+ *  2. `<exe-dir>/prompts/` — Go-style dev layout (exe + sibling prompts/).
+ *  3. `<exe-dir>/../prompts/` — npm package layout: bin/fnc.js's parent
+ *     contains the shipped prompts/. This is the production path for any
+ *     `npm i -g @fnclaude/cli` install.
+ *  4. `<exe-dir>/../share/fnclaude/prompts/` — FHS/AUR install layout.
  *
  * Symlinks in the exe path are resolved before the search.
  *
@@ -109,6 +112,7 @@ export function findPromptsDir(): FindPromptsDirResult {
 
   const candidates = [
     join(exeDir, 'prompts'),
+    join(exeDir, '..', 'prompts'),
     join(exeDir, '..', 'share', 'fnclaude', 'prompts'),
   ];
   for (const c of candidates) {

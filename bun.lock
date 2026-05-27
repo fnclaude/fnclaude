@@ -11,18 +11,18 @@
     },
     "packages/cli": {
       "name": "@fnclaude/cli",
-      "version": "0.4.0",
+      "version": "0.7.3",
       "bin": {
         "fnc": "./bin/fnc.js",
       },
       "dependencies": {
         "@anthropic-ai/sdk": "^0.98.0",
-        "node-pty": "1.1.0",
+        "node-pty": "1.2.0-beta.13",
       },
     },
     "packages/fnclaude": {
       "name": "fnclaude",
-      "version": "0.0.11",
+      "version": "0.0.17",
       "bin": {
         "fnc": "./bin/fnc.js",
       },
@@ -33,7 +33,7 @@
     },
     "packages/renderer": {
       "name": "@fnclaude/renderer",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "bin": {
         "fnclaude-renderer": "./src/index.tsx",
       },
@@ -148,7 +148,7 @@
 
     "node-addon-api": ["node-addon-api@7.1.1", "", {}, "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="],
 
-    "node-pty": ["node-pty@1.1.0", "", { "dependencies": { "node-addon-api": "^7.1.0" } }, "sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg=="],
+    "node-pty": ["node-pty@1.2.0-beta.13", "", { "dependencies": { "node-addon-api": "^7.1.0" } }, "sha512-ZbbJ7aJdmvRA53bw30D6YSJJKqo1IXTojD0kJeHZ/xZIxr7p1DCmvOmrOnjUo/rn1z4MDwKQGpx0C7K+cRKETw=="],
 
     "onetime": ["onetime@5.1.2", "", { "dependencies": { "mimic-fn": "^2.1.0" } }, "sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg=="],
 
