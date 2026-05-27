@@ -79,8 +79,23 @@ if (decision.kind === 'reexec') {
   // payoff of pulling in a native addon for one bootstrap step is
   // negative. Cost is one extra PID in the tree; signals propagate via
   // the inherited stdio.
-  const r = spawnSync(decision.bun, [selfPath, ...process.argv.slice(2)], {
+  //
+  // Argv-via-env: Bun strips the first `--` from a script's argv,
+  // regardless of where it appears (script invocation, `bun --`, `bun
+  // run`, shebang). Confirmed empirically. So passing the user's args
+  // as Bun-script argv would silently mangle `fnc -- "prompt"` into
+  // `fnc "prompt"` — the cli then treats the prompt as a cwd
+  // positional, the resolver fires, and 8 GitHub orgs 404 in series
+  // before the user gets a misleading "could not resolve" error. We
+  // sidestep by serialising the user's args into FNC_ARGS_JSON; the
+  // cli reads from there when present (and deletes the env var to
+  // avoid leaking to its own children).
+  const r = spawnSync(decision.bun, [selfPath], {
     stdio: 'inherit',
+    env: {
+      ...process.env,
+      FNC_ARGS_JSON: JSON.stringify(process.argv.slice(2)),
+    },
   });
   if (r.error) {
     // ENOENT shouldn't reach here — lookupBun confirmed bun is reachable
