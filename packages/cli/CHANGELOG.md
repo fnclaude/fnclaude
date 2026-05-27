@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/fnclaude/fnclaude/compare/cli-v1.0.0...cli-v1.0.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **fnclaude,cli:** pass argv via env var to bypass Bun's -- stripping ([#108](https://github.com/fnclaude/fnclaude/issues/108)) ([cbd28ac](https://github.com/fnclaude/fnclaude/commit/cbd28ac15a53b7c836a4a488ed39d26016469255))
+
 ## [1.0.0](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.8...cli-v1.0.0) (2026-05-27)
 
 
