@@ -12,7 +12,8 @@
     "packages/fnclaude": {
       "release-type": "node",
       "package-name": "fnclaude",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "release-as": "1.0.0"
     },
     "packages/renderer": {
       "release-type": "node",
