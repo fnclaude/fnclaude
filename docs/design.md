@@ -4,6 +4,8 @@ Behaviors where the Go reference implementation dictates the exact mechanism and
 
 The rewrite's *choice of Bun primitive* (PTY backend, signal mechanism, async model) is not constrained here — only the externally-observable behavior and protocol the rewrite must replicate.
 
+> **MCP mechanics live in their own subdoc.** This file's sections 5–8, 12–14, 20, 25, and 29 each cover one slice of the MCP wiring; [`design.mcp.md`](design.mcp.md) is the unified, OS-level narrative — participants, lifecycle, wire format, the four tools, override semantics, handoff trigger, cleanup, failure modes. Read it before implementing any of those sections.
+
 ---
 
 ## Table of contents
