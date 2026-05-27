@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.4...cli-v0.7.5) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** ship prompts/ in package and bump node-pty for Linux prebuilds ([#83](https://github.com/fnclaude/fnclaude/issues/83)) ([0294c23](https://github.com/fnclaude/fnclaude/commit/0294c2388f70b063361fffdf991d78affe9cad76))
+
 ## [0.7.4](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.3...cli-v0.7.4) (2026-05-27)
 
 
