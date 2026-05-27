@@ -1,12 +1,12 @@
-// Preflight for the umbrella `fnc` shim — decide whether to proceed, re-exec
-// under Bun, or hard-error out with a directive message.
+// Preflight for the cli `fnc` bin shim — decide whether to proceed,
+// re-exec under Bun, or hard-error out with a directive message.
 //
-// The CLI relies on Bun-only globals (`Bun.spawn`, `Bun.TOML.parse`,
+// The cli relies on Bun-only globals (`Bun.spawn`, `Bun.TOML.parse`,
 // `Bun.which`, `process.execve`). When the bin is invoked under Node
-// (typically because `npm i -g fnclaude` puts it on PATH and the user
-// runs `fnc`), those Bun calls fail silently — `Bun.which` returns
+// (typically because `npm i -g @fnclaude/cli` puts it on PATH and the
+// user runs `fnc`), those Bun calls fail silently — `Bun.which` returns
 // `undefined`, `Bun.TOML.parse` throws "Bun is not defined", etc. The
-// CLI then degrades into a "claude not found" / config-broken state
+// cli then degrades into a "claude not found" / config-broken state
 // that LOOKS like a normal failure but is actually a runtime mismatch.
 //
 // This preflight runs first and either re-execs under Bun (if `bun` is
