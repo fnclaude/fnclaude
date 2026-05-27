@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/fnclaude/fnclaude/compare/cli-v1.0.1...cli-v1.0.1) (2026-05-27)
+
+
+### Features
+
+* **cli:** own the Bun argv-stripping shim; collapse umbrella to thin delegator ([#112](https://github.com/fnclaude/fnclaude/issues/112)) ([84a6655](https://github.com/fnclaude/fnclaude/commit/84a66553bce93924bba6a87cba6c5a43114f19d3))
+
 ## [1.0.1](https://github.com/fnclaude/fnclaude/compare/cli-v1.0.0...cli-v1.0.1) (2026-05-27)
 
 
