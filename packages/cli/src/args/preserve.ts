@@ -106,6 +106,12 @@ export function preserveArgs(
   while (i < origArgs.length) {
     const tok = origArgs[i] as string;
 
+    // `--` separates flags from the original session's initial prompt
+    // (everything after is the prompt body). Carrying it across a
+    // relaunch shadows the transfer's @summary file or re-prompts after
+    // --resume on restart — drop the separator and the entire tail.
+    if (tok === '--') break;
+
     // Equals-form (--flag=value): match by the flag-prefix-before-= part.
     if (deny !== null) {
       const eq = tok.indexOf('=');

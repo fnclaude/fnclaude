@@ -139,6 +139,30 @@ const preserveCases: PreserveCase[] = [
     bareOK: transferDenyBareOK,
     expected: ['--ide', '--brief'],
   },
+  {
+    // `--` separates flags from the original session's initial prompt.
+    // Carrying it (and anything after) across a relaunch shadows the
+    // transfer's @summary file or re-prompts after --resume on restart.
+    name: 'truncates at `--` separator (transfer shape)',
+    args: ['<dest>', '--', 'old prompt'],
+    deny: transferDenyFlags,
+    bareOK: transferDenyBareOK,
+    expected: [],
+  },
+  {
+    name: 'truncates at `--`, keeping flags before it',
+    args: ['--model', 'opus', '--', 'old prompt'],
+    deny: transferDenyFlags,
+    bareOK: transferDenyBareOK,
+    expected: ['--model', 'opus'],
+  },
+  {
+    // Restart path passes `null` deny (no transfer denylist applied) —
+    // truncation must still fire so the original prompt isn't replayed.
+    name: 'truncates at `--` even with null deny (restart shape)',
+    args: ['src/', '--ide', '--', 'old prompt', 'more', 'tokens'],
+    expected: ['--ide'],
+  },
 ];
 
 describe('preserveArgs', () => {
