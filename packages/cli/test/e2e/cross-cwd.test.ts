@@ -52,7 +52,7 @@ describe('cross-cwd e2e — synthetic PTY output → reconstructed next argv', (
     const out = `noise…\nTo resume, run:\ncd ${dest} && claude --resume ${uuid}\n`;
 
     const { hit } = pipeline([out]);
-    expect(hit).not.toBeNull();
+    expect(hit).not.toBeUndefined();
     expect(hit!.dest).toBe(dest);
     expect(hit!.uuid).toBe(uuid);
 
@@ -78,7 +78,7 @@ describe('cross-cwd e2e — synthetic PTY output → reconstructed next argv', (
       '\x1b[?1049l\x1b[?25h';
 
     const { hit } = pipeline([out]);
-    expect(hit).not.toBeNull();
+    expect(hit).not.toBeUndefined();
     expect(hit!.dest).toBe(dest);
     expect(hit!.uuid).toBe(uuid);
   });
@@ -92,7 +92,7 @@ describe('cross-cwd e2e — synthetic PTY output → reconstructed next argv', (
     const out = `${filler}\nTo resume, run:\ncd ${dest} && claude --resume ${uuid}\n`;
 
     const { hit } = pipeline([out]);
-    expect(hit).not.toBeNull();
+    expect(hit).not.toBeUndefined();
     expect(hit!.dest).toBe(dest);
     expect(hit!.uuid).toBe(uuid);
   });
@@ -109,7 +109,7 @@ describe('cross-cwd e2e — synthetic PTY output → reconstructed next argv', (
     expect(chunks[0]! + chunks[1]!).toContain(`cd ${dest} && claude --resume ${uuid}`);
 
     const { hit } = pipeline(chunks);
-    expect(hit).not.toBeNull();
+    expect(hit).not.toBeUndefined();
     expect(hit!.dest).toBe(dest);
     expect(hit!.uuid).toBe(uuid);
   });
@@ -123,15 +123,15 @@ describe('cross-cwd e2e — synthetic PTY output → reconstructed next argv', (
       'To resume, run:\ncd /second && claude --resume 22222222-2222-2222-2222-222222222222\n';
 
     const { hit } = pipeline([out]);
-    expect(hit).not.toBeNull();
+    expect(hit).not.toBeUndefined();
     expect(hit!.dest).toBe('/second');
     expect(hit!.uuid).toBe('22222222-2222-2222-2222-222222222222');
   });
 
-  test('no marker → null', async () => {
+  test('no marker → undefined', async () => {
     const out = 'just some plain output with no resume marker';
     const { hit } = pipeline([out]);
-    expect(hit).toBeNull();
+    expect(hit).toBeUndefined();
   });
 
   test('reconstructed argv: bare invocation gets just dest + --resume', async () => {

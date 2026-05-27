@@ -220,7 +220,7 @@ describe('OpRestart', () => {
       expect(resp.action).toBe('error');
       expect(resp.error).toBeTruthy();
       expect(await expectResolvedWithin(l.triggered(), 100)).toBe(false);
-      expect(l.getHandoffArgv()).toBeNull();
+      expect(l.getHandoffArgv()).toBeUndefined();
     } finally {
       await l.close();
     }
@@ -383,7 +383,7 @@ describe('OpSwitch', () => {
       expect(resp.action).toBe('done');
       expect(await expectResolvedWithin(l.triggered(), 2000)).toBe(true);
       const argv = l.getHandoffArgv();
-      expect(argv).not.toBeNull();
+      expect(argv).not.toBeUndefined();
       expect(argv!).toHaveLength(4);
       expect(argv![0]).toBe('arch-setup@fnrhombus');
       expect(argv![1]).toBe('--name');
@@ -625,7 +625,7 @@ describe('OpSpawn', () => {
       expect(resp.action).toBe('done');
       expect(spawn.calls).toHaveLength(1);
       expect(await expectResolvedWithin(l.triggered(), 100)).toBe(false);
-      expect(l.getHandoffArgv()).toBeNull();
+      expect(l.getHandoffArgv()).toBeUndefined();
     } finally {
       await l.close();
     }
@@ -867,7 +867,7 @@ describe('error paths', () => {
       sock.write('not-json\n');
       const resp = await readResponse(sock);
       sock.destroy();
-      expect(resp).not.toBeNull();
+      expect(resp).not.toBeUndefined();
       expect(resp!.action).toBe('error');
       expect(resp!.error).toBeTruthy();
     } finally {
@@ -1163,7 +1163,7 @@ describe('resume-continue system reminder', () => {
       });
       // Restart still completes — missing JSONL is best-effort, not fatal.
       expect(resp.action).toBe('done');
-      expect(l.getHandoffArgv()).not.toBeNull();
+      expect(l.getHandoffArgv()).not.toBeUndefined();
     } finally {
       await l.close();
     }

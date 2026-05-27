@@ -12,6 +12,7 @@
 import { Buffer } from 'node:buffer';
 import { connect, type Socket } from 'node:net';
 import type { Readable, Writable } from 'node:stream';
+import { errorMessage } from '../errors.js';
 import {
   encodeRequest,
   readResponse,
@@ -114,7 +115,7 @@ export const defaultDial: DialFn = async (socketPath, req) => {
 
   // Attach an error catcher up front so an early ECONNREFUSED doesn't
   // crash the process via 'error' before we await.
-  let earlyErr: Error | null = null;
+  let earlyErr: Error | undefined;
   sock.on('error', (e) => {
     if (!earlyErr) earlyErr = e;
   });
@@ -146,7 +147,7 @@ export const defaultDial: DialFn = async (socketPath, req) => {
 
     sock.write(encodeRequest(req));
     const resp = await readResponse(sock);
-    if (resp === null) {
+    if (resp === undefined) {
       throw new Error('read response: EOF before any line');
     }
     return resp;
@@ -274,15 +275,14 @@ export async function runMCPServer(opts: MCPServerOptions): Promise<number> {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const line = await reader.readLine();
-    if (line === null) return 0; // clean EOF
+    if (line === undefined) return 0; // clean EOF
     try {
       await handleLine(opts, dial, line);
     } catch (err) {
       // Sending an error response is the right behavior; abort the loop
       // only if the write itself fails.
       try {
-        const msg = (err as Error).message;
-        sendError(opts.stdout, null, CODE_PARSE_ERROR, `parse error: ${msg}`);
+        sendError(opts.stdout, null, CODE_PARSE_ERROR, `parse error: ${errorMessage(err)}`);
       } catch {
         return 1;
       }
@@ -299,7 +299,7 @@ async function handleLine(
   try {
     req = JSON.parse(line) as JSONRPCRequest;
   } catch (err) {
-    sendError(opts.stdout, null, CODE_PARSE_ERROR, `parse error: ${(err as Error).message}`);
+    sendError(opts.stdout, null, CODE_PARSE_ERROR, `parse error: ${errorMessage(err)}`);
     return;
   }
 
@@ -348,7 +348,7 @@ async function handleToolsCall(
   try {
     params = (req.params ?? {}) as MCPCallToolParams;
   } catch (err) {
-    sendError(opts.stdout, req.id, CODE_INVALID_PARAMS, `invalid params: ${(err as Error).message}`);
+    sendError(opts.stdout, req.id, CODE_INVALID_PARAMS, `invalid params: ${errorMessage(err)}`);
     return;
   }
 
@@ -402,12 +402,12 @@ async function callRestart(
   id: unknown,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (opts.socketPath === '') {
+  if (!opts.socketPath) {
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
   const sid = readStringArg(args, 'session_id');
-  if (sid === '') {
+  if (!sid) {
     sendToolError(
       opts.stdout,
       id,
@@ -445,7 +445,7 @@ async function callSwitch(
   id: unknown,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (opts.socketPath === '') {
+  if (!opts.socketPath) {
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
@@ -475,7 +475,7 @@ async function callSpawn(
   id: unknown,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (opts.socketPath === '') {
+  if (!opts.socketPath) {
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
@@ -504,7 +504,7 @@ async function callCopy(
   id: unknown,
   args: Record<string, unknown>,
 ): Promise<void> {
-  if (opts.socketPath === '') {
+  if (!opts.socketPath) {
     sendToolError(opts.stdout, id, SOCKET_UNAVAILABLE_MSG);
     return;
   }
@@ -525,7 +525,7 @@ async function dialAndRelay(
   try {
     resp = await dial(opts.socketPath, req);
   } catch (err) {
-    sendToolError(opts.stdout, id, (err as Error).message);
+    sendToolError(opts.stdout, id, errorMessage(err));
     return;
   }
   sendToolResult(opts.stdout, id, resp);
@@ -573,7 +573,7 @@ function sendToolResult(stdout: Writable, id: unknown, resp: Response): void {
   try {
     text = JSON.stringify(resp);
   } catch (err) {
-    sendToolError(stdout, id, `internal marshal error: ${(err as Error).message}`);
+    sendToolError(stdout, id, `internal marshal error: ${errorMessage(err)}`);
     return;
   }
   sendResult(stdout, id, {
@@ -595,7 +595,7 @@ function writeResponse(stdout: Writable, resp: JSONRPCResponse): void {
 class LineReader {
   private buf: Buffer = Buffer.alloc(0);
   private ended = false;
-  private pending: ((line: string | null) => void) | null = null;
+  private pending: ((line: string | undefined) => void) | undefined;
 
   constructor(private readonly stream: Readable) {
     stream.on('data', (chunk: Buffer) => {
@@ -612,8 +612,8 @@ class LineReader {
     });
   }
 
-  readLine(): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
+  readLine(): Promise<string | undefined> {
+    return new Promise<string | undefined>((resolve) => {
       this.pending = resolve;
       this.tryDeliver();
     });
@@ -626,15 +626,15 @@ class LineReader {
       const line = this.buf.subarray(0, nl + 1).toString('utf8');
       this.buf = this.buf.subarray(nl + 1);
       const cb = this.pending;
-      this.pending = null;
+      this.pending = undefined;
       cb(line);
       return;
     }
     if (this.ended) {
       const cb = this.pending;
-      this.pending = null;
+      this.pending = undefined;
       if (this.buf.length === 0) {
-        cb(null);
+        cb(undefined);
       } else {
         const tail = this.buf.toString('utf8');
         this.buf = Buffer.alloc(0);

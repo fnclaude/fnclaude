@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { errorMessage } from './errors.js';
 
 /**
  * Resolve the user's home directory. Honors `$HOME` first (matches Go's
@@ -136,7 +137,7 @@ export function parseBoolEnv(v: string): boolean {
  */
 export interface NormalizeResult<T> {
   value: T;
-  warning: string | null;
+  warning: string | undefined;
 }
 
 /**
@@ -146,8 +147,8 @@ export interface NormalizeResult<T> {
  * absent-value default path and produces no warning).
  */
 export function normalizeTmuxMode(v: string): NormalizeResult<TmuxMode> {
-  if (v === 'never' || v === 'worktree') return { value: v, warning: null };
-  if (v === '') return { value: 'never', warning: null };
+  if (v === 'never' || v === 'worktree') return { value: v, warning: undefined };
+  if (v === '') return { value: 'never', warning: undefined };
   return {
     value: 'never',
     warning: `fnclaude: auto.tmux=${JSON.stringify(v)} is not a valid mode (use "never" or "worktree"), falling back to "never"`,
@@ -160,12 +161,12 @@ export function normalizeTmuxMode(v: string): NormalizeResult<TmuxMode> {
  * string). Valid: "never", "ask", or a non-negative integer (as a string).
  */
 export function normalizeHandoffMode(v: string): NormalizeResult<HandoffMode> {
-  if (v === 'never' || v === 'ask') return { value: v, warning: null };
-  if (v === '') return { value: 'ask', warning: null };
+  if (v === 'never' || v === 'ask') return { value: v, warning: undefined };
+  if (v === '') return { value: 'ask', warning: undefined };
   // Non-negative integer (no decimal, no unit). The regex guarantees the
   // template-literal shape, which TS's type narrowing can't infer from a
   // .test() call alone — so assert it explicitly once.
-  if (/^\d+$/.test(v)) return { value: v as `${number}`, warning: null };
+  if (/^\d+$/.test(v)) return { value: v as `${number}`, warning: undefined };
   return {
     value: 'ask',
     warning: `fnclaude: auto.handoff=${JSON.stringify(v)} is not a valid mode (use "never", "ask", or a non-negative integer), falling back to "ask"`,
@@ -174,12 +175,12 @@ export function normalizeHandoffMode(v: string): NormalizeResult<HandoffMode> {
 
 /**
  * parseDuration accepts a Go-style duration string (e.g., "3s", "150ms",
- * "1m30s") and returns the equivalent in milliseconds. Returns null on
- * parse failure. This is the same surface as Go's time.ParseDuration for
- * the config use-case (we don't need ns/us precision).
+ * "1m30s") and returns the equivalent in milliseconds. Returns undefined
+ * on parse failure. This is the same surface as Go's time.ParseDuration
+ * for the config use-case (we don't need ns/us precision).
  */
-export function parseDuration(s: string): number | null {
-  if (!s) return null;
+export function parseDuration(s: string): number | undefined {
+  if (!s) return undefined;
   // Whole number with unit suffix(es).
   // Units: ns, us, µs, ms, s, m, h. (We support all common units.)
   const unitToMs: Record<string, number> = {
@@ -195,17 +196,19 @@ export function parseDuration(s: string): number | null {
   let total = 0;
   let matched = 0;
   let consumed = 0;
+  // RegExp.exec returns null for "no match" — third-party API shape, kept
+  // as null rather than coerced.
   let m: RegExpExecArray | null;
   while ((m = re.exec(s)) !== null) {
-    if (m.index !== consumed) return null; // gap between matches
+    if (m.index !== consumed) return undefined; // gap between matches
     const num = parseFloat(m[1] as string);
     const unit = m[2] as string;
-    if (!Number.isFinite(num) || num < 0) return null;
+    if (!Number.isFinite(num) || num < 0) return undefined;
     total += num * (unitToMs[unit] as number);
     consumed = m.index + m[0].length;
     matched++;
   }
-  if (matched === 0 || consumed !== s.length) return null;
+  if (matched === 0 || consumed !== s.length) return undefined;
   return total;
 }
 
@@ -262,25 +265,25 @@ export function loadConfig(): LoadConfigResult {
     set: (v: T) => void,
   ): void => {
     set(r.value);
-    if (r.warning !== null) warnings.push(r.warning);
+    if (r.warning !== undefined) warnings.push(r.warning);
   };
 
   if (existsSync(path)) {
-    let raw: RawConfig | null = null;
+    let raw: RawConfig | undefined;
     try {
       const body = readFileSync(path, 'utf8');
       raw = Bun.TOML.parse(body) as RawConfig;
     } catch (err) {
       warnings.push(
-        `fnclaude: config file ${path} is malformed, using defaults: ${(err as Error).message}`,
+        `fnclaude: config file ${path} is malformed, using defaults: ${errorMessage(err)}`,
       );
-      raw = null;
+      raw = undefined;
     }
     if (raw) {
       if (raw.name?.model) cfg.name.model = raw.name.model;
       if (raw.name?.timeout) {
         const d = parseDuration(raw.name.timeout);
-        if (d !== null) {
+        if (d !== undefined) {
           cfg.name.timeout = d;
         } else {
           warnings.push(
@@ -318,7 +321,7 @@ export function loadConfig(): LoadConfigResult {
   if (e.FNCLAUDE_NAME_MODEL) cfg.name.model = e.FNCLAUDE_NAME_MODEL;
   if (e.FNCLAUDE_NAME_TIMEOUT) {
     const d = parseDuration(e.FNCLAUDE_NAME_TIMEOUT);
-    if (d !== null) {
+    if (d !== undefined) {
       cfg.name.timeout = d;
     } else {
       warnings.push(

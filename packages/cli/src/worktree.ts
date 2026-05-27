@@ -114,15 +114,15 @@ export function listWorktrees(dir: string, runner: GitRunner = defaultGitRunner)
  *   3. Basename of the path    == query  (last-resort fallback for worktrees
  *      whose branch was renamed or whose creator skipped the convention)
  *
- * Returns null when no entry matches. Undefined `query` short-circuits to
- * null so that detached worktrees (branch=undefined) can't be matched by
- * accident.
+ * Returns undefined when no entry matches. Undefined `query` short-circuits
+ * to undefined so that detached worktrees (branch=undefined) can't be
+ * matched by accident.
  */
 export function findWorktree(
   worktrees: readonly WorktreeInfo[],
   query: string | undefined,
-): WorktreeInfo | null {
-  if (query === undefined) return null;
+): WorktreeInfo | undefined {
+  if (query === undefined) return undefined;
 
   for (const wt of worktrees) {
     if (wt.branch === query) return wt;
@@ -133,7 +133,7 @@ export function findWorktree(
   for (const wt of worktrees) {
     if (basename(wt.path) === query) return wt;
   }
-  return null;
+  return undefined;
 }
 
 function stripWorktreePrefix(branch: string): string {

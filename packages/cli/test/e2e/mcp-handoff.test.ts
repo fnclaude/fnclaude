@@ -201,7 +201,7 @@ describe.skipIf(SKIP_WINDOWS)('MCP handoff e2e (real socket + real subprocess)',
       new Promise((_, reject) => setTimeout(() => reject(new Error('triggered() never resolved')), 3_000)),
     ]);
     const stashed = fx.listener.getHandoffArgv();
-    expect(stashed).not.toBeNull();
+    expect(stashed).not.toBeUndefined();
     // Restart shape: [launchCWD, '--resume', sid] (no preserved magic since
     // origArgs was []).
     expect(stashed).toEqual([launchCWD, '--resume', sid]);
@@ -271,7 +271,7 @@ describe.skipIf(SKIP_WINDOWS)('MCP handoff e2e (real socket + real subprocess)',
       new Promise<false>((r) => setTimeout(() => r(false), 250)),
     ]);
     expect(fired).toBe(false);
-    expect(fx.listener.getHandoffArgv()).toBeNull();
+    expect(fx.listener.getHandoffArgv()).toBeUndefined();
   });
 
   test('subprocess with no FNC_SOCKET returns socket-unavailable error', async () => {

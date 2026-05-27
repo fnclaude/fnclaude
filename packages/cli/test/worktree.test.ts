@@ -116,14 +116,14 @@ describe('findWorktree', () => {
     expect(hit?.path).toBe('/repo/main');
   });
 
-  test('no match → null', () => {
+  test('no match → undefined', () => {
     const wts: WorktreeInfo[] = [{ path: '/repo/main', branch: 'main' }];
-    expect(findWorktree(wts, 'nope')).toBeNull();
+    expect(findWorktree(wts, 'nope')).toBeUndefined();
   });
 
   test('detached worktree (branch=undefined) not matched by undefined query', () => {
     const wts: WorktreeInfo[] = [{ path: '/repo/wt1', branch: undefined }];
-    expect(findWorktree(wts, undefined)).toBeNull();
+    expect(findWorktree(wts, undefined)).toBeUndefined();
   });
 });
 

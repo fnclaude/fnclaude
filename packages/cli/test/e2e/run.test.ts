@@ -39,9 +39,9 @@ import { run, type RunConfig, type RunDeps, type RunIO } from '../../src/main.js
 import type { RunOptions, RunResult } from '../../src/pty.js';
 
 interface CapturedRun {
-  claudeArgv: string[] | null;
-  launchCWD: string | null;
-  handoffMode: string | null;
+  claudeArgv: string[] | undefined;
+  launchCWD: string | undefined;
+  handoffMode: string | undefined;
   exitCode: number;
   stderr: string;
   stdout: string;
@@ -59,9 +59,9 @@ function makeCapturingDeps(
   out: CapturedRun;
 } {
   const out: CapturedRun = {
-    claudeArgv: null,
-    launchCWD: null,
-    handoffMode: null,
+    claudeArgv: undefined,
+    launchCWD: undefined,
+    handoffMode: undefined,
     exitCode: -1,
     stderr: '',
     stdout: '',
@@ -106,8 +106,8 @@ function makeCapturingDeps(
     runWithPTY: async (opts: RunOptions): Promise<RunResult> => {
       out.claudeArgv = opts.claudeArgv;
       out.launchCWD = opts.launchCWD;
-      out.handoffMode = opts.handoff?.mode ?? null;
-      return { exitCode: 0, tail: null, handoffArgv: null };
+      out.handoffMode = opts.handoff?.mode;
+      return { exitCode: 0, tail: undefined, handoffArgv: undefined };
     },
     silentRelaunch: () => undefined,
     silentRelaunchHandoff: () => undefined,
@@ -138,7 +138,7 @@ describe('run() e2e — full-stack argv construction', () => {
     out.exitCode = await run(deps);
 
     expect(out.exitCode).toBe(0);
-    expect(out.claudeArgv).not.toBeNull();
+    expect(out.claudeArgv).not.toBeUndefined();
     // First arg is always "claude" — the conventional argv[0] for the exec.
     expect(out.claudeArgv![0]).toBe('claude');
     // launchCWD is the noop dir. Path is XDG_CONFIG_HOME/fnclaude/noop when
@@ -343,20 +343,20 @@ describe('run() e2e — full-stack argv construction', () => {
     expect(code).toBe(1);
     expect(out.stderr).toContain('too many positional arguments');
     // PTY was not invoked.
-    expect(out.claudeArgv).toBeNull();
+    expect(out.claudeArgv).toBeUndefined();
   });
 
   test('fixture 14: claude not on PATH → exit 1 with message', async () => {
     const { deps, out } = makeCapturingDeps({
       io: {
         argv: ['/some/abs/path'],
-        lookupClaude: () => null,
+        lookupClaude: () => undefined,
       },
     });
     const code = await run(deps);
 
     expect(code).toBe(1);
     expect(out.stderr).toContain('claude not found in PATH');
-    expect(out.claudeArgv).toBeNull();
+    expect(out.claudeArgv).toBeUndefined();
   });
 });

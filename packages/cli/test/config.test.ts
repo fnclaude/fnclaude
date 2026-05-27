@@ -119,11 +119,11 @@ describe('configFilePath', () => {
 
 describe('normalizeTmuxMode', () => {
   test('valid values pass through without warning', () => {
-    expect(normalizeTmuxMode('never')).toEqual({ value: 'never', warning: null });
-    expect(normalizeTmuxMode('worktree')).toEqual({ value: 'worktree', warning: null });
+    expect(normalizeTmuxMode('never')).toEqual({ value: 'never', warning: undefined });
+    expect(normalizeTmuxMode('worktree')).toEqual({ value: 'worktree', warning: undefined });
   });
   test('empty string defaults to "never" without warning', () => {
-    expect(normalizeTmuxMode('')).toEqual({ value: 'never', warning: null });
+    expect(normalizeTmuxMode('')).toEqual({ value: 'never', warning: undefined });
   });
   test('invalid value falls back to "never" with a warning', () => {
     const r = normalizeTmuxMode('always');
@@ -137,20 +137,20 @@ describe('normalizeTmuxMode', () => {
 
 describe('normalizeHandoffMode', () => {
   test('valid values pass through without warning', () => {
-    expect(normalizeHandoffMode('never')).toEqual({ value: 'never', warning: null });
-    expect(normalizeHandoffMode('ask')).toEqual({ value: 'ask', warning: null });
-    expect(normalizeHandoffMode('0')).toEqual({ value: '0', warning: null });
-    expect(normalizeHandoffMode('5')).toEqual({ value: '5', warning: null });
-    expect(normalizeHandoffMode('30')).toEqual({ value: '30', warning: null });
+    expect(normalizeHandoffMode('never')).toEqual({ value: 'never', warning: undefined });
+    expect(normalizeHandoffMode('ask')).toEqual({ value: 'ask', warning: undefined });
+    expect(normalizeHandoffMode('0')).toEqual({ value: '0', warning: undefined });
+    expect(normalizeHandoffMode('5')).toEqual({ value: '5', warning: undefined });
+    expect(normalizeHandoffMode('30')).toEqual({ value: '30', warning: undefined });
   });
   test('empty string defaults to "ask" without warning', () => {
-    expect(normalizeHandoffMode('')).toEqual({ value: 'ask', warning: null });
+    expect(normalizeHandoffMode('')).toEqual({ value: 'ask', warning: undefined });
   });
   test('invalid values fall back to "ask" with a warning', () => {
     for (const v of ['-1', 'foo', '5.5', '3s']) {
       const r = normalizeHandoffMode(v);
       expect(r.value).toBe('ask');
-      expect(r.warning).not.toBeNull();
+      expect(r.warning).not.toBeUndefined();
       expect(r.warning).toContain(v);
     }
   });

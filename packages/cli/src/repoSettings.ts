@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
+import { errorMessage } from './errors.js';
 
 /**
  * fnclaude's view of the shared `repoSettings` block. Only the keys
@@ -80,7 +81,7 @@ export function mergeRepoSettings(paths: string[]): LoadRepoSettingsResult {
   const warnings: string[] = [];
   for (const p of paths) {
     const { settings: f, warning } = readRepoSettings(p);
-    if (warning !== null) warnings.push(warning);
+    if (warning !== undefined) warnings.push(warning);
     if (!f) continue;
     // Shallow-merge per field: only overwrite when the higher tier sets
     // a non-empty value.
@@ -93,8 +94,8 @@ export function mergeRepoSettings(paths: string[]): LoadRepoSettingsResult {
 }
 
 interface ReadRepoSettingsResult {
-  settings: RepoSettings | null;
-  warning: string | null;
+  settings: RepoSettings | undefined;
+  warning: string | undefined;
 }
 
 function readRepoSettings(path: string): ReadRepoSettingsResult {
@@ -103,25 +104,25 @@ function readRepoSettings(path: string): ReadRepoSettingsResult {
     data = readFileSync(path, 'utf8');
   } catch {
     // Missing file is the common path — stay silent.
-    return { settings: null, warning: null };
+    return { settings: undefined, warning: undefined };
   }
   let f: SettingsFile;
   try {
     f = JSON.parse(data) as SettingsFile;
   } catch (err) {
     return {
-      settings: null,
-      warning: `fnclaude: repo-settings file ${path} is malformed, skipping: ${(err as Error).message}`,
+      settings: undefined,
+      warning: `fnclaude: repo-settings file ${path} is malformed, skipping: ${errorMessage(err)}`,
     };
   }
-  return { settings: f.repoSettings ?? null, warning: null };
+  return { settings: f.repoSettings ?? undefined, warning: undefined };
 }
 
 /**
  * Platform-specific path to Claude Code's managed-settings.json, or
- * `null` on platforms with no such convention.
+ * `undefined` on platforms with no such convention.
  */
-export function managedSettingsPath(): string | null {
+export function managedSettingsPath(): string | undefined {
   switch (platform()) {
     case 'linux':
       return '/etc/claude-code/managed-settings.json';
@@ -130,10 +131,10 @@ export function managedSettingsPath(): string | null {
     case 'win32': {
       const pd = process.env.ProgramData;
       if (pd) return join(pd, 'ClaudeCode', 'managed-settings.json');
-      return null;
+      return undefined;
     }
     default:
-      return null;
+      return undefined;
   }
 }
 

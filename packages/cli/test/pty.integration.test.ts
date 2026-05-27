@@ -75,6 +75,8 @@ ${snippet}
 
 interface RunResultLite {
   exitCode: number;
+  // Wire-encoded as null over JSON since `undefined` can't survive
+  // JSON.stringify; in-process the production type is `Buffer | undefined`.
   tail: string | null;
   handoffArgv: string[] | null;
   targetExists?: boolean;
@@ -89,12 +91,12 @@ const r = await runWithPTY({
   claudeArgv: ['/bin/sh', '-c', 'exit 42'],
   launchCWD: process.cwd(),
   cfg: defaultConfig(),
-  handoff: null,
+  handoff: undefined,
 });
 process.stdout.write('\\n' + JSON.stringify({
   exitCode: r.exitCode,
   tail: r.tail ? r.tail.toString('utf8') : null,
-  handoffArgv: r.handoffArgv,
+  handoffArgv: r.handoffArgv ?? null,
 }));
 process.exit(0);
 `);
@@ -108,12 +110,12 @@ const r = await runWithPTY({
   claudeArgv: ['/bin/true'],
   launchCWD: process.cwd(),
   cfg: defaultConfig(),
-  handoff: null,
+  handoff: undefined,
 });
 process.stdout.write('\\n' + JSON.stringify({
   exitCode: r.exitCode,
   tail: r.tail ? r.tail.toString('utf8') : null,
-  handoffArgv: r.handoffArgv,
+  handoffArgv: r.handoffArgv ?? null,
 }));
 process.exit(0);
 `);
@@ -128,12 +130,12 @@ const r = await runWithPTY({
   claudeArgv: [],
   launchCWD: process.cwd(),
   cfg: defaultConfig(),
-  handoff: null,
+  handoff: undefined,
 });
 process.stdout.write('\\n' + JSON.stringify({
   exitCode: r.exitCode,
   tail: r.tail ? r.tail.toString('utf8') : null,
-  handoffArgv: r.handoffArgv,
+  handoffArgv: r.handoffArgv ?? null,
 }));
 process.exit(0);
 `);
@@ -150,13 +152,13 @@ const r = await runWithPTY({
   claudeArgv: ['/bin/true'],
   launchCWD: ${JSON.stringify(target)},
   cfg: defaultConfig(),
-  handoff: null,
+  handoff: undefined,
 });
 const targetExists = existsSync(${JSON.stringify(target)});
 process.stdout.write('\\n' + JSON.stringify({
   exitCode: r.exitCode,
   tail: r.tail ? r.tail.toString('utf8') : null,
-  handoffArgv: r.handoffArgv,
+  handoffArgv: r.handoffArgv ?? null,
   targetExists,
 }));
 process.exit(0);
@@ -196,12 +198,13 @@ const r = await runWithPTY({
 process.stdout.write('\\n' + JSON.stringify({
   exitCode: r.exitCode,
   tail: r.tail ? r.tail.toString('utf8') : null,
-  handoffArgv: r.handoffArgv,
+  handoffArgv: r.handoffArgv ?? null,
 }));
 process.exit(0);
 `);
       expect(result.exitCode).toBe(0);
-      // No trigger fired → handoffArgv stays null.
+      // No trigger fired → handoffArgv stays null on the wire (production
+      // returns undefined, harness coerces for JSON transport).
       expect(result.handoffArgv).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });

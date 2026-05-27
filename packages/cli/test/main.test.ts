@@ -86,8 +86,8 @@ function baseDeps(overrides: {
     generateName: async () => 'fake-name',
     runWithPTY: async (_opts: RunOptions): Promise<RunResult> => ({
       exitCode: 0,
-      tail: null,
-      handoffArgv: null,
+      tail: undefined,
+      handoffArgv: undefined,
     }),
     silentRelaunch: () => undefined,
     silentRelaunchHandoff: () => undefined,
@@ -176,7 +176,7 @@ describe('run() short-circuits', () => {
         io: {
           argv: [],
           stderr,
-          lookupClaude: () => null,
+          lookupClaude: () => undefined,
         },
       }),
     );
@@ -188,9 +188,9 @@ describe('run() short-circuits', () => {
 describe('run() pipeline composition', () => {
   test('happy path threads parsed argv through the side-effectful seams in order', async () => {
     const events: string[] = [];
-    let claudeArgvSeen: string[] | null = null;
-    let launchCWDSeen: string | null = null;
-    let handoffSpecSeen: HandoffSpec | null = null;
+    let claudeArgvSeen: string[] | undefined;
+    let launchCWDSeen: string | undefined;
+    let handoffSpecSeen: HandoffSpec | undefined;
 
     const code = await run(
       baseDeps({
@@ -208,7 +208,7 @@ describe('run() pipeline composition', () => {
             claudeArgvSeen = opts.claudeArgv;
             launchCWDSeen = opts.launchCWD;
             handoffSpecSeen = opts.handoff;
-            return { exitCode: 0, tail: null, handoffArgv: null };
+            return { exitCode: 0, tail: undefined, handoffArgv: undefined };
           },
         },
       }),
@@ -222,15 +222,15 @@ describe('run() pipeline composition', () => {
 
     // The claude argv starts with "claude" and contains the --name we
     // injected before the user's `--`.
-    expect(claudeArgvSeen).not.toBeNull();
+    expect(claudeArgvSeen).not.toBeUndefined();
     expect(claudeArgvSeen![0]).toBe('claude');
     expect(claudeArgvSeen!).toContain('--name');
     expect(claudeArgvSeen!).toContain('fixing-bug');
 
     expect(launchCWDSeen).toBe('/some/abs/path');
 
-    // Handoff spec is non-null and carries the original argv snapshot.
-    expect(handoffSpecSeen).not.toBeNull();
+    // Handoff spec is populated and carries the original argv snapshot.
+    expect(handoffSpecSeen).not.toBeUndefined();
     expect(handoffSpecSeen!.originalArgs).toEqual(['/some/abs/path', '--', 'fix the bug']);
     expect(handoffSpecSeen!.socketPath).toContain('fnclaude-mcp-');
   });
@@ -265,7 +265,7 @@ describe('run() pipeline composition', () => {
   });
 
   test('cwd-relative non-noop input passes through Resolve', async () => {
-    let resolveInputSeen: string | null = null;
+    let resolveInputSeen: string | undefined;
     const code = await run(
       baseDeps({
         io: {
@@ -275,7 +275,7 @@ describe('run() pipeline composition', () => {
               // pathExists is the first probe Resolve does; the candidate
               // path it builds is "<cwd>/<input>", so the input string is
               // recoverable from the basename.
-              resolveInputSeen = p.split('/').pop() ?? null;
+              resolveInputSeen = p.split('/').pop() ?? undefined;
               return true;
             },
             ghCmd: async () => ({ stdout: '' }),
@@ -314,7 +314,7 @@ describe('run() pipeline composition', () => {
     // Non-absolute input → resolver runs, returns workspace="staging".
     // The intercept then sees worktreeSet=true with worktreeArg=staging
     // and (no match) appends --worktree staging plus --name staging.
-    let claudeArgvSeen: string[] | null = null;
+    let claudeArgvSeen: string[] | undefined;
     const code = await run(
       baseDeps({
         io: {
@@ -338,7 +338,7 @@ describe('run() pipeline composition', () => {
           },
           runWithPTY: async (opts) => {
             claudeArgvSeen = opts.claudeArgv;
-            return { exitCode: 0, tail: null, handoffArgv: null };
+            return { exitCode: 0, tail: undefined, handoffArgv: undefined };
           },
         },
         data: {
@@ -347,7 +347,7 @@ describe('run() pipeline composition', () => {
       }),
     );
     expect(code).toBe(0);
-    expect(claudeArgvSeen).not.toBeNull();
+    expect(claudeArgvSeen).not.toBeUndefined();
     const wtIdx = claudeArgvSeen!.indexOf('--worktree');
     expect(wtIdx).toBeGreaterThan(-1);
     expect(claudeArgvSeen![wtIdx + 1]).toBe('staging');
@@ -357,7 +357,7 @@ describe('run() pipeline composition', () => {
   });
 
   test('Resolve workspace does NOT override an explicit -w flag', async () => {
-    let claudeArgvSeen: string[] | null = null;
+    let claudeArgvSeen: string[] | undefined;
     const code = await run(
       baseDeps({
         io: {
@@ -374,7 +374,7 @@ describe('run() pipeline composition', () => {
           },
           runWithPTY: async (opts) => {
             claudeArgvSeen = opts.claudeArgv;
-            return { exitCode: 0, tail: null, handoffArgv: null };
+            return { exitCode: 0, tail: undefined, handoffArgv: undefined };
           },
         },
         data: {
@@ -396,7 +396,7 @@ describe('run() exit-time decision tree', () => {
       baseDeps({
         io: {
           argv: ['/abs/cwd'],
-          runWithPTY: async () => ({ exitCode: 13, tail: Buffer.from('nothing interesting'), handoffArgv: null }),
+          runWithPTY: async () => ({ exitCode: 13, tail: Buffer.from('nothing interesting'), handoffArgv: undefined }),
         },
       }),
     );
@@ -435,7 +435,7 @@ describe('run() exit-time decision tree', () => {
   });
 
   test('cross-cwd marker triggers silentRelaunch with dest + uuid', async () => {
-    let captured: { args: readonly string[]; dest: string; uuid: string } | null = null;
+    let captured: { args: readonly string[]; dest: string; uuid: string } | undefined;
     const code = await run(
       baseDeps({
         io: {
@@ -445,7 +445,7 @@ describe('run() exit-time decision tree', () => {
             tail: Buffer.from(
               'noise...\nTo resume, run:\ncd /target && claude --resume abcdef12-1234-1234-1234-1234567890ab\n',
             ),
-            handoffArgv: null,
+            handoffArgv: undefined,
           }),
           silentRelaunch: (args, dest, uuid) => {
             captured = { args, dest, uuid };
@@ -454,7 +454,7 @@ describe('run() exit-time decision tree', () => {
       }),
     );
     expect(code).toBe(0);
-    expect(captured).not.toBeNull();
+    expect(captured).not.toBeUndefined();
     expect(captured!.dest).toBe('/target');
     expect(captured!.uuid).toBe('abcdef12-1234-1234-1234-1234567890ab');
     expect(captured!.args).toEqual(['/abs/cwd', '-V']);
@@ -466,7 +466,7 @@ describe('run() exit-time decision tree', () => {
       baseDeps({
         io: {
           argv: ['/abs/cwd'],
-          runWithPTY: async () => ({ exitCode: 5, tail: null, handoffArgv: null }),
+          runWithPTY: async () => ({ exitCode: 5, tail: undefined, handoffArgv: undefined }),
           silentRelaunch: () => {
             relaunchCalled = true;
           },

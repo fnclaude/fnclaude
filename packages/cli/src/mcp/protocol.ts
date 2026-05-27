@@ -370,9 +370,9 @@ export interface DataStream {
 
 /**
  * Read one newline-terminated JSON line from a data-emitting stream (a
- * `net.Socket` is the common case). Returns the decoded Request or null
- * if the stream ended cleanly before any line was seen (analogous to
- * Go's `io.EOF` return).
+ * `net.Socket` is the common case). Returns the decoded Request or
+ * undefined if the stream ended cleanly before any line was seen
+ * (analogous to Go's `io.EOF` return).
  *
  * Buffers across chunk boundaries. Stops at the first '\n'; bytes past
  * it are silently dropped (the wire protocol is one-line-per-connection).
@@ -382,22 +382,22 @@ export interface DataStream {
  * which would prevent the caller from writing the response back. The
  * event-listener form leaves the socket fully writable.
  */
-export async function readRequest(stream: DataStream): Promise<Request | null> {
+export async function readRequest(stream: DataStream): Promise<Request | undefined> {
   const line = await readLine(stream);
-  if (line === null) return null;
+  if (line === undefined) return undefined;
   return decodeRequest(line);
 }
 
 /** Read one newline-terminated JSON line and decode it as a Response. */
-export async function readResponse(stream: DataStream): Promise<Response | null> {
+export async function readResponse(stream: DataStream): Promise<Response | undefined> {
   const line = await readLine(stream);
-  if (line === null) return null;
+  if (line === undefined) return undefined;
   return decodeResponse(line);
 }
 
 /** Internal — read up to and including the first '\n' via stream events. */
-async function readLine(stream: DataStream): Promise<string | null> {
-  return new Promise<string | null>((resolve, reject) => {
+async function readLine(stream: DataStream): Promise<string | undefined> {
+  return new Promise<string | undefined>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
     let settled = false;
@@ -408,7 +408,7 @@ async function readLine(stream: DataStream): Promise<string | null> {
       stream.off('close', onEnd);
       stream.off('error', onError);
     };
-    const settle = (value: string | null, err?: Error): void => {
+    const settle = (value: string | undefined, err?: Error): void => {
       if (settled) return;
       settled = true;
       cleanup();
@@ -430,12 +430,12 @@ async function readLine(stream: DataStream): Promise<string | null> {
     };
     const onEnd = (): void => {
       if (total === 0) {
-        settle(null);
+        settle(undefined);
         return;
       }
       settle(Buffer.concat(chunks).toString('utf8'));
     };
-    const onError = (err: Error): void => settle(null, err);
+    const onError = (err: Error): void => settle(undefined, err);
 
     stream.on('data', onData);
     stream.on('end', onEnd);
