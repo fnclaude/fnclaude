@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.6](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.5...cli-v0.7.6) (2026-05-27)
+
+
+### Bug Fixes
+
+* **cli:** drop `--`+trailing prompt tokens in preserveArgs ([#80](https://github.com/fnclaude/fnclaude/issues/80)) ([9aa5704](https://github.com/fnclaude/fnclaude/commit/9aa5704423d2583c74f4f028d82ece815246b4ea))
+
 ## [0.7.5](https://github.com/fnclaude/fnclaude/compare/cli-v0.7.4...cli-v0.7.5) (2026-05-27)
 
 
