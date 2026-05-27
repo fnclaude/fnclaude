@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.18](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.17...fnclaude-v0.0.18) (2026-05-27)
+
+
+### Bug Fixes
+
+* **fnclaude:** hard-error or re-exec when launched under Node ([#85](https://github.com/fnclaude/fnclaude/issues/85)) ([05422e1](https://github.com/fnclaude/fnclaude/commit/05422e1df364ee81a709de5d5d577b271083d0e4))
+
 ## [0.0.17](https://github.com/fnclaude/fnclaude/compare/fnclaude-v0.0.16...fnclaude-v0.0.17) (2026-05-25)
 
 

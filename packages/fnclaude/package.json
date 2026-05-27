@@ -1,6 +1,6 @@
 {
   "name": "fnclaude",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "fnclaude — wrapper around Claude Code (umbrella package; depends on @fnclaude/cli and @fnclaude/renderer)",
   "license": "MIT",
   "repository": {
