@@ -59,15 +59,15 @@ export function shouldAutoName(passthrough: readonly string[]): boolean {
 
 /**
  * extractPrompt returns the first non-empty token after "--" in passthrough.
- * Returns "" if not found.
+ * Returns undefined if not found.
  */
-export function extractPrompt(passthrough: readonly string[]): string {
+export function extractPrompt(passthrough: readonly string[]): string | undefined {
   const sepIdx = passthrough.indexOf('--');
-  if (sepIdx < 0) return '';
+  if (sepIdx < 0) return undefined;
   for (const t of passthrough.slice(sepIdx + 1)) {
     if (t !== '') return t;
   }
-  return '';
+  return undefined;
 }
 
 // ── stop-words + heuristic fallback ────────────────────────────────────────
@@ -123,9 +123,9 @@ const RE_WHITESPACE = /\s+/g;
 
 /**
  * sanitizeSlug cleans raw LLM output into a valid kebab slug (up to 3 dash-
- * separated segments). Returns "" when nothing survives sanitization.
+ * separated segments). Returns undefined when nothing survives sanitization.
  */
-export function sanitizeSlug(raw: string): string {
+export function sanitizeSlug(raw: string): string | undefined {
   let s = raw.trim().toLowerCase();
   s = s.replace(RE_WHITESPACE, '-');
   s = s.replace(RE_NON_SLUG, '');
@@ -136,7 +136,7 @@ export function sanitizeSlug(raw: string): string {
   s = parts.slice(0, 3).join('-');
   // Trim again in case joining re-introduced edge dashes.
   s = s.replace(/^-+|-+$/g, '');
-  return s;
+  return s !== '' ? s : undefined;
 }
 
 // ── LLM client abstraction ──────────────────────────────────────────────────
@@ -235,11 +235,12 @@ export function claudeCliFn(model: string, spawnFn: SpawnFn = defaultSpawnFn): L
  * On any error the function falls back to heuristicName silently.
  */
 export async function generateName(
-  prompt: string,
+  prompt: string | undefined,
   cfg: NameConfig,
   apiKey: string,
   llmFn?: LlmClientFn,
 ): Promise<string> {
+  const resolved = prompt ?? '';
   let usingCLI = false;
   if (!llmFn) {
     if (apiKey) {
@@ -261,11 +262,11 @@ export async function generateName(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const raw = await llmFn(cfg.model, prompt, controller.signal);
+    const raw = await llmFn(cfg.model, resolved, controller.signal);
     const name = sanitizeSlug(raw);
-    return name !== '' ? name : heuristicName(prompt);
+    return name !== undefined ? name : heuristicName(resolved);
   } catch {
-    return heuristicName(prompt);
+    return heuristicName(resolved);
   } finally {
     clearTimeout(timer);
   }

@@ -429,7 +429,7 @@ describe('parseArgs — -w / --worktree', () => {
   test('bare -w', () => {
     const a = parseArgs(['/p/x', '-w'], TEST_HOME);
     expect(a.worktreeSet).toBe(true);
-    expect(a.worktreeArg).toBe('');
+    expect(a.worktreeArg).toBeUndefined();
   });
 
   test('-w value', () => {

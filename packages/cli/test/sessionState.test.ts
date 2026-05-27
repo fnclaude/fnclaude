@@ -59,15 +59,15 @@ describe('sessionJSONLPath', () => {
 // ── readLivePermissionMode ───────────────────────────────────────────────
 
 describe('readLivePermissionMode', () => {
-  test('missing file → empty', () => {
+  test('missing file → undefined', () => {
     const home = mkdtempSync(join(tmpdir(), 'fnclaude-ss-'));
     process.env.HOME = home;
     expect(
       readLivePermissionMode('/no/such/cwd', '11111111-1111-1111-1111-111111111111'),
-    ).toBe('');
+    ).toBeUndefined();
   });
 
-  test('no records → empty', () => {
+  test('no records → undefined', () => {
     const home = mkdtempSync(join(tmpdir(), 'fnclaude-ss-'));
     process.env.HOME = home;
     const cwd = '/home/test/proj';
@@ -76,7 +76,7 @@ describe('readLivePermissionMode', () => {
       '{"type":"user","message":{"role":"user","content":"hi"}}\n' +
       '{"type":"assistant","message":{"role":"assistant","content":"hello"}}\n';
     writeJSONL(home, cwd, sid, body);
-    expect(readLivePermissionMode(cwd, sid)).toBe('');
+    expect(readLivePermissionMode(cwd, sid)).toBeUndefined();
   });
 
   test('one record returns its value', () => {

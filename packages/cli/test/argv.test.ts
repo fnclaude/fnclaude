@@ -64,7 +64,7 @@ function baseArgs(
     passthrough: [],
     noTmux: false,
     worktreeSet: false,
-    worktreeArg: '',
+    worktreeArg: undefined,
     usedNoopFallback: false,
     worktreeMatched: false,
     ...overrides,
