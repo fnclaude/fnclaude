@@ -75,6 +75,11 @@ export interface ResolveDeps {
   ghCmd: (args: readonly string[]) => Promise<GhResult>;
   /** Shell out `gh repo clone <ownerRepo> <dest>`. */
   runClone: (ownerRepo: string, dest: string) => Promise<void>;
+  /**
+   * User-visible log line (e.g. "cloning X → Y"). Production writes to
+   * stderr; tests stub it to silence test output and assert on the call.
+   */
+  log: (message: string) => void;
 }
 
 // ── Production dependency wiring ───────────────────────────────────────────
@@ -111,6 +116,9 @@ export function productionDeps(): ResolveDeps {
     },
     ghCmd,
     runClone,
+    log: (msg: string) => {
+      process.stderr.write(msg.endsWith('\n') ? msg : `${msg}\n`);
+    },
   };
 }
 
@@ -494,7 +502,7 @@ async function cloneAndReturn(
   }
 
   // Clone. gh decides SSH vs HTTPS from its config.
-  process.stderr.write(`fnclaude: cloning ${ref.owner}/${ref.name} → ${target}\n`);
+  deps.log(`fnclaude: cloning ${ref.owner}/${ref.name} → ${target}`);
   try {
     await deps.runClone(`${ref.owner}/${ref.name}`, target);
   } catch (e) {
