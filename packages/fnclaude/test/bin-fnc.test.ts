@@ -18,7 +18,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 const HERE = import.meta.dir;
@@ -84,21 +85,36 @@ describe.skipIf(SKIP_WINDOWS)('fnclaude umbrella shim — preflight', () => {
   });
 
   test('under Node with bun NOT on PATH, emits directive error and exits non-zero', async () => {
-    // Strip bun from PATH so the shim's preflight can't find it. Build a
-    // minimal PATH that retains the directories Node itself needs but
-    // excludes anything containing a bun binary.
+    // Strip bun from PATH so the shim's preflight can't find it. Locate
+    // bun's actual install directory and exclude that exact path —
+    // earlier name-based heuristics (`/bun/`, `/bun` suffix) were brittle
+    // because the GitHub `setup-bun` action installs to `~/.bun/bin`,
+    // which slips through both. Bun.which resolves via PATH the same way
+    // the preflight's spawnSync('bun', ...) does, so the dir it points
+    // at is exactly what we need to drop.
+    const bunBin = Bun.which('bun');
+    const bunDir = bunBin ? dirname(bunBin) : null;
     const origPath = process.env.PATH ?? '';
     const filteredPath = origPath
       .split(':')
-      .filter((dir) => {
-        // Heuristic: drop entries that obviously point at bun. Covers
-        // mise's per-tool layout (`.../bun/<ver>/bin`) and the common
-        // case of a generic shim dir wrapping bun.
-        if (dir.includes('/bun/')) return false;
-        if (dir.endsWith('/bun')) return false;
-        return true;
-      })
+      .filter((dir) => dir !== bunDir)
       .join(':');
+
+    // Sanity check: confirm the filter actually hid bun. If a future CI
+    // environment installs bun to multiple PATH entries (or bun is
+    // shimmed by something further down PATH), we'd silently fail the
+    // assertion below with a confusing exitCode-0 result. Fail loudly
+    // here instead.
+    const probe = spawnSync('bun', ['--version'], {
+      env: { ...process.env, PATH: filteredPath },
+      stdio: 'ignore',
+    });
+    if (!probe.error && probe.status === 0) {
+      throw new Error(
+        `test setup broken: bun still reachable after stripping ${bunDir} from PATH. ` +
+          `Filtered PATH=${filteredPath}`,
+      );
+    }
 
     const r = await spawnShim('node', ['--version'], {
       env: { ...process.env, PATH: filteredPath },
