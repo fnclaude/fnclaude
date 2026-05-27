@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   findPromptsDir,
   isInteractiveSession,
@@ -226,5 +227,56 @@ describe('selectFragments', () => {
       noopRouter: '',
     };
     expect(selectFragments(ps, [], true)).toEqual(['AP']);
+  });
+});
+
+// ── installed-package layout regression ────────────────────────────────────
+//
+// Defect: prior to shipping prompts/ in the npm package, a global install
+// (`npm i -g @fnclaude/cli`) put bin/fnc.js on disk with no sibling prompts/,
+// so findPromptsDir() returned an error and every session emitted a "prompts
+// directory not found" warning. Cover both halves of the fix here:
+//   (a) the resolver knows to look at <exe-dir>/../prompts/ (the package
+//       root, one level up from bin/);
+//   (b) the package manifest's `files` array still includes "prompts" so
+//       it actually ships in the tarball.
+
+describe('npm-installed package layout', () => {
+  test('findPromptsDir resolves prompts/ at <exe-dir>/../prompts/', () => {
+    delete process.env.FNC_PROMPTS_DIR;
+
+    // Simulate the installed shape: <pkg>/bin/fnc.js with <pkg>/prompts/.
+    const fakePkg = mkdtempSync(join(tmpdir(), 'fnc-pkg-'));
+    const binDir = join(fakePkg, 'bin');
+    const promptsDir = join(fakePkg, 'prompts');
+    mkdirSync(binDir);
+    mkdirSync(promptsDir);
+    const fakeBin = join(binDir, 'fnc.js');
+    writeFileSync(fakeBin, '// placeholder');
+    writeFileSync(join(promptsDir, 'agent-pitfall.md'), 'AP');
+
+    const savedArgv1 = process.argv[1];
+    process.argv[1] = fakeBin;
+    try {
+      const result = findPromptsDir();
+      expect(result.error).toBeNull();
+      expect(result.dir).toBe(promptsDir);
+    } finally {
+      if (savedArgv1 === undefined) {
+        process.argv.length = 1;
+      } else {
+        process.argv[1] = savedArgv1;
+      }
+      rmSync(fakePkg, { recursive: true, force: true });
+    }
+  });
+
+  test('package.json declares prompts/ in the files array', () => {
+    // The resolver above only helps if the directory actually ships. Without
+    // "prompts" in the files array, npm publish drops it and registry users
+    // hit the "prompts directory not found" warning again.
+    const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { files: string[] };
+    expect(pkg.files).toContain('prompts');
   });
 });
