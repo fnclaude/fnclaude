@@ -1,8 +1,8 @@
 /**
- * Unit tests for the bin shim's preflight decision function.
+ * Unit tests for the cli bin shim's preflight decision function.
  *
- * The shim itself is tested via subprocess in bin-fnc.test.ts; this
- * file exercises the pure decision branch — given a `(hasBun,
+ * The shim itself is tested via subprocess in test/e2e/bin-preflight.test.ts;
+ * this file exercises the pure decision branch — given a `(hasBun,
  * lookupBun)` pair, does the function return the right action?
  */
 

@@ -1,41 +1,28 @@
 #!/usr/bin/env node
-// Umbrella shim: delegates to @fnclaude/cli's bin. The shim pattern is
-// deliberate — npm's `bin` field pointing into a dependency is undefined
-// behavior, but a thin wrapper that requires the dep is documented and
-// portable.
+// Umbrella shim: delegates to `@fnclaude/cli`'s bin, which owns the
+// Node→Bun preflight + FNC_ARGS_JSON re-exec. The shim pattern is
+// deliberate — npm's `bin` field pointing into a dependency is
+// undefined behavior, but a thin wrapper that requires the dep is
+// documented and portable.
 //
-// Runtime preflight: the CLI uses Bun-only globals (`Bun.spawn`,
-// `Bun.TOML.parse`, `Bun.which`, `process.execve`). The shebang is
-// `#!/usr/bin/env node` because `npm i -g fnclaude` exposes us as a Node
-// script regardless of whether the user has Bun installed — so we must
-// be loadable by Node, not just by Bun. The preflight detects that
-// mismatch and either re-execs under Bun (preserving stdio + exit code)
-// or prints a directive error and exits non-zero. Either way, the user
-// never sees a silently-degraded run where Bun.TOML.parse throws "Bun is
-// not defined" and the CLI lies about not finding claude on PATH.
-import { spawnSync } from 'node:child_process';
+// Why the cli owns the preflight: users who `npm i -g @fnclaude/cli`
+// standalone (without the umbrella) used to skip the shim entirely and
+// silently degrade under Node. Collapsing the preflight into the cli
+// makes that path work too. See `packages/cli/bin/fnc.js`.
+//
+// What stays here: the umbrella package's `--version` reporting. The
+// umbrella's version is distinct from the cli's — users install
+// `fnclaude@X.Y.Z` and expect that `X.Y.Z` to be what `fnc --version`
+// prints. Delegating straight to cli's bin would surface cli's own
+// version instead (which is what shipped through 2.0.0 and confused
+// users).
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decide, defaultLookupBun } from './preflight.js';
 
 const selfPath = fileURLToPath(import.meta.url);
 
-// Short-circuit --version BEFORE the Bun preflight. Two reasons:
-//   1. The umbrella package's version is distinct from the cli package's
-//      — users install `fnclaude@X.Y.Z` and expect that `X.Y.Z` to be what
-//      `fnc --version` prints. Delegating to cli's bin would surface
-//      cli's own version instead (which is what shipped through 2.0.0
-//      and confused users).
-//   2. --version doesn't need Bun — it's pure file reads. Skipping the
-//      preflight here means `fnc --version` works even on a stock Node
-//      install with no Bun on PATH, which is friendlier when someone is
-//      diagnosing a broken install.
-//
-// This duplicates cli's own --version handler, which is the tradeoff:
-// cli's bin doesn't (and shouldn't) know about an umbrella above it, so
-// the umbrella has to own the version surface.
 const argv = process.argv.slice(2);
 if (argv.includes('--version') || argv.includes('-v')) {
   const here = dirname(selfPath);
@@ -58,54 +45,6 @@ if (argv.includes('--version') || argv.includes('-v')) {
   process.exit(0);
 }
 
-const decision = decide({
-  hasBun: typeof globalThis.Bun !== 'undefined',
-  lookupBun: defaultLookupBun,
-});
-
-if (decision.kind === 'error') {
-  process.stderr.write(`${decision.message}\n`);
-  process.exit(1);
-}
-
-if (decision.kind === 'reexec') {
-  // Re-launch ourselves under Bun. `spawnSync` with stdio:'inherit'
-  // forwards streams transparently; we propagate the child's exit code
-  // so the OS / parent process sees the same status it would have seen
-  // had Bun been the launcher all along.
-  //
-  // Note: this is a process-tree round-trip (Node → Bun), not a true
-  // execve replacement. We don't have execve in Node stdlib, and the
-  // payoff of pulling in a native addon for one bootstrap step is
-  // negative. Cost is one extra PID in the tree; signals propagate via
-  // the inherited stdio.
-  //
-  // Argv-via-env: Bun strips the first `--` from a script's argv,
-  // regardless of where it appears (script invocation, `bun --`, `bun
-  // run`, shebang). Confirmed empirically. So passing the user's args
-  // as Bun-script argv would silently mangle `fnc -- "prompt"` into
-  // `fnc "prompt"` — the cli then treats the prompt as a cwd
-  // positional, the resolver fires, and 8 GitHub orgs 404 in series
-  // before the user gets a misleading "could not resolve" error. We
-  // sidestep by serialising the user's args into FNC_ARGS_JSON; the
-  // cli reads from there when present (and deletes the env var to
-  // avoid leaking to its own children).
-  const r = spawnSync(decision.bun, [selfPath], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      FNC_ARGS_JSON: JSON.stringify(process.argv.slice(2)),
-    },
-  });
-  if (r.error) {
-    // ENOENT shouldn't reach here — lookupBun confirmed bun is reachable
-    // — but if something else broke (EACCES, ETXTBSY), surface it
-    // instead of swallowing.
-    process.stderr.write(`fnclaude: failed to re-exec under bun: ${r.error.message}\n`);
-    process.exit(1);
-  }
-  process.exit(r.status ?? 0);
-}
-
-// decision.kind === 'run' — we're already under Bun.
+// Everything else: hand off to cli's bin. Its preflight handles the
+// Node→Bun re-exec and FNC_ARGS_JSON serialisation itself.
 await import('@fnclaude/cli/bin/fnc.js');
