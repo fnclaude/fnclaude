@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/fnclaude/fnclaude/compare/fnclaude-v2.0.0...fnclaude-v2.0.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **fnclaude:** report umbrella version, not cli version, on --version ([#106](https://github.com/fnclaude/fnclaude/issues/106)) ([815a93d](https://github.com/fnclaude/fnclaude/commit/815a93d883368da19d83c5de4b60f41d0fc6382a))
+
 ## [2.0.0](https://github.com/fnclaude/fnclaude/compare/fnclaude-v1.0.0...fnclaude-v2.0.0) (2026-05-27)
 
 
