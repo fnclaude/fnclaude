@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.2...renderer-v3.0.0) (2026-05-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** Version bump to v1.0.0. The API surface is identical to 0.7.8 but pinned dependencies on ^0.7.x should update to ^1.0.0.
+
+### Features
+
+* **cli:** graduate @fnclaude/cli to v1.0.0 ([#101](https://github.com/fnclaude/fnclaude/issues/101)) ([d34bb1f](https://github.com/fnclaude/fnclaude/commit/d34bb1f1a1217d37de82d1c3aa3431eff6a62a3e))
+
 ## [2.0.2](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.1...renderer-v2.0.2) (2026-05-25)
 
 
