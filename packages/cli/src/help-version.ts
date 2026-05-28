@@ -47,7 +47,11 @@ left-to-right at the head of argv before any flags):
 
 Positional paths (max 2 after magic/subcommand tokens):
   1st remaining → cwd to launch claude in
-                  (fallback: $XDG_CONFIG_HOME/fnclaude/noop)
+                  Accepts: absolute path, ~-prefixed, ./-prefixed, bare repo
+                  name (gh-resolved), name@owner, owner/name, gh:owner/name,
+                  HTTPS URL, SSH URL. Missing repos are cloned per the
+                  cloneTemplate in repoSettings.
+                  (fallback when no path: $XDG_CONFIG_HOME/fnclaude/noop)
   2nd remaining → worktree name (same semantics as -w <name>)
   3rd+ remaining → error. Use -A/--also for extra dirs.
 
@@ -56,14 +60,14 @@ Reserved subcommands:
                   injected --mcp-config; not for direct use)
   To use a directory literally named mcp, prefix with ./
 
-fnclaude-owned flags (not forwarded to claude):
-  -A, --also <dir>     additional extra-dir (repeatable; deferred — see PRD)
-      --no-tmux        suppress auto-tmux injection for this invocation
-  -w, --worktree <n>   worktree intercept (matches existing → swap cwd;
-                       no match → forwarded as new-worktree request)
-  -h, --help           show this help and exit
-  -v, --version        print fnclaude's version and exit
-                       (shadows claude's -v; use \`claude --version\` directly)
+fnclaude-owned flags (consumed by the launcher, NOT forwarded to claude):
+  -A, --also <dir>      additional extra-dir (repeatable; deferred — see PRD)
+      --no-tmux         suppress auto-tmux injection for this invocation
+  -w, --worktree <name> worktree intercept (matches existing → swap cwd;
+                        no match → forwarded as new-worktree request)
+  -h, --help            show this help and exit
+  -v, --version         print fnclaude's version and exit
+                        (shadows claude's -v; use \`claude --version\` directly)
 
 Capital-letter shortcuts (translate to claude long-form flags):
   -B → --brief                          -M → --permission-mode <mode>
@@ -75,7 +79,8 @@ Capital-letter shortcuts (translate to claude long-form flags):
 
 All other claude flags pass through verbatim — run \`claude --help\` for the
 full reference. POSIX collapsing is supported (-BVC = -B -V -C); only the
-last flag in a collapsed group may take a value.
+last flag in a collapsed group may take a value. shortRequired flags
+(-G/-M/-W) must be the final character of a cluster, not in the middle.
 
 Cross-cwd resume: when claude shows the resume picker and you select a
 session from a different cwd, fnclaude transparently re-launches in that
@@ -87,13 +92,48 @@ Non-matching names pass through as a new-worktree request. --name is
 always set, whether entering or creating.
 
 Auto-name: when --, a prompt, and no --name/-n are all present, fnclaude
-generates a 1-3 word session label via Haiku. Falls back silently to a
-heuristic on failure or timeout.
+generates a 1-3 word session label via Haiku. With ANTHROPIC_API_KEY set,
+the call goes through the Anthropic SDK directly (fast-path, no claude
+spawn). Without it, fnclaude shells out to \`claude -p\` which uses your
+subscription auth. Falls back silently to a heuristic on failure / timeout.
 
-Config: $XDG_CONFIG_HOME/fnclaude/config.toml
-Repo settings (clone template, worktree paths): ~/.claude/settings.json
+Auto-tmux: with \`[auto] tmux = "worktree"\` in config, fnclaude injects
+--tmux whenever you create a new worktree (-w <name> with no match).
+Pass --no-tmux to skip this for a single invocation without editing config.
 
-For more, see https://github.com/fnclaude/fnclaude
+Environment variables (override config; precedence: CLI > env > config):
+  ANTHROPIC_API_KEY     direct-API auth for auto-name (else shells \`claude -p\`)
+  XDG_CONFIG_HOME       config dir base (default: ~/.config)
+  FNC_PROMPTS_DIR       override install-dir prompts location
+                        (default: <exe-dir>/prompts, <exe-dir>/../prompts,
+                         or <exe-dir>/../share/fnclaude/prompts)
+  FNC_NOOP_TEMPLATE_PATH
+                        override handoff.template.md source path used when
+                        seeding the noop fallback directory on first launch
+
+Config file: $XDG_CONFIG_HOME/fnclaude/config.toml
+  [name]      model = "claude-haiku-4-5", timeout = "3s"
+  [auto]      tmux = "never" | "worktree"
+              handoff = "never" | "ask" | <N seconds>
+              spawn_command = "..."   # for opening new terminal windows
+  [exec.env]  NAME = "value"          # injected into every claude child env
+
+Repo settings (~/.claude/settings.json):
+  cloneTemplate / worktreeTemplate / branchTemplate — shared with the
+  claude-code-worktree-paths plugin. Layered with project + local + managed
+  tiers in standard claude-settings precedence.
+
+Examples:
+  fnc                                  # noop session in ~/.config/fnclaude/noop
+  fnc opus max ~/src/proj              # opus + max effort in ~/src/proj
+  fnc ~/src/proj feature               # cwd + worktree name (same as -w feature)
+  fnc sonnet ~/src/proj -- "fix the bug"
+                                       # auto-name from prompt, sonnet model
+  fnc resume ~/src/proj                # session picker for ~/src/proj
+  fnc fnclaude@fnrhombus               # owner-qualified repo ref (auto-cloned)
+  fnc -BVC                             # --brief --verbose --chrome
+
+For more, see https://github.com/fnrhombus/fnclaude
 `;
 
 let cachedVersion: string | null = null;

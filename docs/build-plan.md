@@ -212,7 +212,7 @@ Depends on the relevant features. Each item is independent.
    🌿 fish `fnclaude.fish`
    Each includes `-w`/`--worktree` completion that calls `git worktree list`.
 
-🌿 **§10.2** **Help text** — `--help` / `-h` output. Per Go canonical's `helpText` constant. Design: [`design.md` §1].
+✅ 🌿 **§10.2** **Help text** — `--help` / `-h` output covers every magic positional, fnclaude-owned flag, capital-letter short, env var (ANTHROPIC_API_KEY, XDG_CONFIG_HOME, FNC_PROMPTS_DIR, FNC_NOOP_TEMPLATE_PATH), config.toml section ([name]/[auto]/[exec.env]), and a worked Examples block. Mirrors Go canonical's `helpText` structure; new env-vars block surfaces the SDK fast-path and template-source override.
 
 ✅ **§10.3** **Warnings deferred-flush** — accumulate warnings during the run; flush to stderr AFTER claude exits and the user is back at their shell. Skip on silent-relaunch paths. Design: [`design.md` §27].
 
