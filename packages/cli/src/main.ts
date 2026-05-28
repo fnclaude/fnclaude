@@ -22,6 +22,8 @@ import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts'
 import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
 import { findPromptSentinel, promptBody } from './argv/sentinel.ts';
+import { seedNoopDir } from './noop/seed.ts';
+import { resolveTemplateSourcePath } from './noop/template-source.ts';
 import { ensureCwd } from './path/ensure-cwd.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
 import { injectFragments, loadFragments } from './prompts/load.ts';
@@ -112,7 +114,20 @@ switch (resolved.kind) {
     cwd = resolved.launchCwd;
     usedNoopFallback = resolved.usedNoopFallback;
     workspaceFromRef = resolved.workspace;
-    if (usedNoopFallback) await mkdir(cwd, { recursive: true });
+    if (usedNoopFallback) {
+      await mkdir(cwd, { recursive: true });
+      // Seed handoff.template.md on first noop-fallback launches (design.md
+      // §19). Resolves the template source from <exe-dir> sibling layouts
+      // and only copies if dest is missing — never clobbers an existing
+      // hand-edited template. Failures here don't block the launch.
+      const binPathForSeed = process.argv[1] ?? '';
+      const exeDirForSeed = binPathForSeed !== '' ? dirname(realpathSync(binPathForSeed)) : process.cwd();
+      const tmplSource = resolveTemplateSourcePath({
+        envOverride: process.env.FNC_NOOP_TEMPLATE_PATH,
+        exeDir: exeDirForSeed,
+      });
+      await seedNoopDir({ noopDir: cwd, templateSourcePath: tmplSource.path });
+    }
     break;
   case 'needs-clone': {
     // Repo ref resolved cleanly but the destination doesn't exist on disk.
