@@ -31,6 +31,13 @@ import { statSync } from 'node:fs';
 export interface FnConfig {
   autoTmux: string | undefined;
   autoHandoff: string | undefined;
+  /**
+   * `[auto] spawn_command`. Whitespace-tokenized launcher template
+   * consumed by §8.3 (fnc_spawn_session). Supported placeholders:
+   * `{bin}`, `{dest}`, `{name}`, `{summary}`. Empty/undefined means
+   * "fall back to $TMUX auto-detect, then paste-flow".
+   */
+  autoSpawnCommand: string | undefined;
   execEnv: Record<string, string> | undefined;
 }
 
@@ -41,6 +48,7 @@ export interface LoadConfigArgs {
 const EMPTY: FnConfig = {
   autoTmux: undefined,
   autoHandoff: undefined,
+  autoSpawnCommand: undefined,
   execEnv: undefined,
 };
 
@@ -67,6 +75,7 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
   return {
     autoTmux: pickAutoTmux(root),
     autoHandoff: pickAutoHandoff(root),
+    autoSpawnCommand: pickAutoSpawnCommand(root),
     execEnv: pickExecEnv(root),
   };
 }
@@ -85,6 +94,13 @@ function pickAutoHandoff(root: Record<string, unknown>): string | undefined {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' && Number.isFinite(v)) return String(v);
   return undefined;
+}
+
+function pickAutoSpawnCommand(root: Record<string, unknown>): string | undefined {
+  const auto = root.auto;
+  if (auto === null || typeof auto !== 'object' || Array.isArray(auto)) return undefined;
+  const v = (auto as Record<string, unknown>).spawn_command;
+  return typeof v === 'string' ? v : undefined;
 }
 
 function pickExecEnv(root: Record<string, unknown>): Record<string, string> | undefined {
