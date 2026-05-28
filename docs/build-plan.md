@@ -79,7 +79,7 @@ Depends on §2. Three slots that can run in parallel once §2 is done:
 
 🔶 **§3.4** **Repo-reference resolver** — depends on §3.1–§3.3. **Partial:** the structural pieces are done — `parseRepoRef` covers every form (bare-name / `name@owner` / `owner/name` / `gh:owner/name` / HTTPS / SSH / scp-style); host-aliases + four-tier repoSettings loaders ship; `resolveInput` orchestrator returns a discriminated union (`launch` / `needs-clone` / `needs-owner-lookup` / `ambiguous` / `error`) with full dual-lookup logic. **NOT done:** the gh-CLI side effects — `gh api user` + `gh api /user/orgs` for bare-name owner resolution, and `gh repo clone` to actually clone needs-clone targets. Today those surface as exit-2 errors with a "not yet implemented" pointer. Design: [`design.md` §15–17, §22–23].
 
-⏱ **§3.5** **+workspace suffix** — `name@owner+workspace`. **Partial:** parsed by `parseRepoRef` and propagated through every `resolveInput` result variant. **NOT yet:** the worktree-intercept layer doesn't consume `workspace` (the field is captured but ignored at `applyWorktreeIntercept`). Wire-up pending.
+✅ ⏱ **§3.5** **+workspace suffix** — `name@owner+workspace`. Parsed by `parseRepoRef`, propagated through every `resolveInput` result variant, and wired into `applyWorktreeIntercept` as a fallback `-w` value when the user didn't pass `-w` explicitly. Explicit `-w` always wins.
 
 End of §3. `launchCWD` is an absolute path.
 
