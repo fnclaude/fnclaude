@@ -16,6 +16,7 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
+import { findClaude } from './launch/find-claude.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
@@ -229,6 +230,14 @@ if (process.env.FNC_INTERNAL_DUMP_PLAN === '1') {
   process.exit(0);
 }
 
+// Verify claude is on PATH before doing any spawn-time setup. Failing here
+// gives a far better error than Bun.spawn's bare ENOENT.
+const claudeBin = findClaude({ pathEnv: process.env.PATH ?? '' });
+if (!claudeBin.ok) {
+  process.stderr.write(`${claudeBin.error}\n`);
+  process.exit(127);
+}
+
 // Fabricate the cwd tree if missing — Bun.spawn would otherwise return ENOENT
 // blaming the claude binary. The cleanup() unlinks any fabricated dirs right
 // after spawn, since the kernel holds the cwd by inode reference once the
@@ -239,7 +248,7 @@ if (!ensured.ok) {
   process.exit(2);
 }
 
-const proc = Bun.spawn(['claude', ...claudeArgs], {
+const proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
   cwd,
   stdin: 'inherit',
   stdout: 'inherit',
