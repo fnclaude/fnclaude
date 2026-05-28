@@ -119,3 +119,44 @@ export function heuristicName(prompt: string): string {
   if (kept.length === 0) return 'session';
   return kept.join('-');
 }
+
+// ── autoName orchestrator ───────────────────────────────────────────────────
+
+export interface AutoNameOptions {
+  prompt: string;
+  /** Provide to use an LLM. If omitted, heuristic is used directly. */
+  llmCall?: (prompt: string) => Promise<string>;
+  /** Timeout in ms for the LLM call. */
+  timeoutMs?: number;
+}
+
+/**
+ * Generate a session name from the prompt. Tries the LLM (if provided)
+ * first, falls back to the heuristic on timeout, error, or empty result.
+ *
+ * The LLM call surface is injected so this layer stays pure of network/
+ * API-key concerns — the CLI wires either an Anthropic SDK call (when
+ * ANTHROPIC_API_KEY is set) or a `claude -p` subprocess.
+ */
+export async function autoName(opts: AutoNameOptions): Promise<string> {
+  const { prompt, llmCall, timeoutMs = 3000 } = opts;
+
+  if (llmCall === undefined) return heuristicName(prompt);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const llmPromise = llmCall(prompt).then((s) => sanitizeLLMOutput(s));
+  const timeoutPromise = new Promise<string>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('auto-name LLM timeout')), timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([llmPromise, timeoutPromise]);
+    if (result !== '') return result;
+  } catch {
+    // fall through to heuristic
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+
+  return heuristicName(prompt);
+}
