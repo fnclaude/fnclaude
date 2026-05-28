@@ -11,6 +11,7 @@ import { join } from 'node:path';
 
 import { readArgv } from './argv/intake.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
+import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 
 const argv = readArgv();
 
@@ -32,6 +33,11 @@ if (wantsVersion(argv)) {
   const version = await getVersion();
   process.stdout.write(`fnc ${version}\n`);
   process.exit(0);
+}
+
+if (isMcpSubcommand(argv)) {
+  const exitCode = await runMcpServer(parseMcpFlags(argv.slice(1)));
+  process.exit(exitCode);
 }
 
 const xdgConfig = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');

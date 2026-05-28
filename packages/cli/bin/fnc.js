@@ -21,7 +21,17 @@ if (typeof Bun === 'undefined') {
     env: { ...process.env, FNC_ARGS_JSON: argvJson },
   });
   if (result.error) {
-    process.stderr.write(`fnc: failed to re-exec under bun (${result.error.message})\n`);
+    const err = result.error;
+    const isMissingBun = /** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT';
+    if (isMissingBun) {
+      process.stderr.write(
+        'fnc: Bun runtime not found on PATH.\n' +
+          '  fnclaude requires Bun (Node alone is not supported).\n' +
+          '  Install: https://bun.sh — `curl -fsSL https://bun.sh/install | bash`\n',
+      );
+    } else {
+      process.stderr.write(`fnc: failed to re-exec under bun (${err.message})\n`);
+    }
     process.exit(127);
   }
   if (result.signal) {
