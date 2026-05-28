@@ -101,10 +101,12 @@ const resolved = resolveInput({
 
 let cwd: string;
 let usedNoopFallback = false;
+let workspaceFromRef = '';
 switch (resolved.kind) {
   case 'launch':
     cwd = resolved.launchCwd;
     usedNoopFallback = resolved.usedNoopFallback;
+    workspaceFromRef = resolved.workspace;
     if (usedNoopFallback) await mkdir(cwd, { recursive: true });
     break;
   case 'needs-clone':
@@ -132,9 +134,14 @@ switch (resolved.kind) {
 // Worktree intercept: when -w <name> is set, possibly swap cwd to an
 // existing worktree's path. The intercept also pushes `--worktree`/`--name`
 // into passthrough as appropriate per spec §10.
+//
+// `+workspace` suffix on a repo ref (parsed by resolveInput) feeds into here
+// as if the user had typed `-w <workspace>` — but explicit `-w` always wins.
+const effectiveWorktreeSet = parsed.worktreeSet || workspaceFromRef !== '';
+const effectiveWorktreeArg = parsed.worktreeSet ? parsed.worktreeArg : workspaceFromRef;
 const intercept = applyWorktreeIntercept({
-  worktreeSet: parsed.worktreeSet,
-  worktreeArg: parsed.worktreeArg,
+  worktreeSet: effectiveWorktreeSet,
+  worktreeArg: effectiveWorktreeArg,
   launchCwd: cwd,
   passthrough: parsed.passthrough,
   listWorktrees,
