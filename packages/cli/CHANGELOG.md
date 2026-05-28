@@ -1,5 +1,79 @@
 # Changelog
 
+## [2.0.0](https://github.com/fnclaude/fnclaude/compare/cli-v1.1.1...cli-v2.0.0) (2026-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** wipe src + minimal Bun launcher (noop dir, stdio inherit)
+
+### Features
+
+* **cli:** --help / --version short-circuits (§2.6) ([6668b82](https://github.com/fnclaude/fnclaude/commit/6668b822e60f571825afacd3a346790a9fcea7cf))
+* **cli:** '--' sentinel helpers (§2.5) ([d2dc68b](https://github.com/fnclaude/fnclaude/commit/d2dc68b5ed421a185d9803508341f0cbd0b8d609))
+* **cli:** 'mcp' subcommand dispatch (stub) + preflight directive error (§2.7) ([5627c8d](https://github.com/fnclaude/fnclaude/commit/5627c8d195267ae55c7521d20ef4103a1c9f80c1))
+* **cli:** 64KB ring buffer for PTY tee (§9.1) ([#141](https://github.com/fnclaude/fnclaude/issues/141)) ([04b417b](https://github.com/fnclaude/fnclaude/commit/04b417bf8c36b6add0c3ea90af5e83e67c656f1a))
+* **cli:** AF_UNIX MCP listener startup (§7.2) ([#137](https://github.com/fnclaude/fnclaude/issues/137)) ([be4aae2](https://github.com/fnclaude/fnclaude/commit/be4aae20ddfbbec63b39f7123d1be6ddd0cfd69d))
+* **cli:** Anthropic SDK fast-path for auto-naming (§5.2) ([#128](https://github.com/fnclaude/fnclaude/issues/128)) ([bcb3fed](https://github.com/fnclaude/fnclaude/commit/bcb3fedb21c5f0227b068583273cac20781407a5))
+* **cli:** argv intake + node-&gt;bun preflight (§2.1) ([add8809](https://github.com/fnclaude/fnclaude/commit/add88099d54ba0c0c9cf61d673339e3f9815d017))
+* **cli:** auto-tmux gating (§5.4) ([ca3142a](https://github.com/fnclaude/fnclaude/commit/ca3142afec3d46903f86b1a1224d4cd6a98f14f0))
+* **cli:** autoName orchestrator (§5.2) ([f1fb843](https://github.com/fnclaude/fnclaude/commit/f1fb843e179546c2c6a7b9b5426058808f34180b))
+* **cli:** bash completion (§10.1) ([#130](https://github.com/fnclaude/fnclaude/issues/130)) ([1b487a5](https://github.com/fnclaude/fnclaude/commit/1b487a5244f79f9aa89b509de2bd439887ce0385))
+* **cli:** clone preparation — URL + destination path (§3.4c-pre) ([43c2d67](https://github.com/fnclaude/fnclaude/commit/43c2d67586f9543a0ff67b46cc70f2bb3d4e2660))
+* **cli:** cloneTemplate substitution (§3.4b) ([5d4eb0e](https://github.com/fnclaude/fnclaude/commit/5d4eb0e513f827645fbfcadda4979ed4a2104937))
+* **cli:** cross-cwd resume hint parser (§9.2) ([#139](https://github.com/fnclaude/fnclaude/issues/139)) ([8ae0a0d](https://github.com/fnclaude/fnclaude/commit/8ae0a0d2b65111533474d36c84943880f7af3af7))
+* **cli:** cross-cwd silent relaunch (§9.3) ([#149](https://github.com/fnclaude/fnclaude/issues/149)) ([aa0120f](https://github.com/fnclaude/fnclaude/commit/aa0120f822844923c3758a9ecedef3f789edd089))
+* **cli:** deferred-flush warnings buffer (§10.3) ([#127](https://github.com/fnclaude/fnclaude/issues/127)) ([a3f4585](https://github.com/fnclaude/fnclaude/commit/a3f4585beb76e94c43277ece16cb55afdbd55c4f))
+* **cli:** ensureCwd phantom-directory fabrication (§6.3) ([7288a5f](https://github.com/fnclaude/fnclaude/commit/7288a5f884720c60c4bff3cc3530205a9f0813eb))
+* **cli:** env composition for child claude (§6.1) ([b36f396](https://github.com/fnclaude/fnclaude/commit/b36f396687ca69a0edcc8665731da32d5847a414))
+* **cli:** expand model + effort magic into passthrough (§4.1-4.3) ([994cf9b](https://github.com/fnclaude/fnclaude/commit/994cf9be89a1debea48e42979a080b73f7bb29c0))
+* **cli:** expand subcommand magic into passthrough (§4.4) ([0ac2bf4](https://github.com/fnclaude/fnclaude/commit/0ac2bf41816b4d8d120cf4722478e56b7a9ceb3a))
+* **cli:** fish completion (§10.1) ([#132](https://github.com/fnclaude/fnclaude/issues/132)) ([6ae92c7](https://github.com/fnclaude/fnclaude/commit/6ae92c7c0144378242b10f8258ab9e7d79cbf667))
+* **cli:** fnc_copy_to_clipboard handler (§8.4) ([#142](https://github.com/fnclaude/fnclaude/issues/142)) ([591e520](https://github.com/fnclaude/fnclaude/commit/591e520f855166fb43653c779c80d9c6bbe3b39d))
+* **cli:** fnc_restart handler + wire clipboard (§8.1) ([#146](https://github.com/fnclaude/fnclaude/issues/146)) ([a889248](https://github.com/fnclaude/fnclaude/commit/a889248be3d76f1c8e661bb7564426112cdfa8b9))
+* **cli:** fnc_spawn_session handler (§8.3) ([#148](https://github.com/fnclaude/fnclaude/issues/148)) ([d06fbdd](https://github.com/fnclaude/fnclaude/commit/d06fbddc03ee40881e8154d1462f1df823ebd89a))
+* **cli:** fnc_switch_project handler (§8.2) ([#147](https://github.com/fnclaude/fnclaude/issues/147)) ([675d8e2](https://github.com/fnclaude/fnclaude/commit/675d8e2773aaf3bdc133f91660d162376fb3583c))
+* **cli:** four-tier repoSettings loader (§3.4 settings) ([413cf40](https://github.com/fnclaude/fnclaude/commit/413cf40908ce48d2a7385d0e8bc01451c43d5bbe))
+* **cli:** full argv parser - positionals, fnclaude-eaten flags, passthrough (§2.4) ([a29d7c6](https://github.com/fnclaude/fnclaude/commit/a29d7c6d3b051bcc4ad9fcc2a4de9f69f1963677))
+* **cli:** gh CLI orchestration for bare-name + clone (§3.4c) ([3def11a](https://github.com/fnclaude/fnclaude/commit/3def11a11df443317d173c789d79f07223cde740))
+* **cli:** handoff trigger + kill+re-exec machinery (§8.5) ([#145](https://github.com/fnclaude/fnclaude/issues/145)) ([9608f6a](https://github.com/fnclaude/fnclaude/commit/9608f6a3d9c0c9307395664990f8469d77139f15))
+* **cli:** host-aliases LUT loader (§3.4 settings) ([5e34078](https://github.com/fnclaude/fnclaude/commit/5e34078313ae7e0f0701d682415e3caa12d4337a))
+* **cli:** launcher polish — help refresh, exec.env marker, --no-tmux guard (§10.2/4/5) ([#135](https://github.com/fnclaude/fnclaude/issues/135)) ([71e0504](https://github.com/fnclaude/fnclaude/commit/71e0504cfca2ad9175396b227c1dc65c7c6205fa))
+* **cli:** magic-positional state machine (§2.3) ([a76875d](https://github.com/fnclaude/fnclaude/commit/a76875d3acf6de7900b23cd6690a5f50a2f56b51))
+* **cli:** MCP JSON-RPC 2.0 server scaffold (§7.3) ([#134](https://github.com/fnclaude/fnclaude/issues/134)) ([b6c69b2](https://github.com/fnclaude/fnclaude/commit/b6c69b2c7b79e55e9a30c2c6058d339c22fd564c))
+* **cli:** MCP socket path computation (§7.1) ([#126](https://github.com/fnclaude/fnclaude/issues/126)) ([d7ccfb0](https://github.com/fnclaude/fnclaude/commit/d7ccfb0635f2d6b9193e13ec88f5f7253d258282))
+* **cli:** MCP subprocess entry point + AF_UNIX wire format (§7.5, §7.6) ([#136](https://github.com/fnclaude/fnclaude/issues/136)) ([e2259e4](https://github.com/fnclaude/fnclaude/commit/e2259e4ffcd47c10db42b84aa965e392bb948927))
+* **cli:** name sanitization for path safety (§5.1) ([5825e1d](https://github.com/fnclaude/fnclaude/commit/5825e1db44465d9057118a86bff21d349e878f85))
+* **cli:** parseRepoRef + ref helpers (§3.4a) ([ace52f5](https://github.com/fnclaude/fnclaude/commit/ace52f573ef339bb17462a40362845c9edfbc172))
+* **cli:** PATH check for claude binary (§6.2) ([b7c1896](https://github.com/fnclaude/fnclaude/commit/b7c18969aeba6a1c5e5bc86d9a11a68cfcba6bbc))
+* **cli:** path resolution basics - tilde, abs, noop fallback (§3.1-3.3) ([80cfde3](https://github.com/fnclaude/fnclaude/commit/80cfde3142d771b7c33b2aaf80c9475c92fda38f))
+* **cli:** per-tool MCP dispatch on parent side (§7.7) ([#140](https://github.com/fnclaude/fnclaude/issues/140)) ([ff3c03a](https://github.com/fnclaude/fnclaude/commit/ff3c03a255d5f4b5190a80b924970b695b1d792d))
+* **cli:** port live permission-mode reader and wire handlers ([#151](https://github.com/fnclaude/fnclaude/issues/151)) ([6811656](https://github.com/fnclaude/fnclaude/commit/68116563dd6956e6c0197dd9e16074320cf68493))
+* **cli:** preserveArgs + applyOverrides shared utility ([#143](https://github.com/fnclaude/fnclaude/issues/143)) ([e4e625d](https://github.com/fnclaude/fnclaude/commit/e4e625dc549e03b4c91fa6e9ee01c14fc48029bf))
+* **cli:** prompt-fragment selection, load, and injection (§5.5) ([ebeb7bc](https://github.com/fnclaude/fnclaude/commit/ebeb7bc5ccaa2c4696f3e0d028872cc9717a1da7))
+* **cli:** prompts directory resolver (§5.5) ([0c2efbd](https://github.com/fnclaude/fnclaude/commit/0c2efbd5e0f888b8c1d9f07b66fb95547a3b9836))
+* **cli:** pure pieces of auto-name (§5.2 foundations) ([e3a9b73](https://github.com/fnclaude/fnclaude/commit/e3a9b73f134a325210de9f0bd37c21666ba01d79))
+* **cli:** resolver orchestrator (§3.4c + §3.5 propagation) ([98317c5](https://github.com/fnclaude/fnclaude/commit/98317c5b705334ea0b58f06a196c339e18af35b5))
+* **cli:** seed handoff.template.md into noop dir (§10.7) ([#129](https://github.com/fnclaude/fnclaude/issues/129)) ([bcf23a1](https://github.com/fnclaude/fnclaude/commit/bcf23a10a1c9ce0400cb68892acbba70ebb18d57))
+* **cli:** self-MCP --mcp-config injection (§7.4) ([#144](https://github.com/fnclaude/fnclaude/issues/144)) ([2a24fde](https://github.com/fnclaude/fnclaude/commit/2a24fdee28cfd7b4c8b7c5d222dbba2646a89b9b))
+* **cli:** short-flag cluster translation (§4.5) ([b573940](https://github.com/fnclaude/fnclaude/commit/b5739402f67a30483a7d9fc0904a138c7107e4c5))
+* **cli:** switch launcher to Bun.Terminal for cross-cwd resume capture (§9.0) ([#138](https://github.com/fnclaude/fnclaude/issues/138)) ([adb6171](https://github.com/fnclaude/fnclaude/commit/adb617149a2defe852798f342cf697a08e87f303))
+* **cli:** token classifier for argv (§2.2) ([bc00e71](https://github.com/fnclaude/fnclaude/commit/bc00e71ce143dcb5c646cbed2276f8ce3c0a3583))
+* **cli:** wire +workspace suffix into worktree intercept (§3.5) ([3f23bbe](https://github.com/fnclaude/fnclaude/commit/3f23bbedca6b81cde224bd0a36f53536daa7fec0))
+* **cli:** wire auto-name into main (§5.2) ([a65f559](https://github.com/fnclaude/fnclaude/commit/a65f559d64a799809834c8108532ba27411d665f))
+* **cli:** wire auto-tmux gating + config loader (§5.4) ([3830e0a](https://github.com/fnclaude/fnclaude/commit/3830e0ab2d522b2af38b282f479ab6e83393fda7))
+* **cli:** wire parseArgs + expand + cwd resolution into main (§6 MVP) ([7d3cbcb](https://github.com/fnclaude/fnclaude/commit/7d3cbcbfa5c98c914f2cc17480e41fec2ceecd61))
+* **cli:** wire prompt-fragment injection into main (§5.5) ([4c33ed5](https://github.com/fnclaude/fnclaude/commit/4c33ed58786c8155507bb0e002a0f8e9116dc9cb))
+* **cli:** wire settings + resolveInput into main (§3.4 + §6.1) ([4c593af](https://github.com/fnclaude/fnclaude/commit/4c593afa32f76d24c67a06f1a337f8b069fcc096))
+* **cli:** wire worktree intercept into main (§5.3) ([4f121f0](https://github.com/fnclaude/fnclaude/commit/4f121f0adfe6b449afe2a5cad663483e0fa4b5af))
+* **cli:** worktree intercept (§5.3) ([2a74256](https://github.com/fnclaude/fnclaude/commit/2a742563189b6a5831d716d21d603ec9f418b2d2))
+* **cli:** zsh completion (§10.1) ([#131](https://github.com/fnclaude/fnclaude/issues/131)) ([1a96431](https://github.com/fnclaude/fnclaude/commit/1a964316345aa5773cb7c9aa70ed76af7762a054))
+
+
+### Refactoring
+
+* **cli:** wipe src + minimal Bun launcher (noop dir, stdio inherit) ([f89022f](https://github.com/fnclaude/fnclaude/commit/f89022fe6d9c73bc4c5d7e6189f8e890f506c54c))
+
 ## [1.1.1](https://github.com/fnclaude/fnclaude/compare/cli-v1.1.0...cli-v1.1.1) (2026-05-27)
 
 
