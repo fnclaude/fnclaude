@@ -218,7 +218,7 @@ Depends on the relevant features. Each item is independent.
 
 ✅ 🌿 **§10.4** **`[exec.env]` config injection** — already shipped via §6.1's `composeEnv` (see [`launch/compose-env.ts`](../packages/cli/src/launch/compose-env.ts)). `config.execEnv` is layered between `process.env` and the handoff/socket vars; the `launch-plan.test.ts` "env composition" block exercises the wiring end-to-end. No additional work — marking done as the §10.2 polish pass crossed it off.
 
-🌿 **§10.5** **`--no-tmux` escape hatch** — already covered in §5.4 (auto-tmux gating); make sure the flag is also consumed (not forwarded to claude).
+✅ 🌿 **§10.5** **`--no-tmux` escape hatch** — verified at the parser (`packages/cli/src/argv/parse.ts:139–143` eats `--no-tmux` into `parsed.noTmux`, never pushing it to passthrough); §5.4's `shouldInjectTmux` already honors it. Regression coverage added: unit test asserts `--no-tmux` is absent from `parsed.passthrough`; e2e test asserts `--no-tmux` is absent from `plan.claudeArgs`.
 
 🌿 **§10.6** **Repo `CLAUDE.md` for noop dir personalization** — already free via claude's own project context loading; just document it in PRD (which it already is). No code needed.
 

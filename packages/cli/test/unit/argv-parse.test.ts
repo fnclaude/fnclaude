@@ -118,6 +118,28 @@ describe('parseArgs — --no-tmux (fnclaude-eaten)', () => {
       ok({ firstPath: '~/src/proj', noTmux: true, passthrough: ['--verbose'] }),
     );
   });
+
+  test('--no-tmux is NEVER in passthrough — guards against forwarding regression', () => {
+    // §10.5: fnclaude-owned flag, must not reach claude's argv. The toEqual
+    // checks above already imply this via the empty passthrough; the
+    // explicit not-included assertion here is the regression guard the
+    // build-plan calls for.
+    const r = parseArgs(['~/src/proj', '--no-tmux', '--verbose', '--', 'do it']);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.noTmux).toBe(true);
+      expect(r.passthrough).not.toContain('--no-tmux');
+    }
+  });
+
+  test('--no-tmux ahead of positional still eaten', () => {
+    const r = parseArgs(['--no-tmux', '~/src/proj']);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.noTmux).toBe(true);
+      expect(r.passthrough).not.toContain('--no-tmux');
+    }
+  });
 });
 
 describe('parseArgs — -A / --also (fnclaude-eaten extraDirs)', () => {
