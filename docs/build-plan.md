@@ -208,7 +208,7 @@ Depends on the relevant features. Each item is independent.
 
 🌿 **§10.1** **Shell completions** — three sub-items, fully parallel:
    🌿 zsh `_fnclaude` (in `packages/cli/completions/`)
-   🌿 bash `fnclaude.bash`
+   ✅ bash `fnclaude.bash`
    🌿 fish `fnclaude.fish`
    Each includes `-w`/`--worktree` completion that calls `git worktree list`.
 
