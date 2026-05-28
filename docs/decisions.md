@@ -287,3 +287,17 @@ TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / f
 **Why DI seam:** future readers wire into the same callback the unit tests already exercise — no second control-flow path through restart.ts. When the file-IO commit lands, it ports `session_state.go` to TS, then changes one line in main.ts to pass the new reader.
 
 **Revisit:** when the live-capture port lands. Drop the optional marker once production callers always supply a reader.
+
+---
+
+## 2026-05-28 — Switch handler branches on `req.permission_mode === 'never'` (not config-side `auto.handoff`)
+
+**Decision:** §8.2's switch handler triggers the paste-flow branch when the wire request carries `permission_mode: 'never'`. Go canonical branches on `cfg.Auto.Handoff == "never"` instead — a config-side flag, separate from the wire's permission-mode override field.
+
+**Context:** The TS rewrite's wire format (per [`design.mcp.md` §3.1](design.mcp.md)) carries `permission_mode` as an override field whose vocabulary is claude's documented set: `acceptEdits`, `auto`, `bypassPermissions`, `default`, `dontAsk`, `plan`. The §8.2 brief reuses that same wire field with one extra reserved value, `'never'`, that signals "do not auto-handoff; render the relaunch command and put it on the clipboard." The Go shape (separate config flag piping through `FNCLAUDE_HANDOFF` env into the handler's state) is one option; reusing the request override is another.
+
+**Why this:** the wire-carried form keeps the per-call state at the wire boundary, where the model already negotiates other overrides (`model`, `effort`, `allowed_tools`). The model owns the decision per-call rather than the user's static config owning it; if a user wants the paste-flow once, they don't have to flip a config knob beforehand. The Go form (`cfg.Auto.Handoff == "never"`) is still expressible — the launcher can default the request's `permission_mode` to `'never'` when config says so — so the two shapes are mostly interconvertible. Per-call wins because it's the model's choice point.
+
+**'never' as control signal, not real value:** the literal string `'never'` is not a permission mode claude understands. The handler treats it as a route selector and strips it from `OverrideRequest.permissionMode` before rendering the relaunch command — otherwise the paste-flow command line would carry `--permission-mode never`, which `claude` would reject. Tested explicitly (`switch-handler.test.ts` → "paste-flow command includes magic prefix + preserved/override flags").
+
+**Revisit when:** the config-driven mode comes back into play (e.g. `auto.handoff = "never"` is wired through the launcher so the model doesn't need to set it explicitly), in which case the handler probably takes both signals — config OR wire — through a single `mode === 'never'` check. Not yet needed since the model receives the user's preference via system-prompt fragments at session start.
