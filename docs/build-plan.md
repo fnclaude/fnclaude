@@ -209,7 +209,7 @@ Depends on the relevant features. Each item is independent.
 🌿 **§10.1** **Shell completions** — three sub-items, fully parallel:
    ✅ zsh `_fnclaude` (in `packages/cli/completions/`)
    ✅ bash `fnclaude.bash`
-   🌿 fish `fnclaude.fish`
+   ✅ fish `fnclaude.fish`
    Each includes `-w`/`--worktree` completion that calls `git worktree list`.
 
 ✅ 🌿 **§10.2** **Help text** — `--help` / `-h` output covers every magic positional, fnclaude-owned flag, capital-letter short, env var (ANTHROPIC_API_KEY, XDG_CONFIG_HOME, FNC_PROMPTS_DIR, FNC_NOOP_TEMPLATE_PATH), config.toml section ([name]/[auto]/[exec.env]), and a worked Examples block. Mirrors Go canonical's `helpText` structure; new env-vars block surfaces the SDK fast-path and template-source override.
