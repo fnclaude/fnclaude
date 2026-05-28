@@ -1,17 +1,18 @@
-// Minimal `fnc`: launch `claude` in the noop dir, inherit stdio, exit
-// with the child's code. Bun-only (top-level await, Bun.spawn).
+// `fnc`: launch `claude` in the resolved cwd (or the noop fallback when
+// no positional was given). Bun-only (top-level await, Bun.spawn).
 //
-// The noop dir is $XDG_CONFIG_HOME/fnclaude/noop, falling back to
-// ~/.config/fnclaude/noop. Created on demand so a fresh install
-// doesn't fail on first run.
+// This file is the launcher entry. Argv parsing, path resolution, and
+// feature transforms live in their own modules under src/; main composes
+// them in order. The minimum viable launch (noop fallback + claude
+// spawn) is preserved as the no-arg path until the full pipeline lands.
 
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 
 import { readArgv } from './argv/intake.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { noopDir } from './path/resolve.ts';
 
 const argv = readArgv();
 
@@ -40,12 +41,14 @@ if (isMcpSubcommand(argv)) {
   process.exit(exitCode);
 }
 
-const xdgConfig = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
-const noopDir = join(xdgConfig, 'fnclaude', 'noop');
-await mkdir(noopDir, { recursive: true });
+const cwd = noopDir({
+  xdgConfigHome: process.env.XDG_CONFIG_HOME,
+  home: homedir(),
+});
+await mkdir(cwd, { recursive: true });
 
 const proc = Bun.spawn(['claude'], {
-  cwd: noopDir,
+  cwd,
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
