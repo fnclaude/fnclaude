@@ -24,6 +24,7 @@ import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
 import { createRestartHandler } from './mcp/handlers/restart.ts';
+import { createSpawnHandler } from './mcp/handlers/spawn.ts';
 import { createSwitchHandler } from './mcp/handlers/switch.ts';
 import { injectMcpConfig } from './mcp/inject-config.ts';
 import { startMcpListener } from './mcp/listener.ts';
@@ -420,8 +421,8 @@ if (!claudeBin.ok) {
 if (mcpSocketPath !== undefined) {
   try {
     // §7.7 + §8.x: wire per-tool dispatch onto each accepted socket.
-    // §8.1 (restart), §8.2 (switch) and §8.4 (copy_to_clipboard) replace
-    // their stubs; §8.3 still rides the stub fallback until it lands.
+    // §8.1 (restart), §8.2 (switch), §8.3 (spawn) and §8.4 (clipboard)
+    // replace their stubs; nothing remains stubbed in §8.
     const restartHandler = createRestartHandler({
       origArgs: argv,
       launchCWD: cwd,
@@ -431,11 +432,20 @@ if (mcpSocketPath !== undefined) {
       origArgs: argv,
       trigger: handoffTrigger,
     });
+    const binPathForListener = process.argv[1] ?? '';
+    const fncBinAbs = binPathForListener !== '' ? realpathSync(binPathForListener) : '';
+    const spawnHandler = createSpawnHandler({
+      config: { autoSpawnCommand: config.autoSpawnCommand },
+      processEnv: process.env,
+      fncBinPath: fncBinAbs,
+      handleCopyToClipboard,
+    });
     const dispatcher = createParentDispatcher({
       handlers: {
         ...stubParentHandlers,
         restart: restartHandler,
         switch: switchHandler,
+        spawn: spawnHandler,
         copy_to_clipboard: handleCopyToClipboard,
       },
     });
