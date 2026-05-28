@@ -222,7 +222,7 @@ Depends on the relevant features. Each item is independent.
 
 🌿 **§10.6** **Repo `CLAUDE.md` for noop dir personalization** — already free via claude's own project context loading; just document it in PRD (which it already is). No code needed.
 
-🌿 **§10.7** **Noop seeding** — seed `handoff.template.md` into noop dir on noop-fallback launches (NOT `CLAUDE.md` — that was the README divergence). Design: [`design.md` §19].
+✅ 🌿 **§10.7** **Noop seeding** — seed `handoff.template.md` into noop dir on noop-fallback launches (NOT `CLAUDE.md` — that was the README divergence). `seedNoopDir` + `resolveTemplateSourcePath` walk `<exe-dir>/templates/` → `<exe-dir>/../templates/` → `<exe-dir>/../share/fnclaude/templates/` candidates (mirrors the prompts-dir resolver). Source ships at `packages/cli/share/fnclaude/templates/handoff.template.md`. Existing dest is never clobbered; missing source is a graceful no-op. Design: [`design.md` §19].
 
 ---
 
