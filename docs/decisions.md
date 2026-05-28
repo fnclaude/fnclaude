@@ -277,3 +277,13 @@ TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / f
 **Why test seam injection:** `KillAndExecArgs.execve` and `StartHandoffAwaiterArgs.execve` are both injectable so unit tests can substitute a recording stub without actually re-execing. Production wires `defaultExecve`; tests pass a callback that captures the argv.
 
 **Revisit when:** Bun grows a native `process.execve` (tracked nowhere yet) or the brief two-PID window during handoff causes an observable bug — e.g. a tmux pane double-counts fnc PIDs, or a shell tab-tracking integration loses the connection. Neither has surfaced; we'd hear about it during real-session use.
+
+## 2026-05-28 — Live permission-mode reader is DI-optional (§8.1)
+
+**Decision:** `createRestartHandler` accepts an optional `livePermissionModeReader` callback; production wiring in [`main.ts`](../packages/cli/src/main.ts) currently omits it (no live capture), with the file IO port deferred to a follow-up commit. Restart still functions — auto-capture is the optional layer; explicit `permission_mode` overrides and preserved `--permission-mode` flags continue to work.
+
+**Context:** Go canonical's `handleRestart` calls `readLivePermissionMode(launchCWD, sessionID)` inline, which scans `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` for the latest `{"type":"permission-mode",...}` record. Porting that requires the path-encoder (trivial), a streaming JSONL scanner (claude can write large tool-result bodies), and HOME resolution. All three are testable, but together they balloon the §8.1 PR; splitting the file-IO half into its own commit keeps each PR a single conceptual unit.
+
+**Why DI seam:** future readers wire into the same callback the unit tests already exercise — no second control-flow path through restart.ts. When the file-IO commit lands, it ports `session_state.go` to TS, then changes one line in main.ts to pass the new reader.
+
+**Revisit:** when the live-capture port lands. Drop the optional marker once production callers always supply a reader.
