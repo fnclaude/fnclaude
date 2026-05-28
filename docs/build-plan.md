@@ -178,7 +178,7 @@ Depends on §7 complete. All four tools are independent:
 
 🌿 **§8.3** **`fnc_spawn_session`** — `applyOverrides(nil, req)` (no preservation), summary file write, spawn launcher: config `auto.spawnCommand` → tmux auto-detect → paste-flow fallback. `cleanEnvForSpawn` strips `FNC_SOCKET`/`FNCLAUDE_HANDOFF`/`CLAUDE_CODE_SESSION_ID`. Design: [`design.md` §20], [`design.mcp.md` §4.3].
 
-🌿 **§8.4** **`fnc_copy_to_clipboard`** — backend detection: `wl-copy` → `xclip` → `xsel` → `pbcopy` → `clip.exe`. Returns `done` with `clipboard_ok` flag. Design: [`design.md` §25], [`design.mcp.md` §4.4].
+✅ **§8.4** **`fnc_copy_to_clipboard`** — backend detection: `wl-copy` → `xclip` → `xsel` → `pbcopy` → `clip.exe`. Returns `done` with `clipboard_ok` flag. Pure handler module (`packages/cli/src/mcp/handlers/clipboard.ts` + `clipboard-backends.ts`); wiring into §7.7's parent dispatcher is Wave 2. Design: [`design.md` §25], [`design.mcp.md` §4.4].
 
 🌿 **§8.5** **Handoff trigger + kill sequence + re-execution** — `Triggered` mechanism (channel/promise), SIGTERM → 200ms → SIGKILL on Unix; `TerminateProcess` equivalent on Windows. After claude exits, process image replacement: `execve` on Unix, new child + wait on Windows. Design: [`design.mcp.md` §6].
 
