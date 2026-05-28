@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.0...cli-v2.0.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **cli:** restore MCP self-server (initialize handshake + arg ordering past --) ([#156](https://github.com/fnclaude/fnclaude/issues/156)) ([a242d97](https://github.com/fnclaude/fnclaude/commit/a242d97c1dbabd6a5c6ddba678225e98dd6fda44))
+
 ## [2.0.0](https://github.com/fnclaude/fnclaude/compare/cli-v1.1.1...cli-v2.0.0) (2026-05-28)
 
 
