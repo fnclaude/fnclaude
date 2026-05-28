@@ -112,12 +112,17 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — cwd resolution', () => {
     }
   });
 
-  test('bare name with no local dir → needs-owner-lookup error (gh CLI not yet wired)', async () => {
+  test('bare name with no local dir and no matching gh repo → clean error', async () => {
     const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-bare-'));
     try {
-      const { stderr, exitCode } = await runPlan(['totally-unique-name-xyz'], { cwd: shell });
+      // This test invokes the real gh CLI to verify the not-found path.
+      // The name is chosen to be unlikely to exist in any reasonable
+      // user/org combination. If a user happens to own a repo by this
+      // name, the test would launch instead — that's the user's call to
+      // adjust if it ever happens.
+      const { stderr, exitCode } = await runPlan(['totally-unique-name-xyz-fnclaude-test'], { cwd: shell });
       expect(exitCode).toBe(2);
-      expect(stderr).toMatch(/gh CLI|owner|implemented/i);
+      expect(stderr).toMatch(/no repo named|gh CLI|owner|not authenticated/i);
     } finally {
       rmSync(shell, { recursive: true, force: true });
     }

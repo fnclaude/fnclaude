@@ -26,7 +26,11 @@ import { ensureCwd } from './path/ensure-cwd.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
 import { injectFragments, loadFragments } from './prompts/load.ts';
 import { selectFragments } from './prompts/select.ts';
+import { buildCloneUrl, computeCloneDestination } from './repo/clone.ts';
+import { cloneRepo } from './repo/clone-exec.ts';
+import { runGhApi, runGhClone } from './repo/gh-runner.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
+import { findOwner } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
 import { shouldInjectTmux } from './worktree/auto-tmux.ts';
@@ -110,16 +114,91 @@ switch (resolved.kind) {
     workspaceFromRef = resolved.workspace;
     if (usedNoopFallback) await mkdir(cwd, { recursive: true });
     break;
-  case 'needs-clone':
-    process.stderr.write(
-      `fnclaude: ${resolved.destination} doesn't exist on disk. Would clone ${resolved.url} → ${resolved.destination}; clone execution not yet implemented in the TS rewrite.\n`,
-    );
-    process.exit(2);
-  case 'needs-owner-lookup':
-    process.stderr.write(
-      `fnclaude: bare name ${JSON.stringify(resolved.name)} needs gh CLI to find the owner; not yet implemented in the TS rewrite.\n`,
-    );
-    process.exit(2);
+  case 'needs-clone': {
+    // Repo ref resolved cleanly but the destination doesn't exist on disk.
+    // Clone it, then launch in the new directory.
+    process.stderr.write(`fnclaude: cloning ${resolved.url} → ${resolved.destination}\n`);
+    const cloneR = await cloneRepo({
+      url: resolved.url,
+      destination: resolved.destination,
+      ghClone: runGhClone,
+      mkdirp: async (path) => {
+        await mkdir(path, { recursive: true });
+      },
+    });
+    if (!cloneR.ok) {
+      process.stderr.write(`fnclaude: ${cloneR.error}\n`);
+      process.exit(2);
+    }
+    cwd = resolved.destination;
+    workspaceFromRef = resolved.workspace;
+    break;
+  }
+  case 'needs-owner-lookup': {
+    // Bare-name ref — ask gh which org owns a repo by this name, then
+    // re-route through the resolver as if owner had been on the input.
+    const ownerR = await findOwner({ name: resolved.name, ghApi: runGhApi });
+    if (!ownerR.ok) {
+      if (ownerR.reason === 'gh-failed') {
+        process.stderr.write(
+          `fnclaude: bare name "${resolved.name}" — gh CLI lookup failed (not authenticated? no network?). Try \`gh auth login\` or pass owner explicitly (\`${resolved.name}@<owner>\` or \`<owner>/${resolved.name}\`).\n`,
+        );
+      } else {
+        process.stderr.write(
+          `fnclaude: no repo named "${resolved.name}" found under your gh user or any of your orgs.\n`,
+        );
+      }
+      process.exit(2);
+    }
+    // Build a synthetic ref for the resolved owner and recompute destination.
+    const syntheticRef = {
+      host: '',
+      owner: ownerR.owner,
+      name: resolved.name,
+      workspace: resolved.workspace,
+      original: resolved.name,
+    };
+    if (settings.cloneTemplate === '') {
+      process.stderr.write(
+        `fnclaude: cloneTemplate is not configured in repoSettings; cannot resolve bare-name refs.\n`,
+      );
+      process.exit(2);
+    }
+    const destR = computeCloneDestination({
+      ref: syntheticRef,
+      template: settings.cloneTemplate,
+      hostAliases,
+      home: HOME,
+    });
+    if (!destR.ok) {
+      process.stderr.write(`fnclaude: ${destR.error}\n`);
+      process.exit(2);
+    }
+    // If the destination already exists, just launch there. Otherwise clone.
+    const { existsSync } = await import('node:fs');
+    if (existsSync(destR.path)) {
+      cwd = destR.path;
+      workspaceFromRef = resolved.workspace;
+      break;
+    }
+    const url = buildCloneUrl(syntheticRef);
+    process.stderr.write(`fnclaude: cloning ${url} → ${destR.path}\n`);
+    const cloneR = await cloneRepo({
+      url,
+      destination: destR.path,
+      ghClone: runGhClone,
+      mkdirp: async (path) => {
+        await mkdir(path, { recursive: true });
+      },
+    });
+    if (!cloneR.ok) {
+      process.stderr.write(`fnclaude: ${cloneR.error}\n`);
+      process.exit(2);
+    }
+    cwd = destR.path;
+    workspaceFromRef = resolved.workspace;
+    break;
+  }
   case 'ambiguous': {
     const both = resolved.cloneDestination ?? resolved.repoRef ?? '?';
     process.stderr.write(
