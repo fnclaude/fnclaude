@@ -216,3 +216,23 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 **Why no unit tests:** `Bun.Terminal` doesn't mock cleanly — it allocates a real kernel PTY. The dump-plan e2e tests (`FNC_INTERNAL_DUMP_PLAN=1`) short-circuit before the spawn block and stay green; `find-claude-e2e` exercises the inherit fallback path (its stdio is piped, so `useTerminal` is false) and still exits 127 cleanly. Manual smoke: launch `fnc` from an interactive shell — output renders, Ctrl-C lands on claude, resize works.
 
 **Revisit when:** Bun.Terminal lands on Windows, or §9.1 lands the ring buffer (which will extract this spawn block into its own module).
+
+---
+
+## 2026-05-27 — `preserve-args.ts` reuses `MODELS` / `EFFORTS` from `classify.ts`
+
+**Decision:** The magic-word alphabets the Go canonical kept as private `modelAliases` / `effortLevels` maps in `preserve_args.go` are imported from `argv/classify.ts`'s exported `MODELS` / `EFFORTS` constants rather than duplicated. The new `preserve-args.ts` module wraps them in private `Set<string>` views for O(1) membership.
+
+**Context:** `classify.ts` already exports `MODELS = ['opus', 'sonnet', 'haiku']` and `EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'auto']` for the magic-positional scanner. The Go canonical re-listed these inline in `preserve_args.go` because Go's package layout made shared constants awkward to thread through; the TS layout has no such cost.
+
+**Why this:** single source of truth. If the spec ever adds a model alias (e.g. `opus-4-7`), it lands in `MODELS` once and both the magic scanner and the override-strip helper pick it up. Duplicating the alphabets would invite the classic drift bug where one half of the parser knows about a new alias and the other doesn't.
+
+---
+
+## 2026-05-27 — `OverrideRequest` uses plain `boolean | undefined`, not pointer-bool
+
+**Decision:** The TS `OverrideRequest` interface models the three-state bool fields (`brief`, `chrome`, `ide`, `verbose`) as `boolean | undefined` rather than reproducing Go's `*bool` shape with a wrapper type.
+
+**Context:** Go's `*bool` is the canonical way to distinguish "field not set" from "field explicitly false" — nil pointer vs. `&false`. The Go test uses a `ptrBool(b bool) *bool` helper to construct these. TS has the same need (preserve vs. strip-only vs. strip-and-append) but has a native idiom for it: an optional field, where `undefined` means "not set" and the runtime distinguishes `undefined` / `true` / `false` directly.
+
+**Why this:** native idiom beats faux-pointer wrappers. Caller writes `{ brief: true }` / `{ brief: false }` / `{}` instead of `{ brief: ptrBool(true) }` etc. The branching inside `applyBoolOverride` is the same shape either way (`if (b === undefined) return …`), so there's no behavioral cost — only readability gain.
