@@ -668,4 +668,20 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — warnings deferred-flush (§27)', 
       rmSync(shell, { recursive: true, force: true });
     }
   });
+
+  test('§9.1: ring buffer wiring compiles and launcher still runs', async () => {
+    // Smoke check that the §9.1 RingBuffer import + tee wiring in main.ts
+    // hasn't broken the real spawn path. Buffer contents aren't asserted
+    // here — §9.3 lands the consumer (and its own dedicated test). What
+    // we care about: fake claude launches, exits 0, fnc returns 0 with
+    // no diagnostic noise.
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-ring-smoke-'));
+    try {
+      const { stderr, exitCode } = await runWithFakeClaude([shell], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(stderr).not.toMatch(/RingBuffer|ring-buffer|TypeError|ReferenceError/);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
 });

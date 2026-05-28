@@ -18,6 +18,7 @@ import { loadConfig } from './config/load.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
+import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { startMcpListener } from './mcp/listener.ts';
 import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch.ts';
@@ -436,18 +437,24 @@ const useTerminal =
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
 
+// §9.1: capture the tail of PTY output for §9.2's cross-cwd detection.
+// Hoisted here so it stays reachable after `proc.exited` resolves below.
+// Only meaningful on the useTerminal branch; under stdio inherit the
+// buffer stays empty and post-exit consumers will simply see no match.
+const ringBuffer = new RingBuffer();
+
 let exitCode: number;
 try {
   let proc: Bun.Subprocess;
   if (useTerminal) {
-    // Tee PTY output → process.stdout so the user keeps seeing claude. The
-    // ring buffer added in §9.1 will read the same `data` chunks and scan
-    // them for the cross-cwd resume hint after exit.
+    // Tee PTY output → process.stdout AND the ring buffer. §9.3 consumes
+    // the buffer after exit to scan for claude's cross-cwd resume hint.
     const term = new Bun.Terminal({
       cols: process.stdout.columns ?? 80,
       rows: process.stdout.rows ?? 24,
       data: (_t, chunk) => {
         process.stdout.write(chunk);
+        ringBuffer.push(chunk);
       },
     });
 
