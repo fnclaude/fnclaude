@@ -69,3 +69,67 @@ describe('loadConfig — malformed inputs', () => {
     expect(c.autoTmux).toBeUndefined();
   });
 });
+
+describe('loadConfig — auto.handoff', () => {
+  test('auto.handoff = "never" → autoHandoff: "never"', async () => {
+    writeFileSync(configPath, '[auto]\nhandoff = "never"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.autoHandoff).toBe('never');
+  });
+
+  test('auto.handoff = "ask" → autoHandoff: "ask"', async () => {
+    writeFileSync(configPath, '[auto]\nhandoff = "ask"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.autoHandoff).toBe('ask');
+  });
+
+  test('auto.handoff = 3 (integer) → autoHandoff: "3"', async () => {
+    writeFileSync(configPath, '[auto]\nhandoff = 3\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.autoHandoff).toBe('3');
+  });
+
+  test('missing auto.handoff → undefined', async () => {
+    writeFileSync(configPath, '[auto]\ntmux = "never"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.autoHandoff).toBeUndefined();
+  });
+
+  test('non-string non-number auto.handoff → undefined', async () => {
+    writeFileSync(configPath, '[auto]\nhandoff = true\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.autoHandoff).toBeUndefined();
+  });
+});
+
+describe('loadConfig — [exec.env] table', () => {
+  test('[exec.env] with string values → execEnv map', async () => {
+    writeFileSync(
+      configPath,
+      '[exec.env]\nFOO = "bar"\nBAZ = "qux"\n',
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.execEnv).toEqual({ FOO: 'bar', BAZ: 'qux' });
+  });
+
+  test('missing [exec.env] → undefined', async () => {
+    writeFileSync(configPath, '[auto]\ntmux = "never"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.execEnv).toBeUndefined();
+  });
+
+  test('empty [exec.env] → empty map', async () => {
+    writeFileSync(configPath, '[exec.env]\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.execEnv).toEqual({});
+  });
+
+  test('[exec.env] with non-string value → that key skipped (defensive)', async () => {
+    writeFileSync(
+      configPath,
+      '[exec.env]\nGOOD = "ok"\nBAD = 42\n',
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.execEnv).toEqual({ GOOD: 'ok' });
+  });
+});

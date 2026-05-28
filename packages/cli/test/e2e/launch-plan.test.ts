@@ -28,6 +28,7 @@ interface PlanResult {
   cwd: string;
   claudeArgs: string[];
   usedNoopFallback: boolean;
+  env: Record<string, string>;
 }
 
 interface RunResult {
@@ -398,6 +399,77 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
     });
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).not.toContain('--name');
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — env composition (§6.1)', () => {
+  test('no [exec.env] and no auto.handoff → dump.env is empty', async () => {
+    // Use an empty XDG_CONFIG_HOME so no config.toml is found.
+    const emptyXdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-empty-xdg-'));
+    try {
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: { XDG_CONFIG_HOME: emptyXdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.env).toEqual({});
+    } finally {
+      rmSync(emptyXdg, { recursive: true, force: true });
+    }
+  });
+
+  test('[exec.env] from config.toml lands in child env', async () => {
+    const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-execenv-'));
+    try {
+      const cfgDir = join(xdg, 'fnclaude');
+      mkdirSync(cfgDir, { recursive: true });
+      writeFileSync(
+        join(cfgDir, 'config.toml'),
+        '[exec.env]\nMY_VAR = "hello"\nOTHER = "world"\n',
+      );
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.env.MY_VAR).toBe('hello');
+      expect(plan!.env.OTHER).toBe('world');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
+  test('auto.handoff = "ask" → FNCLAUDE_HANDOFF=ask injected', async () => {
+    const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-handoff-'));
+    try {
+      const cfgDir = join(xdg, 'fnclaude');
+      mkdirSync(cfgDir, { recursive: true });
+      writeFileSync(join(cfgDir, 'config.toml'), '[auto]\nhandoff = "ask"\n');
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.env.FNCLAUDE_HANDOFF).toBe('ask');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
+  test('handoff wins over [exec.env] FNCLAUDE_HANDOFF', async () => {
+    const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-handoff-win-'));
+    try {
+      const cfgDir = join(xdg, 'fnclaude');
+      mkdirSync(cfgDir, { recursive: true });
+      writeFileSync(
+        join(cfgDir, 'config.toml'),
+        '[auto]\nhandoff = "never"\n\n[exec.env]\nFNCLAUDE_HANDOFF = "ignored"\n',
+      );
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.env.FNCLAUDE_HANDOFF).toBe('never');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+    }
   });
 });
 

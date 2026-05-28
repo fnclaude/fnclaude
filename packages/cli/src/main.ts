@@ -16,6 +16,7 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
+import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { autoName, shouldAutoName } from './name/auto-name.ts';
@@ -227,12 +228,33 @@ if (fragmentNames.length > 0) {
   }
 }
 
+// Compose the child env: process.env → [exec.env] from config → FNCLAUDE_HANDOFF
+// (and FNC_SOCKET once §7 lands). Later entries win against same-name earlier
+// entries per design.md §5.
+const childEnv = composeEnv({
+  processEnv: process.env,
+  execEnv: config.execEnv,
+  handoff: config.autoHandoff,
+  socket: undefined, // §7 will populate this with the AF_UNIX socket path
+});
+
 // Internal test hook: dump the launch plan as JSON and exit 0 BEFORE spawning
 // claude. Lets e2e tests verify the full pipeline composition (cwd + final
 // claude args) without needing a real claude on PATH or a fake-claude harness.
 if (process.env.FNC_INTERNAL_DUMP_PLAN === '1') {
+  // Dump only env values fnclaude actively manages (handoff/socket + execEnv
+  // keys) to keep the dump small and predictable in tests. The full process
+  // env would leak shell state into snapshots.
+  const dumpEnv: Record<string, string> = {};
+  if (config.execEnv !== undefined) {
+    for (const k of Object.keys(config.execEnv)) {
+      if (k in childEnv) dumpEnv[k] = childEnv[k]!;
+    }
+  }
+  if ('FNCLAUDE_HANDOFF' in childEnv) dumpEnv.FNCLAUDE_HANDOFF = childEnv.FNCLAUDE_HANDOFF!;
+  if ('FNC_SOCKET' in childEnv) dumpEnv.FNC_SOCKET = childEnv.FNC_SOCKET!;
   process.stdout.write(
-    `${JSON.stringify({ cwd, claudeArgs, usedNoopFallback })}\n`,
+    `${JSON.stringify({ cwd, claudeArgs, usedNoopFallback, env: dumpEnv })}\n`,
   );
   process.exit(0);
 }
@@ -257,6 +279,7 @@ if (!ensured.ok) {
 
 const proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
   cwd,
+  env: childEnv,
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
