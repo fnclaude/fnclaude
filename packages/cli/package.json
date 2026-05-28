@@ -26,5 +26,7 @@
     "access": "public",
     "provenance": true
   },
-  "dependencies": {}
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.99.0"
+  }
 }

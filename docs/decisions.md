@@ -122,3 +122,17 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 **Context:** Decisions accumulate context that vanishes if not captured at the moment of choice. Future sessions ask "why this?" months later and have to re-derive the reasoning from scratch.
 
 **Why this:** the cost of capturing is one short paragraph at the moment of choice; the cost of NOT capturing is repeating debates we already settled, or worse, silently undoing a load-bearing constraint we forgot was load-bearing. Memory `feedback-document-decisions.md` covers the rule.
+
+---
+
+## 2026-05-27 — `@anthropic-ai/sdk` for the auto-name fast-path
+
+**Decision:** When `ANTHROPIC_API_KEY` is set, auto-naming (§5.2) calls `claude-haiku-4-5` via `@anthropic-ai/sdk` (`client.messages.create`) instead of shelling out to `claude -p`. The SDK reads the key from `process.env` rather than us passing it explicitly. Same model + system prompt as the subprocess path, both kept in sync via `name/llm-prompt.ts`.
+
+**Context:** The subprocess path works but pays a multi-second cold start on every prompt — claude has to boot, load its config, spin up its own SDK client, then do the API call. When the user already has the API key in env, the launcher might as well skip the middleman.
+
+**Why this:** the official SDK is the lowest-friction integration — handles auth, retries, errors, streaming. No need to hand-roll fetch + JSON for one model call. Cost: a ~125-package transitive dep on the CLI side, but the cold-start savings dominate user-visible latency.
+
+**Why no SDK unit test:** `sdkLlmCall` is a six-line wrapper around `client.messages.create`. A mocked-SDK unit test would assert "we called the SDK with the args we just typed" — tautological. The e2e dispatch-shape test (verify `claude -p` is NOT spawned when key is set) gives real wiring coverage; the SDK itself is tested by Anthropic. If the wrapper grows logic (retry shaping, response post-processing beyond block concatenation), revisit.
+
+**Revisit when:** the SDK's transitive dep weight becomes a concern for cold-start (measured ~25ms to `import @anthropic-ai/sdk` under Bun on this machine — acceptable for now; if it grows, switch to a dynamic `import()` gated on `ANTHROPIC_API_KEY` so the SDK only loads on the fast path), or we want streaming for some other launcher feature.

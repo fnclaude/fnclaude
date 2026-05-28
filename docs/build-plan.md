@@ -114,7 +114,7 @@ Depends on §2–§4. Mixed parallel/sequential within.
 
 ✅ 🌿 **§5.1** **Name sanitization** — exact regex per [`design.md` §3]: replace AND collapse runs of `[^A-Za-z0-9._/-]` to a single `-`, collapse dash runs, collapse slash runs, trim leading `[-.]`, trim trailing `[-/]`, reject `..` containment. PRD item #7.
 
-🔶 **§5.2** **Auto-name from prompt** — `shouldAutoName` gate (`--` + body + no `--name`/`-p`/`-r`/`-c`/`--from-pr`) + heuristic fallback + LLM-output slug sanitizer + `autoName` orchestrator with timeout — all done and wired into main. **Partial:** when `ANTHROPIC_API_KEY` is set we currently still use the heuristic (the SDK fast-path is TODO); unset uses `claude -p` with 15s timeout per spec. Design: [`design.md` §18]. PRD: [`prd.launcher.md` "Auto-naming"].
+✅ 🌿 **§5.2** **Auto-name from prompt** — `shouldAutoName` gate (`--` + body + no `--name`/`-p`/`-r`/`-c`/`--from-pr`) + heuristic fallback + LLM-output slug sanitizer + `autoName` orchestrator with 15s timeout. Two LLM paths: `ANTHROPIC_API_KEY` set → Anthropic SDK (`claude-haiku-4-5`); unset → `claude -p` subprocess. Both share the same system prompt + model via `name/llm-prompt.ts`. Design: [`design.md` §18]. PRD: [`prd.launcher.md` "Auto-naming"].
 
 ✅ ⏱ **§5.3** **Worktree intercept** — `-w <name>` OR 2nd-positional. Match priority ladder (branch / `worktree-<name>` stripped / basename). Match → swap cwd + set `--name`; no match → pass `--worktree <name>` + `--name <name>`. Wired with a `git worktree list --porcelain` parser + spawner.
 
