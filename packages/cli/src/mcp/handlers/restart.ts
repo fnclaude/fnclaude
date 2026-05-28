@@ -44,11 +44,13 @@ const EMPTY_DENY: ReadonlySet<string> = new Set<string>();
 /**
  * Reader for the live permission-mode value claude persists in the
  * session JSONL (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`).
- * Production wiring will read the file directly; tests inject a stub.
- * Return "" to signal "no value available — skip the auto-capture
- * append."
+ * `launchCWD` is bound at construction time in main.ts, so the reader
+ * only takes the per-call `sessionID`. Returns `null` when no value is
+ * available (file missing, no matching record, etc.) — the auto-capture
+ * append is skipped in that case. Same shape as switch.ts uses, so a
+ * single closure can be wired into both handlers.
  */
-export type LivePermissionModeReader = (launchCWD: string, sessionID: string) => string;
+export type LivePermissionModeReader = (sessionID: string) => string | null;
 
 export interface CreateRestartHandlerArgs {
   /** The user's original argv as fnc saw it at startup (post-readArgv). */
@@ -102,8 +104,8 @@ export function createRestartHandler(args: CreateRestartHandlerArgs): ParentDisp
       !flagPresent(withOverrides, '--permission-mode') &&
       livePermissionModeReader !== undefined
     ) {
-      const live = livePermissionModeReader(launchCWD, sessionID);
-      if (live !== '') {
+      const live = livePermissionModeReader(sessionID);
+      if (live !== null && live !== '') {
         withOverrides = [...withOverrides, '--permission-mode', live];
       }
     }

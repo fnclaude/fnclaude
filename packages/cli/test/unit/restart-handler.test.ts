@@ -239,7 +239,7 @@ describe('createRestartHandler — live permission-mode capture', () => {
       origArgs: [],
       launchCWD: '/launch/cwd',
       trigger,
-      livePermissionModeReader: (_cwd, _sid) => {
+      livePermissionModeReader: (_sid) => {
         readerCalled = true;
         return 'plan';
       },
@@ -260,20 +260,17 @@ describe('createRestartHandler — live permission-mode capture', () => {
 
   test('no permission_mode + no preserved --permission-mode → live reader invoked', async () => {
     const trigger = createHandoffTrigger();
-    let seenCwd = '';
     let seenSid = '';
     const handler = createRestartHandler({
       origArgs: [],
       launchCWD: '/launch/cwd',
       trigger,
-      livePermissionModeReader: (cwd, sid) => {
-        seenCwd = cwd;
+      livePermissionModeReader: (sid) => {
         seenSid = sid;
         return 'plan';
       },
     });
     await handler({ op: 'restart', session_id: VALID_SID });
-    expect(seenCwd).toBe('/launch/cwd');
     expect(seenSid).toBe(VALID_SID);
     const got = trigger.getStashedArgv()!;
     expect(got).toContain('--permission-mode');
@@ -317,13 +314,13 @@ describe('createRestartHandler — live permission-mode capture', () => {
     expect(readerCalled).toBe(false);
   });
 
-  test('live reader returns empty string → no --permission-mode appended', async () => {
+  test('live reader returns null → no --permission-mode appended', async () => {
     const trigger = createHandoffTrigger();
     const handler = createRestartHandler({
       origArgs: [],
       launchCWD: '/launch/cwd',
       trigger,
-      livePermissionModeReader: () => '',
+      livePermissionModeReader: () => null,
     });
     await handler({ op: 'restart', session_id: VALID_SID });
     const got = trigger.getStashedArgv()!;
