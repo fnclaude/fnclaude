@@ -117,3 +117,64 @@ describe('expandAliases — magic + existing passthrough flags', () => {
     ]);
   });
 });
+
+describe('expandAliases — subcommand expansion (§4.4)', () => {
+  test('resume → --resume', () => {
+    expect(expandAliases(parsed(['resume']))).toEqual(['--resume']);
+  });
+
+  test('res (short) → --resume', () => {
+    expect(expandAliases(parsed(['res']))).toEqual(['--resume']);
+  });
+
+  test('continue → --continue', () => {
+    expect(expandAliases(parsed(['continue']))).toEqual(['--continue']);
+  });
+
+  test('con (short) → --continue', () => {
+    expect(expandAliases(parsed(['con']))).toEqual(['--continue']);
+  });
+
+  test('fork → --resume --fork-session', () => {
+    expect(expandAliases(parsed(['fork']))).toEqual(['--resume', '--fork-session']);
+  });
+
+  test('fk (short) → --resume --fork-session', () => {
+    expect(expandAliases(parsed(['fk']))).toEqual(['--resume', '--fork-session']);
+  });
+
+  test('subcommand AFTER magic — opus resume', () => {
+    expect(expandAliases(parsed(['opus', 'resume']))).toEqual([
+      '--model',
+      'opus',
+      '--resume',
+    ]);
+  });
+
+  test('subcommand BEFORE magic — resume opus (subcommand is position-independent)', () => {
+    expect(expandAliases(parsed(['resume', 'opus']))).toEqual([
+      '--model',
+      'opus',
+      '--resume',
+    ]);
+  });
+
+  test('model + effort + subcommand — all three in order', () => {
+    expect(expandAliases(parsed(['opus', 'high', 'fork']))).toEqual([
+      '--model',
+      'opus',
+      '--effort',
+      'high',
+      '--resume',
+      '--fork-session',
+    ]);
+  });
+
+  test('subcommand + passthrough flags preserved', () => {
+    expect(expandAliases(parsed(['resume', '--', 'hello']))).toEqual([
+      '--resume',
+      '--',
+      'hello',
+    ]);
+  });
+});

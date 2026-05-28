@@ -13,14 +13,23 @@
  * by setting `model = 'opus'` when a bare effort is captured at the
  * first magic slot; this module just emits whatever the parser captured.
  *
- * §4.4 subcommand expansion (resume/continue/fork) is a separate slice;
- * this file will gain its logic when shipped.
+ * Subcommand mapping (§4.4 / design.md §1):
+ *   resume   → --resume
+ *   continue → --continue
+ *   fork     → --resume --fork-session
  *
  * Mirrors Go canonical `buildClaudeArgs` (`src/main.go` near the magic
  * + subcommand merge point).
  */
 
+import type { CanonicalSubcommand } from './classify.ts';
 import type { ParsedArgsOk } from './parse.ts';
+
+const SUBCOMMAND_FLAGS: Record<CanonicalSubcommand, readonly string[]> = {
+  resume: ['--resume'],
+  continue: ['--continue'],
+  fork: ['--resume', '--fork-session'],
+};
 
 export function expandAliases(parsed: ParsedArgsOk): string[] {
   const out: string[] = [];
@@ -30,6 +39,9 @@ export function expandAliases(parsed: ParsedArgsOk): string[] {
   }
   if (parsed.effort !== null) {
     out.push('--effort', parsed.effort);
+  }
+  if (parsed.subcommand !== null) {
+    for (const f of SUBCOMMAND_FLAGS[parsed.subcommand]) out.push(f);
   }
 
   // Append the original passthrough verbatim.
