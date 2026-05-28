@@ -20,7 +20,9 @@ import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { autoName, shouldAutoName } from './name/auto-name.ts';
+import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
+import { sdkLlmCall } from './name/sdk-llm.ts';
 import { findPromptSentinel, promptBody } from './argv/sentinel.ts';
 import { ensureCwd } from './path/ensure-cwd.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
@@ -256,8 +258,9 @@ if (
 
 // Auto-name: when the user has typed a prompt body via `--` and hasn't given
 // --name / -n (and the session isn't print/resume/continue/from-pr), generate
-// a session name. Spec defaults: LLM-via-claude-p with 15s timeout, heuristic
-// fallback on error/timeout. ANTHROPIC_API_KEY → SDK fast-path is a follow-up.
+// a session name. Spec defaults: 15s timeout, heuristic fallback on error/
+// timeout. When ANTHROPIC_API_KEY is set we hit the API via the SDK directly
+// (saves a claude cold-start); otherwise we shell out to `claude -p`.
 //
 // FNC_INTERNAL_DISABLE_AUTONAME=1 is an internal test escape — when set,
 // autoName is skipped entirely so e2e tests don't have to wait on a real
@@ -265,19 +268,17 @@ if (
 if (process.env.FNC_INTERNAL_DISABLE_AUTONAME !== '1' && shouldAutoName(parsedWithIntercept)) {
   const sentinelIdx = findPromptSentinel(parsedWithIntercept.passthrough);
   const body = promptBody(parsedWithIntercept.passthrough, sentinelIdx).join(' ').trim();
-  const llmCall = process.env.ANTHROPIC_API_KEY !== undefined
-    ? undefined // TODO: Anthropic SDK fast-path
-    : async (prompt: string): Promise<string> => {
-        const system = "Generate a 1-3 word lowercase hyphen-separated label for this user's request. Output ONLY the label — no punctuation, no quotes, no explanation, no leading 'Label:'. Examples: 'fix-login-bug', 'add-dark-mode', 'refactor-auth'.";
-        const proc = Bun.spawn(
-          ['claude', '-p', '--model', 'claude-haiku-4-5', `${system}\n\nUser request: ${prompt}`],
-          { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-        );
-        const out = await new Response(proc.stdout).text();
-        const exit = await proc.exited;
-        if (exit !== 0) throw new Error(`claude -p exited ${exit}`);
-        return out;
-      };
+  const claudePLlmCall = async (prompt: string): Promise<string> => {
+    const proc = Bun.spawn(
+      ['claude', '-p', '--model', AUTO_NAME_MODEL, `${AUTO_NAME_SYSTEM_PROMPT}\n\nUser request: ${prompt}`],
+      { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+    );
+    const out = await new Response(proc.stdout).text();
+    const exit = await proc.exited;
+    if (exit !== 0) throw new Error(`claude -p exited ${exit}`);
+    return out;
+  };
+  const llmCall = process.env.ANTHROPIC_API_KEY !== undefined ? sdkLlmCall : claudePLlmCall;
   const generated = await autoName({ prompt: body, llmCall, timeoutMs: 15_000 });
   const san = sanitizeForPath(generated);
   const final = san.kind === 'invalid' ? generated : san.value;

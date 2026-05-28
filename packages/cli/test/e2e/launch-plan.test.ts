@@ -352,9 +352,10 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-tmux gating (§5.4)', () => 
 });
 
 describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
-  // ANTHROPIC_API_KEY set + no SDK fast-path wired yet → llmCall is undefined,
-  // so autoName falls straight through to the heuristic. Use this to test
-  // wiring deterministically without invoking claude -p.
+  // ANTHROPIC_API_KEY set with a fake value → SDK fast-path is selected,
+  // SDK call throws on the bogus key, autoName catches the error and falls
+  // through to the heuristic. End result: deterministic heuristic output,
+  // no need to invoke real claude -p or hit the real API.
 
   test('-- "fix the login bug" → heuristic injects --name fix-login-bug', async () => {
     const { plan, exitCode } = await runPlan(['--', 'fix the login bug'], {
@@ -404,6 +405,44 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
     });
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).not.toContain('--name');
+  });
+
+  // Dispatch-shape coverage for the SDK fast-path. The key signal we want to
+  // verify is "with ANTHROPIC_API_KEY set, we do NOT shell out to `claude -p`."
+  // To prove that, we prepend a shim dir to PATH containing a `claude` script
+  // that records every invocation to a sentinel file. If the SDK fast-path
+  // is wired correctly, the shim is never executed and the file stays empty.
+  test('ANTHROPIC_API_KEY set → does NOT spawn `claude -p` (SDK fast-path)', async () => {
+    const shimDir = mkdtempSync(join(tmpdir(), 'fnc-e2e-sdk-shim-'));
+    try {
+      const sentinel = join(shimDir, 'claude-was-invoked');
+      const shim = join(shimDir, 'claude');
+      writeFileSync(
+        shim,
+        `#!/bin/sh\necho "$@" >> "${sentinel}"\nexit 0\n`,
+        { mode: 0o755 },
+      );
+      const { plan, exitCode } = await runPlan(['--', 'fix the login bug'], {
+        extraEnv: {
+          ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+          FNC_INTERNAL_DISABLE_AUTONAME: '',
+          // Prepend shim dir to PATH. The claude-p code path runs
+          // `Bun.spawn(['claude', '-p', ...])` which resolves the bare name
+          // against PATH and would hit our shim. The SDK path doesn't
+          // resolve `claude` at all.
+          PATH: `${shimDir}:${process.env.PATH ?? ''}`,
+        },
+      });
+      expect(exitCode).toBe(0);
+      // Heuristic name still lands (SDK errors on fake key → fallback).
+      const nameIdx = plan!.claudeArgs.indexOf('--name');
+      expect(plan!.claudeArgs[nameIdx + 1]).toBe('fix-login-bug');
+      // The sentinel file should NOT exist — `claude -p` was never spawned.
+      const { existsSync } = await import('node:fs');
+      expect(existsSync(sentinel)).toBe(false);
+    } finally {
+      rmSync(shimDir, { recursive: true, force: true });
+    }
   });
 });
 
