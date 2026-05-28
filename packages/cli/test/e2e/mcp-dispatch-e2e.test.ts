@@ -1,15 +1,16 @@
 /**
- * End-to-end coverage for the 'mcp' subcommand dispatch wiring.
+ * End-to-end coverage for the `fnc mcp` subcommand dispatch wiring.
  *
- * The MCP server itself isn't implemented yet (§7 / §8); this test
- * confirms that:
- *   - 'fnc mcp' routes to runMcpServer (no parseArgs, no claude spawn)
- *   - the stub exits non-zero so silence can't masquerade as success
- *   - the stderr message names the mode and points at the build plan
- *   - '--noop' is recognized as a mode flag
+ * §7.5 — MCP subprocess entry point. The subprocess is invoked by claude
+ * via the injected `--mcp-config`; it inherits `$FNC_SOCKET` from the
+ * parent fnclaude process. Without that env var, the subprocess can't do
+ * anything useful — it MUST exit non-zero immediately with a pointer at
+ * the launcher (per design.mcp.md §8: "FNC_SOCKET not set").
  *
- * When §7 lands, the stub is replaced with the real server and these
- * tests need to be reworked (or replaced).
+ * These tests exercise the dispatch → entry-point wiring without standing
+ * up a real socket; the server-loop behavior (stdin → handlers → stdout)
+ * is covered by the unit tests since spinning up a parent + child here
+ * just to verify a no-op would be expensive.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -19,14 +20,27 @@ const SKIP_WINDOWS = process.platform === 'win32';
 const CLI_ROOT = resolve(__dirname, '..', '..');
 const BIN = resolve(CLI_ROOT, 'bin', 'fnc.js');
 
-async function runUnderNode(args: readonly string[]): Promise<{
+async function runUnderNode(
+  args: readonly string[],
+  envOverrides: Record<string, string | undefined> = {},
+): Promise<{
   stdout: string;
   stderr: string;
   exitCode: number;
 }> {
+  // Strip FNC_SOCKET from the inherited env unless an override sets it,
+  // so tests aren't sensitive to stray launcher state.
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && k !== 'FNC_SOCKET') env[k] = v;
+  }
+  for (const [k, v] of Object.entries(envOverrides)) {
+    if (v === undefined) delete env[k];
+    else env[k] = v;
+  }
   const proc = Bun.spawn(['node', BIN, ...args], {
     cwd: CLI_ROOT,
-    env: { ...process.env },
+    env,
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -39,26 +53,27 @@ async function runUnderNode(args: readonly string[]): Promise<{
   return { stdout, stderr, exitCode };
 }
 
-describe.skipIf(SKIP_WINDOWS)('mcp subcommand dispatch — stub', () => {
-  test('fnc mcp routes to stub: exit 2, project mode, no claude output', async () => {
+describe.skipIf(SKIP_WINDOWS)('mcp subcommand dispatch', () => {
+  test('fnc mcp without FNC_SOCKET → exit 2 with FNC_SOCKET error', async () => {
     const { stdout, stderr, exitCode } = await runUnderNode(['mcp']);
     expect(exitCode).toBe(2);
-    expect(stderr).toContain('MCP server not yet implemented');
-    expect(stderr).toContain('project mode');
+    expect(stderr).toContain('FNC_SOCKET not set');
+    expect(stderr).toContain('fnclaude launcher');
     expect(stdout).toBe('');
   });
 
-  test('fnc mcp --noop sets noop mode in the stub message', async () => {
+  test('fnc mcp --noop without FNC_SOCKET → same exit 2 error', async () => {
     const { stderr, exitCode } = await runUnderNode(['mcp', '--noop']);
     expect(exitCode).toBe(2);
-    expect(stderr).toContain('noop mode');
+    expect(stderr).toContain('FNC_SOCKET not set');
   });
 
-  test('fnc mcp does NOT spawn claude (short-circuits parseArgs)', async () => {
-    // If parseArgs had run, we'd see 'too many positional' style behavior
-    // for surplus args. Stub doesn't care about args — they're tail flags.
+  test('fnc mcp does NOT spawn claude or run parseArgs', async () => {
+    // If parseArgs had run, surplus positionals like "opus" / "extra" would
+    // be interpreted as model/effort/positional tokens. The mcp subcommand
+    // short-circuits the launcher entirely.
     const { stderr, exitCode } = await runUnderNode(['mcp', 'opus', 'extra']);
     expect(exitCode).toBe(2);
-    expect(stderr).toContain('MCP server not yet implemented');
+    expect(stderr).toContain('FNC_SOCKET not set');
   });
 });
