@@ -41,7 +41,14 @@ describe('resolvePromptsDir — precedence order', () => {
     expect(r.dir).toBe(devDir);
   });
 
-  test('falls through to FHS share dir', () => {
+  test('falls through to <exe-dir>/../prompts (npm/monorepo layout)', () => {
+    const npmDir = join(tmpRoot, 'prompts');
+    mkdirSync(npmDir);
+    const r = resolvePromptsDir({ envOverride: undefined, exeDir });
+    expect(r.dir).toBe(npmDir);
+  });
+
+  test('falls through to FHS share dir if nothing else exists', () => {
     const shareDir = join(tmpRoot, 'share', 'fnclaude', 'prompts');
     mkdirSync(shareDir, { recursive: true });
     const r = resolvePromptsDir({ envOverride: undefined, exeDir });

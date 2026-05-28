@@ -5,9 +5,10 @@
 // feature transforms live in their own modules under src/; main composes
 // them in order.
 
+import { realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { readArgv } from './argv/intake.ts';
 import { expandAliases } from './argv/expand.ts';
@@ -15,6 +16,9 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { resolvePromptsDir } from './prompts/dir.ts';
+import { injectFragments, loadFragments } from './prompts/load.ts';
+import { selectFragments } from './prompts/select.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
@@ -120,7 +124,30 @@ if (!shortExpanded.ok) {
   process.stderr.write(`${shortExpanded.error}\n`);
   process.exit(2);
 }
-const claudeArgs = shortExpanded.tokens;
+let claudeArgs = shortExpanded.tokens;
+
+// Inject prompt fragments via --append-system-prompt. Selection depends on
+// noop fallback + interactive (non-print) state of the session.
+const fragmentNames = selectFragments({ usedNoopFallback, passthrough: claudeArgs });
+if (fragmentNames.length > 0) {
+  // process.argv[1] is the BIN script (bin/fnc.js after preflight, or whatever
+  // node invoked). Realpath it so symlinked installs (npm's .bin/ → package
+  // bin/) resolve to the actual layout. The "prompts" directory candidates
+  // (../prompts, ../share/...) are sibling-relative to that resolved bin.
+  const binPath = process.argv[1] ?? '';
+  const exeDir = binPath !== '' ? dirname(realpathSync(binPath)) : process.cwd();
+  const promptsDir = resolvePromptsDir({
+    envOverride: process.env.FNC_PROMPTS_DIR,
+    exeDir,
+  });
+  if (promptsDir.dir !== null) {
+    const loaded = loadFragments(fragmentNames, promptsDir.dir);
+    for (const w of loaded.warnings) process.stderr.write(`${w}\n`);
+    claudeArgs = injectFragments(claudeArgs, loaded.content);
+  } else if (promptsDir.warning !== undefined) {
+    process.stderr.write(`${promptsDir.warning}\n`);
+  }
+}
 
 // Internal test hook: dump the launch plan as JSON and exit 0 BEFORE spawning
 // claude. Lets e2e tests verify the full pipeline composition (cwd + final

@@ -19,6 +19,11 @@ const SKIP_WINDOWS = process.platform === 'win32';
 const CLI_ROOT = resolve(__dirname, '..', '..');
 const BIN = resolve(CLI_ROOT, 'bin', 'fnc.js');
 
+// Point FNC_PROMPTS_DIR at an empty dir so prompt-fragment injection
+// no-ops in tests that don't care about the system-prompt block. Tests
+// that DO want fragment injection can override extraEnv.FNC_PROMPTS_DIR.
+const EMPTY_PROMPTS_DIR = mkdtempSync(join(tmpdir(), 'fnc-e2e-no-prompts-'));
+
 interface PlanResult {
   cwd: string;
   claudeArgs: string[];
@@ -40,7 +45,12 @@ interface RunOptions {
 async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
   const proc = Bun.spawn(['node', BIN, ...args], {
     cwd: opts.cwd ?? tmpdir(),
-    env: { ...process.env, FNC_INTERNAL_DUMP_PLAN: '1', ...(opts.extraEnv ?? {}) },
+    env: {
+      ...process.env,
+      FNC_INTERNAL_DUMP_PLAN: '1',
+      FNC_PROMPTS_DIR: EMPTY_PROMPTS_DIR,
+      ...(opts.extraEnv ?? {}),
+    },
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -182,6 +192,49 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — prompt body preservation', () => 
     const { plan, exitCode } = await runPlan(['opus', '--', 'fix the bug']);
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).toEqual(['--model', 'opus', '--', 'fix the bug']);
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — prompt fragment injection', () => {
+  const REAL_PROMPTS = resolve(CLI_ROOT, 'prompts');
+
+  test('noop session → --append-system-prompt contains noop-router content', async () => {
+    const { plan, exitCode } = await runPlan([], {
+      extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS },
+    });
+    expect(exitCode).toBe(0);
+    const flagIdx = plan!.claudeArgs.indexOf('--append-system-prompt');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    const value = plan!.claudeArgs[flagIdx + 1]!;
+    // noop-router fragment is selected only for noop sessions.
+    expect(value.toLowerCase()).toContain('noop');
+  });
+
+  test('non-noop interactive → fragments injected without noop-router', async () => {
+    const { plan, exitCode } = await runPlan(['/tmp'], {
+      extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS },
+    });
+    expect(exitCode).toBe(0);
+    const flagIdx = plan!.claudeArgs.indexOf('--append-system-prompt');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    const value = plan!.claudeArgs[flagIdx + 1]!;
+    // Should NOT contain noop-router content (which mentions the noop bucket).
+    expect(value.toLowerCase()).not.toContain('noop-router');
+  });
+
+  test('print mode (-p) → no --append-system-prompt', async () => {
+    const { plan, exitCode } = await runPlan(['-p', '--', 'hello'], {
+      extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS },
+    });
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--append-system-prompt');
+  });
+
+  test('missing FNC_PROMPTS_DIR (set to empty dir): warnings to stderr, claudeArgs clean', async () => {
+    const { plan, stderr, exitCode } = await runPlan([]);
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--append-system-prompt');
+    expect(stderr).toMatch(/missing|prompt/i);
   });
 });
 

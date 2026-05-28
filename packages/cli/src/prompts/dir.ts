@@ -3,8 +3,11 @@
  *
  * Precedence:
  *   1. $FNC_PROMPTS_DIR (env override; empty string treated as unset)
- *   2. <exe-dir>/prompts/        (dev workflow)
- *   3. <exe-dir>/../share/fnclaude/prompts/  (FHS / AUR layout)
+ *   2. <exe-dir>/prompts/                       (dev / sibling layout)
+ *   3. <exe-dir>/../prompts/                    (npm / monorepo layout
+ *                                                where the bin lives in
+ *                                                its own subdir)
+ *   4. <exe-dir>/../share/fnclaude/prompts/     (FHS / AUR layout)
  *
  * Symlink resolution of exeDir is the caller's responsibility — pass the
  * already-resolved path here (Go canonical uses filepath.EvalSymlinks
@@ -44,6 +47,7 @@ export function resolvePromptsDir(args: ResolvePromptsDirArgs): ResolvePromptsDi
     candidates.push(args.envOverride);
   }
   candidates.push(join(args.exeDir, 'prompts'));
+  candidates.push(resolve(args.exeDir, '..', 'prompts'));
   candidates.push(resolve(args.exeDir, '..', 'share', 'fnclaude', 'prompts'));
 
   for (const c of candidates) {
