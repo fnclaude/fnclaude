@@ -290,6 +290,27 @@ TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / f
 
 ---
 
+## 2026-05-28 — Live permission-mode reader ported (resolves §8.1 deferral)
+
+**Decision:** `readLivePermissionMode(launchCWD, sessionID)` is ported from Go canonical ([`session_state.go`](../../fnclaude@fnrhombus/src/session_state.go)) to [`packages/cli/src/launch/live-permission-reader.ts`](../packages/cli/src/launch/live-permission-reader.ts). [`main.ts`](../packages/cli/src/main.ts) now binds `launchCWD` at construction time and passes the resulting `(sessionId) => string | null` reader to both `createRestartHandler` and `createSwitchHandler`. The optional DI marker on each handler stays — unit tests still inject null readers — but production wiring no longer omits it.
+
+**Why this signature shape:** the two handlers previously diverged — restart took `(launchCWD, sessionID) => string` and switch took `(sessionId) => string | null`. main.ts has `cwd` in scope at handler-construction time, so binding it via closure means each handler reduces to the per-call `sessionId` shape. Switch's `string | null` form wins over restart's empty-string sentinel because `null` makes "no record found" structurally distinct from "found but empty" (the latter is now a defensive skip inside the reader itself, not a signaling value), and TypeScript's strict-null-checks flag mis-handling at the call site instead of letting a stale `""` silently leak through.
+
+**Why sync IO + read-whole-file (not streaming):** session JSONLs are bounded — even a heavy session is well under the bandwidth where streaming pays for itself, and `JSON.parse` on a per-line string handles big tool-result lines natively (Go's `bufio.Scanner` needs an explicit 16 MiB buffer config; the TS shape doesn't). The reader fires only on MCP-dispatched restart / switch, never on a hot path. Simplicity wins.
+
+**Why `process.env.HOME` first, then `os.homedir()` fallback (Go reverses this):** Bun's `homedir()` caches HOME at startup and doesn't reflect subsequent `process.env.HOME` mutations — meaning unit tests that override HOME per-test can't influence the reader's path resolution if `homedir()` is called first. Reading `process.env.HOME` directly is the canonical POSIX shape, respects test-time overrides, and is what `claude` itself uses to locate `~/.claude/`. The `homedir()` fallback covers the rare case the env var is unset (cron, bare systemd unit). The order swap vs. Go is a Bun-runtime-behavior accommodation, not a semantic change — on a healthy system both resolve to the same value.
+
+**What changed:**
+- New: [`packages/cli/src/launch/live-permission-reader.ts`](../packages/cli/src/launch/live-permission-reader.ts) (three exports: `encodeCWDForProjects`, `sessionJSONLPath`, `readLivePermissionMode`).
+- New: [`packages/cli/test/unit/live-permission-reader.test.ts`](../packages/cli/test/unit/live-permission-reader.test.ts) (encoding table, path-build, JSONL last-wins + edge cases).
+- Modified: [`packages/cli/src/mcp/handlers/restart.ts`](../packages/cli/src/mcp/handlers/restart.ts) — `LivePermissionModeReader` retyped to `(sessionID) => string | null`; call site drops `launchCWD` arg and treats `null` as "no live override."
+- Modified: [`packages/cli/test/unit/restart-handler.test.ts`](../packages/cli/test/unit/restart-handler.test.ts) — DI fakes updated to the unified signature.
+- Modified: [`packages/cli/src/main.ts`](../packages/cli/src/main.ts) — imports `readLivePermissionMode`, constructs the bound reader, passes to both handler factories.
+
+`switch.ts` was already on the unified shape; no behavioral change there.
+
+---
+
 ## 2026-05-28 — Switch handler branches on `req.permission_mode === 'never'` (not config-side `auto.handoff`)
 
 **Decision:** §8.2's switch handler triggers the paste-flow branch when the wire request carries `permission_mode: 'never'`. Go canonical branches on `cfg.Auto.Handoff == "never"` instead — a config-side flag, separate from the wire's permission-mode override field.

@@ -21,6 +21,7 @@ import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts
 import { composeEnv } from './launch/compose-env.ts';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch.ts';
 import { findClaude } from './launch/find-claude.ts';
+import { readLivePermissionMode } from './launch/live-permission-reader.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
@@ -424,14 +425,24 @@ if (mcpSocketPath !== undefined) {
     // §7.7 + §8.x: wire per-tool dispatch onto each accepted socket.
     // §8.1 (restart), §8.2 (switch), §8.3 (spawn) and §8.4 (clipboard)
     // replace their stubs; nothing remains stubbed in §8.
+    //
+    // Live permission-mode reader binds `cwd` (the launch cwd) at
+    // construction so both handlers consume the same
+    // `(sessionId) => string | null` shape. Reads claude's
+    // `~/.claude/projects/<encoded-cwd>/<sid>.jsonl` for the latest
+    // `{type:"permission-mode",...}` record — last-wins, null on miss.
+    const livePermissionModeReader = (sessionId: string): string | null =>
+      readLivePermissionMode(cwd, sessionId);
     const restartHandler = createRestartHandler({
       origArgs: argv,
       launchCWD: cwd,
       trigger: handoffTrigger,
+      livePermissionModeReader,
     });
     const switchHandler = createSwitchHandler({
       origArgs: argv,
       trigger: handoffTrigger,
+      livePermissionModeReader,
     });
     const binPathForListener = process.argv[1] ?? '';
     const fncBinAbs = binPathForListener !== '' ? realpathSync(binPathForListener) : '';
