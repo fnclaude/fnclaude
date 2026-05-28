@@ -9,6 +9,19 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { readArgv } from './argv/intake.ts';
+
+const argv = readArgv();
+
+// Internal test hook: when set, dump the parsed argv as JSON to stdout and
+// exit 0 BEFORE we touch the noop dir or spawn claude. Lets e2e tests
+// verify the preflight + intake chain preserves `--` end-to-end without
+// needing a fake-claude harness. Not user-facing.
+if (process.env.FNC_INTERNAL_DUMP_ARGV === '1') {
+  process.stdout.write(`${JSON.stringify(argv)}\n`);
+  process.exit(0);
+}
+
 const xdgConfig = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
 const noopDir = join(xdgConfig, 'fnclaude', 'noop');
 await mkdir(noopDir, { recursive: true });
