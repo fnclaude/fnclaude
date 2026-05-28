@@ -22,6 +22,8 @@ import { selectFragments } from './prompts/select.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
+import { listWorktrees } from './worktree/git-list.ts';
+import { applyWorktreeIntercept } from './worktree/intercept.ts';
 
 const argv = readArgv();
 
@@ -116,9 +118,23 @@ switch (resolved.kind) {
     process.exit(2);
 }
 
+// Worktree intercept: when -w <name> is set, possibly swap cwd to an
+// existing worktree's path. The intercept also pushes `--worktree`/`--name`
+// into passthrough as appropriate per spec §10.
+const intercept = applyWorktreeIntercept({
+  worktreeSet: parsed.worktreeSet,
+  worktreeArg: parsed.worktreeArg,
+  launchCwd: cwd,
+  passthrough: parsed.passthrough,
+  listWorktrees,
+});
+for (const w of intercept.warnings) process.stderr.write(`${w}\n`);
+cwd = intercept.launchCwd;
+const parsedWithIntercept = { ...parsed, passthrough: intercept.passthrough };
+
 // Build the final claude argv: prepend magic-captured flags (model/effort/
 // subcommand), then expand any short-flag clusters in the passthrough.
-const withAliases = expandAliases(parsed);
+const withAliases = expandAliases(parsedWithIntercept);
 const shortExpanded = expandShortFlags(withAliases);
 if (!shortExpanded.ok) {
   process.stderr.write(`${shortExpanded.error}\n`);

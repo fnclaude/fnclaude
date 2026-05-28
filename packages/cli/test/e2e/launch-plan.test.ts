@@ -238,6 +238,36 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — prompt fragment injection', () =>
   });
 });
 
+describe.skipIf(SKIP_WINDOWS)('launch plan — worktree intercept (-w)', () => {
+  test('-w <name> in a non-repo dir → no-match path → --worktree + --name pushed', async () => {
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-w-'));
+    try {
+      const { plan, exitCode } = await runPlan([shell, '-w', 'my-feat'], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).toContain('--worktree');
+      expect(plan!.claudeArgs).toContain('--name');
+      expect(plan!.claudeArgs).toContain('my-feat');
+      // cwd stays at shell (no match swapped it)
+      expect(plan!.cwd).toBe(shell);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('-w with bad chars sanitized → warning + sanitized name forwarded', async () => {
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-wsan-'));
+    try {
+      const { plan, stderr, exitCode } = await runPlan([shell, '-w', 'has spaces!'], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).toContain('has-spaces');
+      expect(plan!.claudeArgs).not.toContain('has spaces!');
+      expect(stderr).toMatch(/sanitized|illegal/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+});
+
 describe.skipIf(SKIP_WINDOWS)('launch plan — parser errors', () => {
   test('two-positional + third → error', async () => {
     const { stderr, exitCode } = await runPlan(['/a', '/b', '/c']);
