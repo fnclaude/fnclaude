@@ -339,6 +339,25 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-tmux gating (§5.4)', () => 
     }
   });
 
+  test('§10.5: --no-tmux is consumed by the launcher and never reaches claude', async () => {
+    // Regression guard: --no-tmux is an fnclaude-owned flag, must not be
+    // forwarded to claude's argv. Run with no config (so no auto-tmux to
+    // suppress) and assert the flag is simply eaten.
+    const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-notmux-eat-'));
+    try {
+      const { plan, exitCode } = await runPlan(['/tmp', '--no-tmux', '--', 'hi'], {
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).not.toContain('--no-tmux');
+      // The prompt body still rides through verbatim.
+      expect(plan!.claudeArgs).toContain('--');
+      expect(plan!.claudeArgs).toContain('hi');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
   test('config "worktree" but no -w → no --tmux (only new-worktree triggers)', async () => {
     const xdg = makeConfigDir('worktree');
     const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-nt3-'));

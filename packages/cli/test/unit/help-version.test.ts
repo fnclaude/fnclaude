@@ -73,6 +73,67 @@ describe('helpText', () => {
     expect(helpText).toContain('-A, --also');
   });
 
+  test('documents every capital-letter short flag (§4.5 surface)', () => {
+    for (const ch of ['B', 'C', 'D', 'F', 'G', 'I', 'M', 'P', 'R', 'T', 'V', 'W']) {
+      expect(helpText).toContain(`-${ch}`);
+    }
+    // And the long-form targets users would search for.
+    for (const long of [
+      '--brief',
+      '--chrome',
+      '--dangerously-skip-permissions',
+      '--fork-session',
+      '--agent',
+      '--ide',
+      '--permission-mode',
+      '--from-pr',
+      '--remote-control',
+      '--tmux',
+      '--verbose',
+      '--allowedTools',
+    ]) {
+      expect(helpText).toContain(long);
+    }
+  });
+
+  test('documents env vars that influence launcher behavior (§10.2)', () => {
+    // The env vars main.ts actually reads from process.env.
+    expect(helpText).toContain('ANTHROPIC_API_KEY');
+    expect(helpText).toContain('XDG_CONFIG_HOME');
+    expect(helpText).toContain('FNC_PROMPTS_DIR');
+    expect(helpText).toContain('FNC_NOOP_TEMPLATE_PATH');
+  });
+
+  test('documents the config.toml surface ([exec.env], [auto], [name])', () => {
+    expect(helpText).toContain('config.toml');
+    expect(helpText).toContain('[exec.env]');
+    expect(helpText).toContain('[auto]');
+    expect(helpText).toContain('[name]');
+  });
+
+  test('points users at ~/.claude/settings.json for repo settings', () => {
+    expect(helpText).toContain('.claude/settings.json');
+    expect(helpText).toContain('cloneTemplate');
+  });
+
+  test('includes the -w / --worktree flag with name argument', () => {
+    expect(helpText).toContain('-w, --worktree');
+  });
+
+  test('mentions cross-cwd resume and worktree intercept (the two big launcher features)', () => {
+    expect(helpText.toLowerCase()).toContain('cross-cwd resume');
+    expect(helpText.toLowerCase()).toContain('worktree intercept');
+  });
+
+  test('mentions the mcp subcommand is internal-use only', () => {
+    expect(helpText).toContain('mcp');
+    expect(helpText.toLowerCase()).toContain('not for direct use');
+  });
+
+  test('has an Examples section', () => {
+    expect(helpText).toContain('Examples:');
+  });
+
   test('ends with a trailing newline so terminal output is clean', () => {
     expect(helpText.endsWith('\n')).toBe(true);
   });
