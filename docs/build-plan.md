@@ -51,19 +51,19 @@ Every code-shipping feature follows this loop:
 
 This is the bottleneck for everything else. Build it first, all of it, before reaching for magic words or short flags.
 
-**§2.1 ⏱ argv intake** — `argv = process.argv.slice(2)`. No `FNC_ARGS_JSON` workaround (we're not under Bun's `--`-stripping path; running directly under bun shebang preserves argv intact). Verify empirically that `fnc -- "say hi"` preserves `--` in `process.argv`.
+✅ **§2.1 ⏱ argv intake** — `argv = process.argv.slice(2)`. **Revised during implementation:** Bun 1.3.14 *does* strip `--` from script argv (empirically confirmed) — restored the Node-shebang preflight + `FNC_ARGS_JSON` env-var indirection. Verify empirically that `fnc -- "say hi"` preserves `--` in `process.argv`.
 
-**§2.2 ⏱ Token classification** — given a token, is it: flag-shaped (starts with `-`), magic word (model/effort/subcommand), or positional? Pure function. PRD: [`prd.launcher.md` "Model and effort shortcuts" + "Session-mode words"].
+✅ **§2.2 ⏱ Token classification** — given a token, is it: flag-shaped (starts with `-`), magic word (model/effort/subcommand), or positional? Pure function. PRD: [`prd.launcher.md` "Model and effort shortcuts" + "Session-mode words"].
 
-**§2.3 ⏱ Magic positional state machine** — position 1: model alias OR effort level (effort-only → opus implied). Position 2: effort level if position 1 was model. Subcommand-style positionals (`resume`/`res`/`continue`/`con`/`fork`/`fk`) at any positional slot, max one. PRD: [`prd.launcher.md` "Model and effort shortcuts" + "Session-mode words"]. Design: [`design.md` §1].
+✅ **§2.3 ⏱ Magic positional state machine** — position 1: model alias OR effort level (effort-only → opus implied). Position 2: effort level if position 1 was model. Subcommand-style positionals (`resume`/`res`/`continue`/`con`/`fork`/`fk`) at any positional slot, max one. PRD: [`prd.launcher.md` "Model and effort shortcuts" + "Session-mode words"]. Design: [`design.md` §1].
 
-**§2.4 ⏱ Positional path collection** — after magic, first non-flag positional is cwd; second is worktree-name slot; third+ is an error. Design: [`design.md` §1].
+✅ **§2.4 ⏱ Positional path collection** — after magic, first non-flag positional is cwd; second is worktree-name slot; third+ is an error. Design: [`design.md` §1].
 
-**§2.5 ⏱ Stop-at-`--`** — anything after a literal `--` is the prompt to claude, passed through verbatim.
+✅ **§2.5 ⏱ Stop-at-`--`** — anything after a literal `--` is the prompt to claude, passed through verbatim.
 
-**§2.6 ⏱ `--help` / `--version` short-circuits** — print and exit 0 before any parsing.
+✅ **§2.6 ⏱ `--help` / `--version` short-circuits** — print and exit 0 before any parsing.
 
-**§2.7 ⏱ `mcp` subcommand dispatch** — if `argv[0] === "mcp"`, hand off to the MCP server entry point (which doesn't exist yet — stub it for now).
+✅ **§2.7 ⏱ `mcp` subcommand dispatch** — if `argv[0] === "mcp"`, hand off to the MCP server entry point (stub today; exits 2 with a pointer at §7).
 
 End of §2. Argv is parsed into `{cwd, extraDirs (empty/onIce), passthrough, noTmux, worktreeSet, worktreeArg, usedNoopFallback, subcommand}`.
 
@@ -73,13 +73,13 @@ End of §2. Argv is parsed into `{cwd, extraDirs (empty/onIce), passthrough, noT
 
 Depends on §2. Three slots that can run in parallel once §2 is done:
 
-🌿 **§3.1** **Tilde expansion** — `~/foo` → `<HOME>/foo`. Pure string fn.
-🌿 **§3.2** **Absolute path passthrough** — `/abs/path` → unchanged.
-🌿 **§3.3** **Noop fallback** — no positional → `$XDG_CONFIG_HOME/fnclaude/noop` (already partially done in MVP; align with new arg shape).
+✅ 🌿 **§3.1** **Tilde expansion** — `~/foo` → `<HOME>/foo`. Pure string fn.
+✅ 🌿 **§3.2** **Absolute path passthrough** — `/abs/path` → unchanged.
+✅ 🌿 **§3.3** **Noop fallback** — no positional → `$XDG_CONFIG_HOME/fnclaude/noop`.
 
-⏱ **§3.4** **Repo-reference resolver** — depends on §3.1–§3.3. The ladder: cwd-relative path → bare-name multi-org search → `owner/name` → SSH `git@github.com:owner/name.git` → HTTPS `https://github.com/owner/name(.git)?` → `name@owner` (from shared `repoSettings.cloneTemplate`). Reads `~/.claude/settings.json`'s `repoSettings` block AND `hostAliases`. Design: [`design.md` §15–17, §22–23]. PRD: [`prd.launcher.md` "Directory targeting"].
+🔶 **§3.4** **Repo-reference resolver** — depends on §3.1–§3.3. **Partial:** the structural pieces are done — `parseRepoRef` covers every form (bare-name / `name@owner` / `owner/name` / `gh:owner/name` / HTTPS / SSH / scp-style); host-aliases + four-tier repoSettings loaders ship; `resolveInput` orchestrator returns a discriminated union (`launch` / `needs-clone` / `needs-owner-lookup` / `ambiguous` / `error`) with full dual-lookup logic. **NOT done:** the gh-CLI side effects — `gh api user` + `gh api /user/orgs` for bare-name owner resolution, and `gh repo clone` to actually clone needs-clone targets. Today those surface as exit-2 errors with a "not yet implemented" pointer. Design: [`design.md` §15–17, §22–23].
 
-⏱ **§3.5** **+workspace suffix** — `name@owner+workspace` propagates `workspace` to the worktree-intercept layer. Depends on §3.4.
+⏱ **§3.5** **+workspace suffix** — `name@owner+workspace`. **Partial:** parsed by `parseRepoRef` and propagated through every `resolveInput` result variant. **NOT yet:** the worktree-intercept layer doesn't consume `workspace` (the field is captured but ignored at `applyWorktreeIntercept`). Wire-up pending.
 
 End of §3. `launchCWD` is an absolute path.
 
@@ -89,11 +89,11 @@ End of §3. `launchCWD` is an absolute path.
 
 Depends on §2 complete. Items 🌿 here are independent — same dispatch boundary.
 
-🌿 **§4.1** **Model alias expansion** — `opus`/`sonnet`/`haiku` → `--model <alias>` prepended to passthrough.
-🌿 **§4.2** **Effort level expansion** — `low`/`medium`/`high`/`xhigh`/`max`/`auto` → `--effort <level>` prepended.
-🌿 **§4.3** **Effort-without-model → opus** — when only effort appears at position 1, inject `--model opus` alongside `--effort <level>`. PRD item #2.
-🌿 **§4.4** **Subcommand expansion** — `resume`/`res` → `--resume`; `continue`/`con` → `--continue`; `fork`/`fk` → `--resume --fork-session`. Design: [`design.md` §1].
-🌿 **§4.5** **Short-flag translation** — capital-letter shorts → long forms. Cluster mechanics: `-BVC` splits into three; last in cluster may consume next token as value (`-BVCM plan` → `-B -V -C -M plan`). Design: [`design.md` §2]. PRD item #9.
+✅ 🌿 **§4.1** **Model alias expansion** — `opus`/`sonnet`/`haiku` → `--model <alias>` prepended to passthrough.
+✅ 🌿 **§4.2** **Effort level expansion** — `low`/`medium`/`high`/`xhigh`/`max`/`auto` → `--effort <level>` prepended.
+✅ 🌿 **§4.3** **Effort-without-model → opus** — when only effort appears at position 1, inject `--model opus` alongside `--effort <level>`. PRD item #2.
+✅ 🌿 **§4.4** **Subcommand expansion** — `resume`/`res` → `--resume`; `continue`/`con` → `--continue`; `fork`/`fk` → `--resume --fork-session`. Design: [`design.md` §1].
+✅ 🌿 **§4.5** **Short-flag translation** — capital-letter shorts → long forms. Cluster mechanics: `-BVC` splits into three; last in cluster may consume next token as value (`-BVCM plan` → `-B -V -C -M plan`). Sentinel-aware: tokens after `--` pass through verbatim. Design: [`design.md` §2]. PRD item #9.
 
 End of §4. Passthrough has all expansions applied.
 
@@ -103,15 +103,15 @@ End of §4. Passthrough has all expansions applied.
 
 Depends on §2–§4. Mixed parallel/sequential within.
 
-🌿 **§5.1** **Name sanitization** — exact regex per [`design.md` §3]: replace AND collapse runs of `[^a-zA-Z0-9_-]` to a single `-`. PRD item #7.
+✅ 🌿 **§5.1** **Name sanitization** — exact regex per [`design.md` §3]: replace AND collapse runs of `[^A-Za-z0-9._/-]` to a single `-`, collapse dash runs, collapse slash runs, trim leading `[-.]`, trim trailing `[-/]`, reject `..` containment. PRD item #7.
 
-🌿 **§5.2** **Auto-name from prompt** — when `--`, prompt present, no `--name`/`-n`, not `-p`/`--print`/`-r`/`--resume`/`-c`/`--continue`/`--from-pr`: call Haiku (with `ANTHROPIC_API_KEY` if set) or `claude -p` fallback (15s timeout for CLI fallback, 3s for API), heuristic fallback on error. Then sanitize. Design: [`design.md` §18]. PRD: [`prd.launcher.md` "Auto-naming"].
+🔶 **§5.2** **Auto-name from prompt** — `shouldAutoName` gate (`--` + body + no `--name`/`-p`/`-r`/`-c`/`--from-pr`) + heuristic fallback + LLM-output slug sanitizer + `autoName` orchestrator with timeout — all done and wired into main. **Partial:** when `ANTHROPIC_API_KEY` is set we currently still use the heuristic (the SDK fast-path is TODO); unset uses `claude -p` with 15s timeout per spec. Design: [`design.md` §18]. PRD: [`prd.launcher.md` "Auto-naming"].
 
-⏱ **§5.3** **Worktree intercept** — `-w <name>` OR 2nd-positional. If matches an existing worktree, swap cwd and set `--name <name>` (per PRD item #8 correction; Go didn't do the `--name` set). If no match, pass `-w <name>` through and set `--name <name>`. Either way, `--name` is set. Depends on §5.1 (sanitize the name first).
+✅ ⏱ **§5.3** **Worktree intercept** — `-w <name>` OR 2nd-positional. Match priority ladder (branch / `worktree-<name>` stripped / basename). Match → swap cwd + set `--name`; no match → pass `--worktree <name>` + `--name <name>`. Wired with a `git worktree list --porcelain` parser + spawner.
 
-🌿 **§5.4** **Auto-tmux gating** — config `auto.tmux = "worktree"` AND user passed `-w` for a new worktree AND no `--no-tmux` AND no `--tmux` already present → inject `--tmux`. Design: [`design.md` §1].
+✅ 🌿 **§5.4** **Auto-tmux gating** — config `auto.tmux = "worktree"` AND user passed `-w` for a new worktree AND no `--no-tmux` AND no `--tmux` already present → inject `--tmux`. Config loader uses Bun's native `import(path, { with: { type: "toml" } })` — no third-party TOML dependency.
 
-🌿 **§5.5** **Prompt-fragment composition** — read `packages/cli/prompts/*.md` (5 files). Select per `selectFragments` rules: `agent-pitfall.md` for interactive non-print; `noop-router.md` for noop fallback; `project-switch.md`, `spawn.md`, `restart.md` for non-noop interactive. Compose into single `--append-system-prompt` value joined by blank lines. Append to existing `--append-system-prompt` if present (don't replace). Design: [`design.md` §28].
+✅ 🌿 **§5.5** **Prompt-fragment composition** — `selectFragments` + `loadFragments` + `injectFragments` + `resolvePromptsDir` (with `$FNC_PROMPTS_DIR` override → `<exe-dir>/prompts` → `<exe-dir>/../prompts` for npm/monorepo → FHS share). `exeDir` is `realpathSync(process.argv[1])` so symlinked installs resolve correctly. Append-aware (merges into existing `--append-system-prompt` if present).
 
 🌿 **§5.6** **Multi-dir injection** — 🧊 **ON ICE**. Per PRD item #6, deferred. Don't implement now.
 
@@ -123,15 +123,15 @@ End of §5. Argv is complete except for self-MCP injection (handled in §7).
 
 Depends on §2–§5.
 
-⏱ **§6.1** **Env composition** — `process.env` + `[exec.env]` from config + handoff vars (`FNC_SOCKET`, `FNCLAUDE_HANDOFF`). Design: [`design.md` §5].
+⏱ **§6.1** **Env composition** — `process.env` + `[exec.env]` from config + handoff vars (`FNC_SOCKET`, `FNCLAUDE_HANDOFF`). Today main.ts inherits `process.env` only. Design: [`design.md` §5].
 
-⏱ **§6.2** **PATH check for claude** — fail with clean error if `claude` not found.
+✅ ⏱ **§6.2** **PATH check for claude** — `findClaude({pathEnv})` walks PATH left-to-right, errors with a clean "claude not found" pointer (exit 127). Spawn uses the resolved absolute path.
 
-⏱ **§6.3** **ensureCWD** — if launchCWD doesn't exist, fabricate the tree (walk up, mkdir each level), then unwind after spawn. Design: [`design.md` §26].
+✅ ⏱ **§6.3** **ensureCWD** — `ensureCwd(path)` walks up, mkdirs missing levels, returns a `cleanup()` callback. main.ts runs ensure → spawn → cleanup so the kernel's inode reference keeps the child's pwd alive after we unlink the phantom dirs.
 
-⏱ **§6.4** **PTY spawn** — current MVP uses `Bun.spawn` + stdio inherit. Sufficient until §8 (cross-cwd resume) needs output capture. When that lands, switch to `Bun.Terminal` for the launcher.
+✅ ⏱ **§6.4** **PTY spawn** — `Bun.spawn` + stdio inherit. Sufficient until §9 needs output capture; when that lands, switch to `Bun.Terminal`.
 
-⏱ **§6.5** **Signal handling** — SIGINT/SIGTERM swallowed (done in MVP). SIGWINCH: with stdio inherit, kernel routes directly to child; nothing to do until we switch to `Bun.Terminal`.
+✅ ⏱ **§6.5** **Signal handling** — SIGINT/SIGTERM swallowed (kernel routes to child via foreground pgrp). SIGWINCH passes through inherit. Will need revisit when `Bun.Terminal` lands.
 
 End of §6. claude is running.
 
