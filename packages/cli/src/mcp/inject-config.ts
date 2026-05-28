@@ -21,7 +21,15 @@
  * Gate: print mode (-p / --print) doesn't get the config — claude is being
  * driven non-interactively, no MCP tools would be useful. The launcher
  * also skips the call entirely on win32 where there's no listener.
+ *
+ * `--mcp-config` lands BEFORE the prompt-body `--` sentinel via
+ * `insertFlagsBeforeSentinel`. Appending the pair at the tail when a `--`
+ * is present would push the JSON into claude's prompt body — claude
+ * would never see it as a flag and the MCP server would never register.
+ * That regression shipped in cli 2.0.0; the helper centralises the fix.
  */
+
+import { insertFlagsBeforeSentinel } from '../argv/sentinel.ts';
 
 export interface InjectMcpConfigArgs {
   claudeArgs: readonly string[];
@@ -55,5 +63,9 @@ export function injectMcpConfig(args: InjectMcpConfigArgs): string[] {
     },
   };
 
-  return [...args.claudeArgs, '--mcp-config', JSON.stringify(config)];
+  return insertFlagsBeforeSentinel(
+    args.claudeArgs,
+    '--mcp-config',
+    JSON.stringify(config),
+  );
 }

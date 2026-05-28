@@ -94,4 +94,38 @@ describe('injectMcpConfig', () => {
       '{"mcpServers":{"fnclaude":{"command":"/bun","args":["/fnc","mcp","--noop"]}}}',
     );
   });
+
+  // Regression: cli 2.0.0 appended the `--mcp-config <json>` pair past the
+  // prompt-body sentinel, so claude read the JSON as positional prompt
+  // content and never registered the MCP server. The injection now lands
+  // BEFORE the first `--` via insertFlagsBeforeSentinel.
+  test('claudeArgs has prompt-body sentinel → --mcp-config lands BEFORE --', () => {
+    const out = injectMcpConfig({
+      claudeArgs: ['--model', 'opus', '--', 'say hi'],
+      bunExec: '/usr/bin/bun',
+      fncBin: '/abs/path/to/fnc.js',
+      noop: false,
+      interactive: true,
+    });
+    const flagIdx = out.indexOf('--mcp-config');
+    const sentinelIdx = out.indexOf('--');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(sentinelIdx).toBeGreaterThanOrEqual(0);
+    expect(flagIdx).toBeLessThan(sentinelIdx);
+    // Original prompt body still rides through after the sentinel.
+    expect(out[sentinelIdx + 1]).toBe('say hi');
+  });
+
+  test('sentinel at position 0 → --mcp-config still lands before it', () => {
+    const out = injectMcpConfig({
+      claudeArgs: ['--', 'say hi'],
+      bunExec: '/usr/bin/bun',
+      fncBin: '/abs/path/to/fnc.js',
+      noop: false,
+      interactive: true,
+    });
+    expect(out[0]).toBe('--mcp-config');
+    expect(out.indexOf('--')).toBe(2);
+    expect(out[3]).toBe('say hi');
+  });
 });

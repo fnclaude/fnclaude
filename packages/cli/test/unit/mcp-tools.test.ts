@@ -48,7 +48,7 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
     });
-    const restart = tools.find((t) => t.name === 'fnc_restart');
+    const restart = tools['fnc_restart'];
     expect(restart).toBeDefined();
     const result = await restart!.handler({ session_id: 'abc', model: 'opus' });
     expect(result).toEqual({ ok: true, action: 'done' });
@@ -65,7 +65,7 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
     });
-    const switchTool = tools.find((t) => t.name === 'fnc_switch_project');
+    const switchTool = tools['fnc_switch_project'];
     await switchTool!.handler({
       destination: '/tmp/foo',
       name: 'bar',
@@ -85,7 +85,7 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
     });
-    const spawnTool = tools.find((t) => t.name === 'fnc_spawn_session');
+    const spawnTool = tools['fnc_spawn_session'];
     await spawnTool!.handler({
       destination: '/tmp/foo',
       name: 'bar',
@@ -105,7 +105,7 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
     });
-    const clip = tools.find((t) => t.name === 'fnc_copy_to_clipboard');
+    const clip = tools['fnc_copy_to_clipboard'];
     const result = await clip!.handler({ text: 'hello' });
     expect(fake.calls[0]?.request).toEqual({
       op: 'copy_to_clipboard',
@@ -122,7 +122,7 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: dial,
     });
-    const restart = tools.find((t) => t.name === 'fnc_restart');
+    const restart = tools['fnc_restart'];
     await expect(restart!.handler({ session_id: 'abc' })).rejects.toThrow(/boom/);
   });
 
@@ -132,10 +132,27 @@ describe('buildTools — per-tool handler shape', () => {
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
     });
-    const restart = tools.find((t) => t.name === 'fnc_restart');
+    const restart = tools['fnc_restart'];
     await restart!.handler(undefined);
     expect(fake.calls[0]?.request).toEqual({ op: 'restart' });
     await restart!.handler(null);
     expect(fake.calls[1]?.request).toEqual({ op: 'restart' });
+  });
+
+  test('returned record exposes each tool by name with description + schema', async () => {
+    const fake = makeFakeDialer({ ok: true });
+    const tools = buildTools({
+      socketPath: '/run/fake.sock',
+      dialAndCall: fake.dial,
+    });
+    // Schema port from §7.5 wiring: each entry carries description +
+    // inputSchema so the jsonrpc-server's tools/list response is complete.
+    for (const name of MCP_TOOL_NAMES) {
+      const tool = tools[name];
+      expect(tool).toBeDefined();
+      expect(typeof tool!.description).toBe('string');
+      expect(tool!.description.length).toBeGreaterThan(0);
+      expect(typeof tool!.inputSchema).toBe('object');
+    }
   });
 });

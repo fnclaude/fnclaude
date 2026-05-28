@@ -623,6 +623,43 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — self-MCP --mcp-config injection (
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).not.toContain('--mcp-config');
   });
+
+  // Regression for cli 2.0.0: `fnc -- "say hi"` produced a plan whose
+  // `--mcp-config` pair landed AFTER the `--` sentinel. Claude treats
+  // post-sentinel tokens as positional prompt content, so the MCP server
+  // never registered. The fix is sentinel-aware insertion.
+  test('prompt body via `--` → --mcp-config lands BEFORE --', async () => {
+    const { plan, exitCode } = await runPlan(['--', 'say hi']);
+    expect(exitCode).toBe(0);
+    const flagIdx = plan!.claudeArgs.indexOf('--mcp-config');
+    const sentinelIdx = plan!.claudeArgs.indexOf('--');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(sentinelIdx).toBeGreaterThanOrEqual(0);
+    expect(flagIdx).toBeLessThan(sentinelIdx);
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name sentinel ordering (regression)', () => {
+  // Regression for cli 2.0.0: the auto-name `--name <slug>` pair was
+  // appended past the `--` sentinel, so claude read it as prompt body
+  // and the session name never registered. Auto-name now lands BEFORE
+  // the sentinel via insertFlagsBeforeSentinel.
+  test('-- "fix the login bug" → --name lands BEFORE --', async () => {
+    const { plan, exitCode } = await runPlan(['--', 'fix the login bug'], {
+      extraEnv: {
+        ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+        FNC_INTERNAL_DISABLE_AUTONAME: '', // re-enable autoname for this test
+      },
+    });
+    expect(exitCode).toBe(0);
+    const nameIdx = plan!.claudeArgs.indexOf('--name');
+    const sentinelIdx = plan!.claudeArgs.indexOf('--');
+    expect(nameIdx).toBeGreaterThanOrEqual(0);
+    expect(sentinelIdx).toBeGreaterThanOrEqual(0);
+    expect(nameIdx).toBeLessThan(sentinelIdx);
+    // Sanity: the prompt body still rides after the sentinel.
+    expect(plan!.claudeArgs[sentinelIdx + 1]).toBe('fix the login bug');
+  });
 });
 
 describe.skipIf(SKIP_WINDOWS)('launch plan — parser errors', () => {

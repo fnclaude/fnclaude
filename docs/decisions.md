@@ -341,3 +341,40 @@ TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / f
 **Decision skips the warnings flush:** §9.3 explicitly bypasses `warnings.flush(process.stderr)` before the re-exec — the new fnclaude process re-evaluates its inputs and will re-queue any warning that still applies. Showing stale warnings from the previous invocation right before the new claude session boots would be confusing and is exactly what "silent" in "silent relaunch" rules out.
 
 **Revisit when:** an observable difference shows up between handoff-exec and cross-cwd-exec — same controlling TTY, same exit-code semantics, same one-extra-PID cost. If a divergence ever surfaces (say, controlling-terminal handoff differs because §8.5 went through a kill sequence and §9.3 didn't), the seam stays but the bodies split.
+
+---
+
+## 2026-05-28 — Centralised `insertFlagsBeforeSentinel` helper; all flag-append sites must use it
+
+**Decision:** Adding a flag pair (`--name X`, `--mcp-config <json>`, `--tmux`, `--append-system-prompt <body>`) to the claudeArgs passthrough goes through one helper — `insertFlagsBeforeSentinel(args, ...flags)` in [`packages/cli/src/argv/sentinel.ts`](../packages/cli/src/argv/sentinel.ts) — instead of being open-coded at each call site with `[...args, FLAG, value]`. The helper splices before the first `--` if present, else pushes at the end.
+
+**Context:** cli 2.0.0 shipped with three sites doing the naive append:
+
+- [`main.ts:288`](../packages/cli/src/main.ts) — auto-tmux `--tmux`
+- [`main.ts:317`](../packages/cli/src/main.ts) — auto-name `--name <slug>`
+- [`mcp/inject-config.ts:55`](../packages/cli/src/mcp/inject-config.ts) — self-MCP `--mcp-config <json>`
+
+When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), those appended pairs landed AFTER `--`, which claude reads as positional prompt content. The MCP server config became part of the user's prompt instead of being registered, so `fnc -- "say hi"` produced sessions with no MCP tools. A fourth site — [`prompts/load.ts:injectFragments`](../packages/cli/src/prompts/load.ts) — had ALREADY worked around this with the right pattern inline, but the pattern wasn't reused elsewhere.
+
+**Why a single helper instead of per-site fixes:** every place that appends a flag is conceptually the same operation: "add this flag pair to the launcher's pre-prompt argv segment". Spreading the splice-vs-push branch across four sites is how the regression slipped in originally — one branch maintainer remembered, three didn't. The centralisation is what makes adding a fifth site (e.g. a future `--brief` auto-toggle) impossible to get wrong: there's no append idiom at all, only `insertFlagsBeforeSentinel`. The existing `findPromptSentinel` already lives in the sentinel module, so co-locating the splice helper there matches the file's responsibility — "everything about the `--` boundary."
+
+**Revisit when:** a future change needs to insert flags AT a non-sentinel boundary (e.g. before a specific other flag for grouping), in which case the helper grows a `before` predicate parameter or splits into per-axis helpers. The current shape covers every present need.
+
+---
+
+## 2026-05-28 — §7.5 dispatch wires §7.3's `createJsonRpcServer`; tool-schema port lands here, not in §7.3
+
+**Decision:** The MCP subprocess ([`packages/cli/src/mcp/dispatch.ts`](../packages/cli/src/mcp/dispatch.ts)) routes every JSON-RPC line through [`createJsonRpcServer`](../packages/cli/src/mcp/jsonrpc-server.ts) (the §7.3 scaffold), and ships the four tool descriptions + JSON Schemas in a new module [`mcp/tool-schemas.ts`](../packages/cli/src/mcp/tool-schemas.ts) ported verbatim from Go canonical. `dispatch.ts:buildTools` returns a `Record<string, JsonRpcMcpTool>` (description + inputSchema + handler) keyed by MCP tool name, which feeds `createJsonRpcServer({tools, initializeResponse})` directly.
+
+**Context:** §7.3 landed the JSON-RPC scaffold (parse, route `initialize` / `tools/list` / `tools/call` / notifications, error envelopes) but the §7.5 wiring step that connects it to `runMcpServer`'s stdin loop was deferred — the placeholder loop only routed `tools/call` and returned `-32601 method not implemented yet (§7.3)` for `initialize`. cli 2.0.0 shipped with that placeholder still in place, which broke claude's MCP handshake: claude's first message is `initialize`, the subprocess errored, claude reported "Failed to connect" on the MCP server, the four tools never appeared in the session. Two questions surfaced as part of fixing it:
+
+1. **Where do the tool descriptions + JSON Schemas live?** Go canonical has them inline in `src/mcp.go` (one big `mcpTool` literal per tool). For TS, options were (a) inline in `dispatch.ts` (mirrors Go), (b) one schema-per-tool file, or (c) one `tool-schemas.ts` file with all four entries.
+2. **Should `buildTools` return an array (the §7.5 placeholder shape) or a record (what `createJsonRpcServer` wants)?**
+
+**Why one `tool-schemas.ts` file:** the descriptions are long and pure data — text that drives prompt UX, not logic. Inline in `dispatch.ts` would bury the wiring shape under three pages of description literals. Per-tool files would fragment a coherent reference table across four siblings with no logic to differentiate them. One file co-locates all four schemas as a single reference users can diff against Go canonical (`grep "var tool" src/mcp.go`) when updating either side. The `TOOL_SCHEMAS: Record<McpToolName, McpToolSchema>` shape makes the record-keyed `buildTools` natural and lets the type system catch a missing tool at compile time.
+
+**Why record over array for `buildTools`:** `createJsonRpcServer` reads tools by name in `tools/call` dispatch and iterates `Object.entries(tools)` for `tools/list`. The previous array shape forced an extra `.find(t => t.name === ...)` step everywhere. The record shape eliminates that, makes the test surface cleaner (`tools['fnc_restart']` instead of `tools.find(...)`), and matches the §7.3 contract directly. Existing `mcp-tools.test.ts` cases were rewritten for the record shape in the same change — five tests, mechanical update.
+
+**Tool-error envelope migration deferred:** Go canonical surfaces tool failures (e.g. socket unavailable) as MCP tool-level errors (`isError: true` inside the JSON-RPC `result`), NOT as JSON-RPC protocol errors. The current scaffold catches handler throws and emits `-32603 Internal error` instead. The `mcp-handoff-e2e.test.ts` "parent socket missing" test was updated to assert `-32603` for now; the §8 work that ports the canonical tool-level error envelope will migrate it off `-32603` into the result-content shape.
+
+**Revisit when:** Go canonical drifts on a tool description or schema (rare — these are stable enough to be considered API surface), or the §8 tool-error envelope work lands. Both will edit `tool-schemas.ts` and/or `dispatch.ts:buildTools`.
