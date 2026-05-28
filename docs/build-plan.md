@@ -172,7 +172,7 @@ End of §7. The four tools can now be implemented in parallel.
 
 Depends on §7 complete. All four tools are independent:
 
-🌿 **§8.1** **`fnc_restart`** — UUID validation, preserveArgs (nil deny), applyOverrides, build relaunch argv (`[magic] launchCWD --resume <uuid> [rest]`), stash + trigger. Design: [`design.md` §12–13], [`design.mcp.md` §4.1, §5].
+✅ 🌿 **§8.1** **`fnc_restart`** — UUID validation, preserveArgs (nil deny), applyOverrides, build relaunch argv (`[magic] launchCWD --resume <uuid> [rest]`), stash + trigger. `createRestartHandler` in `packages/cli/src/mcp/handlers/restart.ts` wires §8.5's `handoffTrigger` to the §7.7 dispatcher; live permission-mode capture is behind an injected reader (production wiring stubs it out — file IO lands with the live-capture commit). Same commit wires the already-built §8.4 `handleCopyToClipboard` into the dispatcher. Design: [`design.md` §12–13], [`design.mcp.md` §4.1, §5].
 
 🌿 **§8.2** **`fnc_switch_project`** — summary file write (`<base>/fnclaude-handoff-content-<16hex>.md`, mode 0600), preserveArgs (transfer denylist), applyOverrides, live permission-mode capture, build relaunch argv (`[magic] dest [rest] --name <name> @<summary>`), stash + trigger. Also: `never` mode → paste-flow response with clipboard write. Design: [`design.md` §12–13], [`design.mcp.md` §4.2].
 

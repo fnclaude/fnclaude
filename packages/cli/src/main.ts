@@ -22,6 +22,8 @@ import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
+import { createRestartHandler } from './mcp/handlers/restart.ts';
 import { injectMcpConfig } from './mcp/inject-config.ts';
 import { startMcpListener } from './mcp/listener.ts';
 import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch.ts';
@@ -416,11 +418,21 @@ if (!claudeBin.ok) {
 // without it once tools are wired (§8). design.mcp.md §2.1.
 if (mcpSocketPath !== undefined) {
   try {
-    // §7.7: wire per-tool dispatch onto each accepted socket. The
-    // handlers default to §8.1–§8.5 stubs until those land — the wire
-    // round-trips cleanly today; only the per-tool side effects (kill +
-    // re-exec, summary writes, clipboard, etc.) are deferred.
-    const dispatcher = createParentDispatcher({ handlers: stubParentHandlers });
+    // §7.7 + §8.x: wire per-tool dispatch onto each accepted socket.
+    // §8.1 (restart) and §8.4 (copy_to_clipboard) replace their stubs;
+    // §8.2/§8.3 still ride the stub fallback until they land.
+    const restartHandler = createRestartHandler({
+      origArgs: argv,
+      launchCWD: cwd,
+      trigger: handoffTrigger,
+    });
+    const dispatcher = createParentDispatcher({
+      handlers: {
+        ...stubParentHandlers,
+        restart: restartHandler,
+        copy_to_clipboard: handleCopyToClipboard,
+      },
+    });
     const listener = await startMcpListener({
       socketPath: mcpSocketPath,
       onConnection: dispatcher,
