@@ -43,6 +43,18 @@ interface RunOptions {
   extraEnv?: Record<string, string>;
 }
 
+/**
+ * Strip the §7.4 self-MCP `--mcp-config <json>` pair from a claudeArgs
+ * snapshot for tests asserting on the non-MCP-injection portion. The
+ * injection is unconditional in interactive mode and shouldn't force
+ * every magic-alias / short-flag assertion to repeat the pair.
+ */
+function stripMcpConfig(claudeArgs: readonly string[]): string[] {
+  const idx = claudeArgs.indexOf('--mcp-config');
+  if (idx < 0) return [...claudeArgs];
+  return [...claudeArgs.slice(0, idx), ...claudeArgs.slice(idx + 2)];
+}
+
 async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
   const proc = Bun.spawn(['node', BIN, ...args], {
     cwd: opts.cwd ?? tmpdir(),
@@ -139,32 +151,32 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — magic alias expansion', () => {
   test('opus → --model opus prepended', async () => {
     const { plan, exitCode } = await runPlan(['opus']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--model', 'opus']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--model', 'opus']);
     expect(plan!.usedNoopFallback).toBe(true);
   });
 
   test('opus + high → --model opus --effort high', async () => {
     const { plan, exitCode } = await runPlan(['opus', 'high']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--model', 'opus', '--effort', 'high']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--model', 'opus', '--effort', 'high']);
   });
 
   test('bare high (effort-without-model) → opus injected per §4.3', async () => {
     const { plan, exitCode } = await runPlan(['high']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--model', 'opus', '--effort', 'high']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--model', 'opus', '--effort', 'high']);
   });
 
   test('resume → --resume', async () => {
     const { plan, exitCode } = await runPlan(['resume']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--resume']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--resume']);
   });
 
   test('fork → --resume --fork-session', async () => {
     const { plan, exitCode } = await runPlan(['fork']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--resume', '--fork-session']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--resume', '--fork-session']);
   });
 });
 
@@ -172,13 +184,13 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — short-flag expansion', () => {
   test('-BV → --brief --verbose', async () => {
     const { plan, exitCode } = await runPlan(['-BV']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--brief', '--verbose']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--brief', '--verbose']);
   });
 
   test('-M plan → --permission-mode plan', async () => {
     const { plan, exitCode } = await runPlan(['-M', 'plan']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--permission-mode', 'plan']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--permission-mode', 'plan']);
   });
 
   test('mid-cluster shortRequired → error exit 2', async () => {
@@ -192,13 +204,13 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — prompt body preservation', () => 
   test('-- hello → passthrough has -- hello', async () => {
     const { plan, exitCode } = await runPlan(['--', 'hello']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--', 'hello']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--', 'hello']);
   });
 
   test('opus -- fix the bug → magic + sentinel + body all preserved', async () => {
     const { plan, exitCode } = await runPlan(['opus', '--', 'fix the bug']);
     expect(exitCode).toBe(0);
-    expect(plan!.claudeArgs).toEqual(['--model', 'opus', '--', 'fix the bug']);
+    expect(stripMcpConfig(plan!.claudeArgs)).toEqual(['--model', 'opus', '--', 'fix the bug']);
   });
 });
 
@@ -565,6 +577,51 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — env composition (§6.1)', () => {
     } finally {
       rmSync(xdg, { recursive: true, force: true });
     }
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — self-MCP --mcp-config injection (§7.4)', () => {
+  test('interactive session → --mcp-config injected with fnclaude server entry', async () => {
+    const { plan, exitCode } = await runPlan([]);
+    expect(exitCode).toBe(0);
+    const flagIdx = plan!.claudeArgs.indexOf('--mcp-config');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    const cfg = JSON.parse(plan!.claudeArgs[flagIdx + 1]!) as {
+      mcpServers: { fnclaude: { command: string; args: string[] } };
+    };
+    // command points at the bun runtime (process.execPath in the launcher).
+    expect(cfg.mcpServers.fnclaude.command).toContain('bun');
+    // args[0] is the absolute fnc bin script; args[1] is "mcp".
+    expect(cfg.mcpServers.fnclaude.args[0]).toContain('fnc.js');
+    expect(cfg.mcpServers.fnclaude.args[1]).toBe('mcp');
+  });
+
+  test('noop fallback → args include "--noop"', async () => {
+    const { plan, exitCode } = await runPlan([]);
+    expect(exitCode).toBe(0);
+    expect(plan!.usedNoopFallback).toBe(true);
+    const flagIdx = plan!.claudeArgs.indexOf('--mcp-config');
+    const cfg = JSON.parse(plan!.claudeArgs[flagIdx + 1]!) as {
+      mcpServers: { fnclaude: { args: string[] } };
+    };
+    expect(cfg.mcpServers.fnclaude.args).toContain('--noop');
+  });
+
+  test('non-noop launch → args do NOT include "--noop"', async () => {
+    const { plan, exitCode } = await runPlan(['/tmp']);
+    expect(exitCode).toBe(0);
+    expect(plan!.usedNoopFallback).toBe(false);
+    const flagIdx = plan!.claudeArgs.indexOf('--mcp-config');
+    const cfg = JSON.parse(plan!.claudeArgs[flagIdx + 1]!) as {
+      mcpServers: { fnclaude: { args: string[] } };
+    };
+    expect(cfg.mcpServers.fnclaude.args).not.toContain('--noop');
+  });
+
+  test('print mode (-p) → no --mcp-config injected (gate per design.md §29)', async () => {
+    const { plan, exitCode } = await runPlan(['-p', '--', 'hello']);
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--mcp-config');
   });
 });
 

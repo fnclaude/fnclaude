@@ -236,3 +236,19 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 **Context:** Go's `*bool` is the canonical way to distinguish "field not set" from "field explicitly false" — nil pointer vs. `&false`. The Go test uses a `ptrBool(b bool) *bool` helper to construct these. TS has the same need (preserve vs. strip-only vs. strip-and-append) but has a native idiom for it: an optional field, where `undefined` means "not set" and the runtime distinguishes `undefined` / `true` / `false` directly.
 
 **Why this:** native idiom beats faux-pointer wrappers. Caller writes `{ brief: true }` / `{ brief: false }` / `{}` instead of `{ brief: ptrBool(true) }` etc. The branching inside `applyBoolOverride` is the same shape either way (`if (b === undefined) return …`), so there's no behavioral cost — only readability gain.
+
+---
+
+## 2026-05-27 — Self-MCP `--mcp-config` uses `process.execPath` + script path (§7.4)
+
+**Decision:** The injected MCP config sets `command` to `process.execPath` (the bun binary that's running fnclaude) and `args[0]` to `realpathSync(process.argv[1])` (the fnc.js script). The Go canonical uses a single resolved exe path; the TS port needs the two-element shape.
+
+**Context:** Go ships a single self-contained binary, so `filepath.EvalSymlinks(os.Executable())` gives one path that's both runtime and program. The TS port's `fnc.js` is a script — running just `fnc.js` would invoke the `#!/usr/bin/env node` shebang and re-preflight into a fresh process tree (correct but wasteful), and using the `node` binary directly would skip the bun-only runtime the MCP server needs.
+
+**Why this (vs. just `fncBin`):** the subprocess `claude` spawns receives this argv literally; whatever `command` resolves to is what runs. Setting `command=process.execPath` (bun) and feeding `fncBin` as the first arg lets bun execute the script via its CLI shape (`bun /abs/fnc.js mcp`). The same shape works under `npm i -g`, `mise exec bun -- fnc`, and the in-repo `bun packages/cli/bin/fnc.js` dev path — all three resolve `process.execPath` to whichever bun is hosting the launcher.
+
+**Why `realpathSync` on `process.argv[1]`:** npm installs link the bin via `.bin/fnc → ../@fnclaude/cli/bin/fnc.js`. `process.argv[1]` is the symlink path; realpath resolves to the actual on-disk script. Same reasoning as the §5.5 prompts dir + §19 noop template seed — both already realpath here.
+
+**Why skip when `argv[1] === ''`:** vanishingly rare (would need fnclaude invoked from an embedded runtime that doesn't populate argv[1]) but the alternative — emitting an empty `args[0]` — would silently produce a broken MCP config. Skipping the injection lets claude launch normally without MCP tools, which degrades gracefully.
+
+**Revisit when:** the TS rewrite either bundles into a single binary (via `bun build --compile`) or moves to a model where the script path is reliably the entry, at which point both `bunExec` and `fncBin` could collapse back to one path like Go.

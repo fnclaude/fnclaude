@@ -20,6 +20,7 @@ import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { injectMcpConfig } from './mcp/inject-config.ts';
 import { startMcpListener } from './mcp/listener.ts';
 import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch.ts';
 import { computeSocketPath } from './mcp/socket-path.ts';
@@ -33,7 +34,7 @@ import { resolveTemplateSourcePath } from './noop/template-source.ts';
 import { ensureCwd } from './path/ensure-cwd.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
 import { injectFragments, loadFragments } from './prompts/load.ts';
-import { selectFragments } from './prompts/select.ts';
+import { isInteractiveSession, selectFragments } from './prompts/select.ts';
 import { buildCloneUrl, computeCloneDestination } from './repo/clone.ts';
 import { cloneRepo } from './repo/clone-exec.ts';
 import { runGhApi, runGhClone } from './repo/gh-runner.ts';
@@ -358,6 +359,25 @@ const childEnv = composeEnv({
   handoff: config.autoHandoff,
   socket: mcpSocketPath,
 });
+
+// Self-MCP --mcp-config injection (§7.4). Skipped when there's no socket
+// to dial back to (win32 — no listener), and gated to interactive
+// sessions per design.md §29. The fnc bin is realpath'd so symlinked
+// installs (npm's .bin/) resolve to the actual layout; process.execPath
+// is the bun runtime that will exec the subprocess script. Decision: bun
+// + script-path is a two-element shape because fnc.js is a bun script,
+// not a self-contained binary — see decisions.md 2026-05-27 entry.
+if (mcpSocketPath !== undefined) {
+  const binPathForMcp = process.argv[1] ?? '';
+  const fncBin = binPathForMcp !== '' ? realpathSync(binPathForMcp) : '';
+  claudeArgs = injectMcpConfig({
+    claudeArgs,
+    bunExec: process.execPath,
+    fncBin,
+    noop: usedNoopFallback,
+    interactive: isInteractiveSession(claudeArgs),
+  });
+}
 
 // Internal test hook: dump the launch plan as JSON and exit 0 BEFORE spawning
 // claude. Lets e2e tests verify the full pipeline composition (cwd + final
