@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { readArgv } from './argv/intake.ts';
+import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 
 const argv = readArgv();
 
@@ -19,6 +20,17 @@ const argv = readArgv();
 // needing a fake-claude harness. Not user-facing.
 if (process.env.FNC_INTERNAL_DUMP_ARGV === '1') {
   process.stdout.write(`${JSON.stringify(argv)}\n`);
+  process.exit(0);
+}
+
+if (wantsHelp(argv)) {
+  process.stdout.write(helpText);
+  process.exit(0);
+}
+
+if (wantsVersion(argv)) {
+  const version = await getVersion();
+  process.stdout.write(`fnc ${version}\n`);
   process.exit(0);
 }
 
