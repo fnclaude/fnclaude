@@ -452,17 +452,44 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
 });
 
 describe.skipIf(SKIP_WINDOWS)('launch plan — env composition (§6.1)', () => {
-  test('no [exec.env] and no auto.handoff → dump.env is empty', async () => {
-    // Use an empty XDG_CONFIG_HOME so no config.toml is found.
+  test('no [exec.env] and no auto.handoff → only FNC_SOCKET present', async () => {
+    // Use an empty XDG_CONFIG_HOME so no config.toml is found. FNC_SOCKET
+    // is the only key fnclaude injects unconditionally on Unix (§7.2);
+    // FNCLAUDE_HANDOFF + exec.env stay absent when their inputs are.
     const emptyXdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-empty-xdg-'));
     try {
       const { plan, exitCode } = await runPlan([], {
         extraEnv: { XDG_CONFIG_HOME: emptyXdg },
       });
       expect(exitCode).toBe(0);
-      expect(plan!.env).toEqual({});
+      expect(Object.keys(plan!.env).sort()).toEqual(['FNC_SOCKET']);
+      // Sanity: path looks like the §7.1 formula (base/fnclaude-mcp-<pid>.sock).
+      expect(plan!.env.FNC_SOCKET).toMatch(/\/fnclaude-mcp-\d+\.sock$/);
     } finally {
       rmSync(emptyXdg, { recursive: true, force: true });
+    }
+  });
+
+  test('FNC_SOCKET path honors XDG_RUNTIME_DIR', async () => {
+    // When XDG_RUNTIME_DIR is set, the socket path uses it as base. The
+    // formula is verified in unit tests; this just confirms the e2e
+    // pipeline plumbs the runtime env through to computeSocketPath.
+    const xdgRuntime = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-runtime-'));
+    const emptyXdgCfg = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-cfg-'));
+    try {
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: {
+          XDG_CONFIG_HOME: emptyXdgCfg,
+          XDG_RUNTIME_DIR: xdgRuntime,
+        },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.env.FNC_SOCKET).toMatch(
+        new RegExp(`^${xdgRuntime.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/fnclaude-mcp-\\d+\\.sock$`),
+      );
+    } finally {
+      rmSync(xdgRuntime, { recursive: true, force: true });
+      rmSync(emptyXdgCfg, { recursive: true, force: true });
     }
   });
 

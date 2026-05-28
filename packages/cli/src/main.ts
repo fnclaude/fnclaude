@@ -19,6 +19,8 @@ import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts
 import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { startMcpListener } from './mcp/listener.ts';
+import { computeSocketPath } from './mcp/socket-path.ts';
 import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
@@ -330,14 +332,29 @@ if (fragmentNames.length > 0) {
   }
 }
 
+// Compute the MCP socket path. On Unix this also feeds FNC_SOCKET into
+// the child env so the MCP subprocess (which claude spawns per the
+// injected --mcp-config) knows where to dial. On win32, AF_UNIX over
+// Bun.listen({ unix }) isn't supported yet — skip the socket entirely
+// so the launcher still works without self-MCP.
+let mcpSocketPath: string | undefined;
+let mcpListenerStop: (() => Promise<void>) | undefined;
+if (process.platform !== 'win32') {
+  mcpSocketPath = computeSocketPath({
+    env: process.env,
+    pid: process.pid,
+    platform: process.platform,
+  });
+}
+
 // Compose the child env: process.env → [exec.env] from config → FNCLAUDE_HANDOFF
-// (and FNC_SOCKET once §7 lands). Later entries win against same-name earlier
-// entries per design.md §5.
+// → FNC_SOCKET. Later entries win against same-name earlier entries per
+// design.md §5.
 const childEnv = composeEnv({
   processEnv: process.env,
   execEnv: config.execEnv,
   handoff: config.autoHandoff,
-  socket: undefined, // §7 will populate this with the AF_UNIX socket path
+  socket: mcpSocketPath,
 });
 
 // Internal test hook: dump the launch plan as JSON and exit 0 BEFORE spawning
@@ -369,6 +386,27 @@ if (!claudeBin.ok) {
   process.exit(127);
 }
 
+// Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
+// subprocess claude launches per --mcp-config can dial back over
+// $FNC_SOCKET. Bind failure is fatal per Go canonical — we can't run
+// without it once tools are wired (§8). design.mcp.md §2.1.
+if (mcpSocketPath !== undefined) {
+  try {
+    const listener = await startMcpListener({
+      socketPath: mcpSocketPath,
+      onConnection: () => {
+        // §7.7 wires per-call dispatch onto each accepted socket. Until
+        // then, dials just open and idle; no tools fire yet (§8), so
+        // claude has no reason to dial in the interim.
+      },
+    });
+    mcpListenerStop = listener.stop;
+  } catch (err) {
+    process.stderr.write(`fnclaude: ${(err as Error).message}\n`);
+    process.exit(2);
+  }
+}
+
 // Fabricate the cwd tree if missing — Bun.spawn would otherwise return ENOENT
 // blaming the claude binary. The cleanup() unlinks any fabricated dirs right
 // after spawn, since the kernel holds the cwd by inode reference once the
@@ -379,22 +417,32 @@ if (!ensured.ok) {
   process.exit(2);
 }
 
-const proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
-  cwd,
-  env: childEnv,
-  stdin: 'inherit',
-  stdout: 'inherit',
-  stderr: 'inherit',
-});
-
-ensured.cleanup();
-
 // Kernel routes Ctrl-C to the whole foreground pgrp; claude handles its
 // own SIGINT. Swallow it here so fnc survives to read claude's exit code.
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
 
-const exitCode = await proc.exited;
+let exitCode: number;
+try {
+  const proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
+    cwd,
+    env: childEnv,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+
+  ensured.cleanup();
+
+  exitCode = await proc.exited;
+} finally {
+  // Stop the MCP listener + unlink the socket file even if spawn or
+  // proc.exited throws. design.mcp.md §7 — socket file cleanup is the
+  // parent's job.
+  if (mcpListenerStop !== undefined) {
+    await mcpListenerStop();
+  }
+}
 
 // Flush accumulated warnings to stderr now that claude has exited and the
 // user is back at their shell prompt where they have time to read them.
