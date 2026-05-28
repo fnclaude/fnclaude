@@ -57,6 +57,27 @@ monorepo shape.
 **Every fix or feature PR must include a test that would fail without the
 code change.**
 
+### Reproduce reported bugs in the test suite first
+
+**When Tom describes a bug, or you find one referenced in an issue, the
+FIRST action is to land a committed test that reproduces it** — not a
+shell command you ran once, not a theory, not a fix proposal. A
+regression assertion that fails in CI for the right reason. Investigation
+follows.
+
+This is upstream of the "write the failing test first" workflow below.
+That rule covers the *implementation phase* of a known bug; this rule
+covers the *intake phase*. The reproducer's size doesn't matter — one
+assertion in an existing file, or a new e2e harness that launches a
+subprocess and inspects its protocol output, both count. What matters
+is that the bug becomes visible in CI before you touch the code that's
+supposed to fix it.
+
+If reproduction needs new infrastructure to be observable (e.g. starting
+the MCP server as a subprocess and verifying the JSON-RPC handshake),
+build that infrastructure as part of the repro. The harness itself is
+regression-prevention work, equally valuable to the fix.
+
 Auto-merge is enabled on every non-draft PR (`.github/workflows/auto-merge.yml`);
 it fires the moment the `verify` status check is green. Without TDD, a PR
 can land before any test captures the bug behavior — which means future
