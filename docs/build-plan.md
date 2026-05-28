@@ -132,7 +132,7 @@ End of §5. Argv is complete except for self-MCP injection (handled in §7).
 
 Depends on §2–§5.
 
-⏱ **§6.1** **Env composition** — `process.env` + `[exec.env]` from config + handoff vars (`FNC_SOCKET`, `FNCLAUDE_HANDOFF`). Today main.ts inherits `process.env` only. Design: [`design.md` §5].
+✅ ⏱ **§6.1** **Env composition** — `process.env` + `[exec.env]` from config + handoff vars (`FNC_SOCKET`, `FNCLAUDE_HANDOFF`). Ships in `packages/cli/src/launch/compose-env.ts`; main.ts wires it as `composeEnv({processEnv, execEnv: config.execEnv, handoff: config.autoHandoff, socket: mcpSocketPath})` before `Bun.spawn`. Design: [`design.md` §5].
 
 ✅ ⏱ **§6.2** **PATH check for claude** — `findClaude({pathEnv})` walks PATH left-to-right, errors with a clean "claude not found" pointer (exit 127). Spawn uses the resolved absolute path.
 
@@ -206,7 +206,7 @@ End of §9. Cross-cwd resume works on Linux + Windows + macOS (per PRD item #12)
 
 Depends on the relevant features. Each item is independent.
 
-🌿 **§10.1** **Shell completions** — three sub-items, fully parallel:
+✅ 🌿 **§10.1** **Shell completions** — three sub-items, fully parallel:
    ✅ zsh `_fnclaude` (in `packages/cli/completions/`)
    ✅ bash `fnclaude.bash`
    ✅ fish `fnclaude.fish`
