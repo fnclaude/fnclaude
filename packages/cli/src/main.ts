@@ -20,6 +20,7 @@ import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts'
 import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
 import { findPromptSentinel, promptBody } from './argv/sentinel.ts';
+import { ensureCwd } from './path/ensure-cwd.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
 import { injectFragments, loadFragments } from './prompts/load.ts';
 import { selectFragments } from './prompts/select.ts';
@@ -228,12 +229,24 @@ if (process.env.FNC_INTERNAL_DUMP_PLAN === '1') {
   process.exit(0);
 }
 
+// Fabricate the cwd tree if missing — Bun.spawn would otherwise return ENOENT
+// blaming the claude binary. The cleanup() unlinks any fabricated dirs right
+// after spawn, since the kernel holds the cwd by inode reference once the
+// child has chdir'd (which posix_spawn does before returning to us).
+const ensured = ensureCwd(cwd);
+if (!ensured.ok) {
+  process.stderr.write(`fnclaude: ${ensured.error}\n`);
+  process.exit(2);
+}
+
 const proc = Bun.spawn(['claude', ...claudeArgs], {
   cwd,
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
 });
+
+ensured.cleanup();
 
 // Kernel routes Ctrl-C to the whole foreground pgrp; claude handles its
 // own SIGINT. Swallow it here so fnc survives to read claude's exit code.
