@@ -180,7 +180,7 @@ Depends on §7 complete. All four tools are independent:
 
 ✅ **§8.4** **`fnc_copy_to_clipboard`** — backend detection: `wl-copy` → `xclip` → `xsel` → `pbcopy` → `clip.exe`. Returns `done` with `clipboard_ok` flag. Pure handler module (`packages/cli/src/mcp/handlers/clipboard.ts` + `clipboard-backends.ts`); wiring into §7.7's parent dispatcher is Wave 2. Design: [`design.md` §25], [`design.mcp.md` §4.4].
 
-🌿 **§8.5** **Handoff trigger + kill sequence + re-execution** — `Triggered` mechanism (channel/promise), SIGTERM → 200ms → SIGKILL on Unix; `TerminateProcess` equivalent on Windows. After claude exits, process image replacement: `execve` on Unix, new child + wait on Windows. Design: [`design.mcp.md` §6].
+✅ 🌿 **§8.5** **Handoff trigger + kill sequence + re-execution** — `createHandoffTrigger()` + `handoffTrigger` singleton in `packages/cli/src/handoff/trigger.ts` (first-stash-wins; idempotent `fire()`; multi-awaiter-safe). `killAndExec` in `kill-and-exec.ts` runs SIGTERM → 200ms wait → SIGKILL (escalation skipped if proc already exited) → await `proc.exited` → injected `execve`. Production `defaultExecve` in `awaiter.ts` uses `Bun.spawn(process.execPath, [bin, ...argv])` + `process.exit(<child>)` since Bun has no native execve binding (deviation logged in `decisions.md`). `startHandoffAwaiter` is the parent-side glue; main.ts arms it as a void side-promise after `Bun.spawn`. Win32 collapses to a single hard-kill signal. e2e for full restart/switch flows deferred to §8.1/§8.2.
 
 Note: §8.5 is technically a prerequisite for §8.1–§8.3 firing end-to-end, but can be developed in parallel with the tool implementations themselves (they just won't trigger anything until §8.5 lands). Group them at the same dispatch boundary.
 

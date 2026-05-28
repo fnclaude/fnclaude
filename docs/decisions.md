@@ -252,3 +252,28 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 **Why skip when `argv[1] === ''`:** vanishingly rare (would need fnclaude invoked from an embedded runtime that doesn't populate argv[1]) but the alternative — emitting an empty `args[0]` — would silently produce a broken MCP config. Skipping the injection lets claude launch normally without MCP tools, which degrades gracefully.
 
 **Revisit when:** the TS rewrite either bundles into a single binary (via `bun build --compile`) or moves to a model where the script path is reliably the entry, at which point both `bunExec` and `fncBin` could collapse back to one path like Go.
+
+---
+
+## 2026-05-28 — Process image replacement via `Bun.spawn` (no native execve)
+
+**Decision:** §8.5's kill-and-exec sequence finishes by spawning a child (`Bun.spawn(process.execPath, [<bin>, ...stashedArgv])`), awaiting it, and `process.exit`ing with the child's code — instead of true `execve`-style in-place process image replacement. Implementation: `defaultExecve` in [`handoff/awaiter.ts`](../packages/cli/src/handoff/awaiter.ts).
+
+**Context:** Go canonical's handoff finishes via `syscall.Exec` (the Unix `execve` syscall) — same PID, same controlling terminal, fresh address space, deferred cleanup actions skipped. The parent process *becomes* the new fnclaude invocation; the kernel never reaps a second child. [`design.mcp.md` §6.2](design.mcp.md) calls out the exact semantics.
+
+TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / fork (all of which keep the parent alive). Bun's `process` module mirrors Node's; `Bun.spawn` is the closest stable primitive. Options considered:
+
+1. **`Bun.spawn` child + `process.exit(<code>)` after the child exits** — what we shipped. Parent stays alive briefly to await the child, then exits with the child's code. From the user's shell prompt POV, the wrapping is invisible: input + output go through inherited stdio; the only observable difference is a brief moment where two fnclaude PIDs co-exist instead of one PID swapping its image.
+2. **FFI bindings to libc `execve`** — possible via Bun's native FFI (`bun:ffi`), but fragile cross-platform: glibc / musl ABIs differ, macOS / Windows ABIs differ, and the call surface is small enough that a binding maintained for one syscall isn't worth the platform-matrix support cost.
+3. **A separate compiled helper binary** — write a tiny C / Zig launcher that calls execve and ship it alongside fnc. Same maintenance cost objection as the FFI route, plus a build / packaging story.
+
+**Why option 1:** the user-visible difference between true execve and spawn-then-exit is essentially nil — both look like "fnc exits with code X" from the shell. The internal differences (parent stays around for the child's lifetime, controlling terminal handoff is via inheritance rather than the kernel transparently routing it to the new image, deferred cleanups in main.ts DO run) are tolerable for the handoff flow specifically because:
+- The MCP listener's `mcpListenerStop` is in a `try/finally` that runs before we'd reach the awaiter's re-exec anyway (the awaiter blocks on `proc.exited` first; once that resolves, the finally fires, then the awaiter's exec). The new child binds a new socket at its own PID.
+- The warnings buffer flush at the end of main.ts won't reach the user under handoff (the relaunch path replaces the shell view); same as Go canonical's behavior, where `defer` actions are skipped by execve.
+- Controlling-terminal continuity is preserved by stdio inheritance — the child sees the same TTY fds.
+
+**Cost:** one extra PID alive briefly on every handoff. Exit code propagation requires `process.exit(code)` because the parent's natural exit-code-from-claude path (`exitCode = await proc.exited` then `process.exit(exitCode)`) is short-circuited by the awaiter. Documented + accepted.
+
+**Why test seam injection:** `KillAndExecArgs.execve` and `StartHandoffAwaiterArgs.execve` are both injectable so unit tests can substitute a recording stub without actually re-execing. Production wires `defaultExecve`; tests pass a callback that captures the argv.
+
+**Revisit when:** Bun grows a native `process.execve` (tracked nowhere yet) or the brief two-PID window during handoff causes an observable bug — e.g. a tmux pane double-counts fnc PIDs, or a shell tab-tracking integration loses the connection. Neither has surfaced; we'd hear about it during real-session use.
