@@ -216,7 +216,7 @@ Depends on the relevant features. Each item is independent.
 
 ✅ **§10.3** **Warnings deferred-flush** — accumulate warnings during the run; flush to stderr AFTER claude exits and the user is back at their shell. Skip on silent-relaunch paths. Design: [`design.md` §27].
 
-🌿 **§10.4** **`[exec.env]` config injection** — config file's `[exec.env]` table appended to claude's child env. Design: [`design.md` §5].
+✅ 🌿 **§10.4** **`[exec.env]` config injection** — already shipped via §6.1's `composeEnv` (see [`launch/compose-env.ts`](../packages/cli/src/launch/compose-env.ts)). `config.execEnv` is layered between `process.env` and the handoff/socket vars; the `launch-plan.test.ts` "env composition" block exercises the wiring end-to-end. No additional work — marking done as the §10.2 polish pass crossed it off.
 
 🌿 **§10.5** **`--no-tmux` escape hatch** — already covered in §5.4 (auto-tmux gating); make sure the flag is also consumed (not forwarded to claude).
 
