@@ -162,7 +162,7 @@ Depends on §6. This is the big chunk before any in-session feature can work.
 
 ✅ **§7.6** **Request/Response wire format** — `packages/cli/src/mcp/wire.ts` ships `dialAndCall({socketPath, request, dialTimeoutMs=10000, callTimeoutMs=10000})` with newline-delimited JSON over `Bun.connect({ unix })`. One request/response per connection; rejects on dial timeout, call timeout, malformed JSON, or any socket error. Design: [`design.mcp.md` §3].
 
-⏱ **§7.7** **Per-tool dispatch on parent side** — accept connection, read request, route by `op`, write response, close. Each connection in its own concurrency unit. Design: [`design.mcp.md` §2.3].
+✅ **§7.7** **Per-tool dispatch on parent side** — `packages/cli/src/mcp/parent-dispatch.ts` ships `createParentDispatcher({ handlers })` returning the `onConnection` callback. Each accepted dial buffers until `\n`, parses the line as a WireRequest, routes by `op` to one of the four handlers (`stubParentHandlers` placeholders today; §8.1–§8.5 replace them), writes the WireResponse as one ndjson line, and closes. Concurrency is per-socket — handler chains run as floating Promises so a slow handler can't block sibling dispatches. Malformed JSON / unknown op / handler throw all surface as `{ action: 'error', error: … }` responses, never crash the listener. Wired into main.ts. Design: [`design.mcp.md` §2.3].
 
 End of §7. The four tools can now be implemented in parallel.
 
