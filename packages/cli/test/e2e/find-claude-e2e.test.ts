@@ -22,24 +22,24 @@ describe.skipIf(SKIP_WINDOWS)('fnc — claude not on PATH', () => {
   test('PATH points at a dir with no `claude` → exit 127 with clean error', async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), 'fnc-e2e-no-claude-'));
     try {
-      // Use a PATH that contains ONLY this empty dir. node still needs to be
-      // resolvable by the parent shell that spawned bun test, but we're
-      // invoking via Bun.spawn with an absolute node path... actually we use
-      // the `node` binary name. Need to keep something on PATH that contains
-      // node. We'll use the real node-containing dir alongside the empty one;
-      // findClaude looks specifically for 'claude' and won't find it in
-      // either.
-      const proc = Bun.spawn(['node', BIN, '--', 'hello'], {
+      // Invoke via bun directly (skipping the node→bun preflight in bin/fnc.js)
+      // so we don't need node on PATH in CI runners. The findClaude path under
+      // test runs identically in both modes — it walks env.PATH for `claude`,
+      // which is what this test isolates. Use process.execPath (absolute path
+      // to the running bun) so Bun.spawn doesn't have to resolve the binary
+      // via env.PATH — which we deliberately restrict below. Bun strips `--`
+      // from script argv, so hand args via FNC_ARGS_JSON to match what the
+      // node preflight would have produced.
+      const proc = Bun.spawn([process.execPath, BIN], {
         env: {
           ...process.env,
-          // Resolve node's dir so the spawn itself works, plus our empty dir.
-          // claude must NOT be in either dir.
-          PATH: `${emptyDir}:/usr/bin:/bin`,
+          // Restricted env.PATH so findClaude can't possibly resolve claude.
+          PATH: emptyDir,
           // Disable auto-name; otherwise --help / --version are the only
           // non-spawn paths and we want the spawn path to be reached.
           FNC_INTERNAL_DISABLE_AUTONAME: '1',
-          // Use a path that exists so the resolver doesn't error.
-          // Run from /tmp so the cwd is valid.
+          // Args land in main.ts's readArgv() via this env var when set.
+          FNC_ARGS_JSON: JSON.stringify(['--', 'hello']),
         },
         cwd: '/tmp',
         stdin: 'ignore',
@@ -51,7 +51,11 @@ describe.skipIf(SKIP_WINDOWS)('fnc — claude not on PATH', () => {
         new Response(proc.stderr).text(),
       ]);
       const exitCode = await proc.exited;
-      expect(exitCode).toBe(127);
+      if (exitCode !== 127) {
+        // Surface stderr in the failure message so CI failures point at the
+        // actual problem (e.g. an earlier exit before findClaude is reached).
+        throw new Error(`expected exit 127, got ${exitCode}\nstderr: ${stderr}`);
+      }
       expect(stderr).toMatch(/claude.*not.*found|PATH/i);
       expect(stdout).toBe('');
     } finally {

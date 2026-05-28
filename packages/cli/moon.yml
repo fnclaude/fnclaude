@@ -17,10 +17,12 @@ tasks:
       - 'tsconfig.json'
       - 'package.json'
   build:
+    # No actual build step today — Bun executes TypeScript directly via the
+    # bin shim. Restore an `outputs:` declaration here (e.g. `- 'dist'`) the
+    # moment we add a bundling step that emits artifacts; until then,
+    # declaring outputs that don't get created fails the task runner.
     command: 'bun run build'
     inputs:
       - 'src/**/*'
       - 'tsconfig.json'
       - 'package.json'
-    outputs:
-      - 'dist'
