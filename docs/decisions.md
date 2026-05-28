@@ -198,3 +198,21 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 **Why no SDK unit test:** `sdkLlmCall` is a six-line wrapper around `client.messages.create`. A mocked-SDK unit test would assert "we called the SDK with the args we just typed" — tautological. The e2e dispatch-shape test (verify `claude -p` is NOT spawned when key is set) gives real wiring coverage; the SDK itself is tested by Anthropic. If the wrapper grows logic (retry shaping, response post-processing beyond block concatenation), revisit.
 
 **Revisit when:** the SDK's transitive dep weight becomes a concern for cold-start (measured ~25ms to `import @anthropic-ai/sdk` under Bun on this machine — acceptable for now; if it grows, switch to a dynamic `import()` gated on `ANTHROPIC_API_KEY` so the SDK only loads on the fast path), or we want streaming for some other launcher feature.
+
+---
+
+## 2026-05-27 — Bun.Terminal switch for cross-cwd resume capture (§9.0)
+
+**Decision:** When `fnc` runs on a POSIX system with TTY stdin + stdout, it spawns `claude` via `Bun.spawn(..., { terminal: new Bun.Terminal({...}) })` and tees the PTY's `data` callback to `process.stdout`. User stdin is set to raw mode and forwarded to `terminal.write()`; SIGWINCH on the launcher resizes the PTY. On Windows or when either stdio stream isn't a TTY (piped, e2e tests, CI), the launcher falls back to the previous `Bun.spawn` with `stdin/stdout/stderr: 'inherit'`.
+
+**Context:** §9.1+ wants a 64 KB ring buffer scanning PTY output for the "To resume, run: cd <dir> && claude --resume <uuid>" hint so a cross-cwd resume can silently relaunch fnc in the new directory. The inherit shape gives no parent-side visibility into child output, so the ring buffer needs the PTY tee in place first — that's the entire purpose of this commit. Detection + relaunch land in §9.1/§9.2/§9.3.
+
+**Why this (vs. always-inherit):** there's no other way to read what claude wrote. `Bun.Terminal` is the only POSIX-stable Bun-native PTY primitive (the alternatives — `node-pty` and `bun-pty` — were rejected in [`research/bun-pty-spawn.md`](research/bun-pty-spawn.md)).
+
+**Why fall back on Windows + non-TTY:** Bun.Terminal is documented POSIX-only as of 1.3.14. Non-TTY launches (piped stdin, e2e harness, CI) have no foreground terminal to forward and no shell prompt to return control to; raw-mode forwarding is meaningless and `setRawMode` would throw. The inherit branch covers both cleanly and keeps the existing test surface working unchanged.
+
+**Why no Ctrl-C byte interception:** [oven-sh/bun#25779](https://github.com/oven-sh/bun/issues/25779) (PTY `write("\x03")` not delivering SIGINT through the PGRP) was open at research time but has since been fixed in Bun 1.3.14. Verified empirically before this change: a 10s `sleep` under `Bun.Terminal` exits in ~500ms with trap code 42 when `terminal.write("\x03")` fires. The byte-loop SIGINT/SIGQUIT/SIGTSTP intercepts in `research/bun-pty-spawn.md` are no longer needed; raw stdin forwards straight to `terminal.write`.
+
+**Why no unit tests:** `Bun.Terminal` doesn't mock cleanly — it allocates a real kernel PTY. The dump-plan e2e tests (`FNC_INTERNAL_DUMP_PLAN=1`) short-circuit before the spawn block and stay green; `find-claude-e2e` exercises the inherit fallback path (its stdio is piped, so `useTerminal` is false) and still exits 127 cleanly. Manual smoke: launch `fnc` from an interactive shell — output renders, Ctrl-C lands on claude, resize works.
+
+**Revisit when:** Bun.Terminal lands on Windows, or §9.1 lands the ring buffer (which will extract this spawn block into its own module).
