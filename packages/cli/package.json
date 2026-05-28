@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "lint": "echo 'lint stub (cli, rewrite window)' && exit 0",
-    "test": "echo 'tests skipped during rewrite window' && exit 0",
+    "test": "bun test",
     "build": "echo 'no build step (bun runs ts directly)' && exit 0"
   },
   "publishConfig": {

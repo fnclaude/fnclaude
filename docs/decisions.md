@@ -18,15 +18,30 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
-## 2026-05-27 — No Node→Bun preflight, single bun-shebang shim
+## 2026-05-27 — Node→Bun preflight reinstated (FNC_ARGS_JSON for argv survival)
 
-**Decision:** `packages/cli/bin/fnc.js` is a one-line `#!/usr/bin/env bun` shim that imports `../src/main.ts`. The previous preflight (Node-shebang + decide()-then-reexec-under-Bun) is gone.
+**Decision:** `packages/cli/bin/fnc.js` is a Node-shebang preflight (`#!/usr/bin/env node`). When invoked under Node, it serialises `process.argv.slice(2)` to JSON, sets `FNC_ARGS_JSON`, and re-execs itself under Bun. When the same file loads under Bun (post-reexec, or when invoked directly via `bun fnc.js`), it imports `../src/main.ts`. `src/argv/intake.ts`'s `readArgv()` prefers `FNC_ARGS_JSON` over `process.argv` when set.
 
-**Context:** The previous shim existed because `npm i -g @fnclaude/cli` could link under either Node or Bun depending on what npm itself was running under. The preflight detected the runtime mismatch and re-execed under Bun, passing argv via the `FNC_ARGS_JSON` env var to dodge Bun's `--`-stripping bug.
+**Context:** Originally (entry above this one, since revised) we tried to ship a single bun-shebang shim with no preflight, on the optimistic assumption that bun had stopped stripping `--` from script argv. Empirical check on bun 1.3.14 disproved that:
 
-**Why this:** During the rewrite window we're installing the dev version via a direct symlink in `~/.local/bin`, not via npm-global. The symlink target is invoked directly under Bun (per the shebang). The complexity of the preflight was real protection for a case that doesn't apply right now. When we get back to npm publishing, this decision likely gets revisited — but the right shape then may not be the same preflight either (Bun's `bun install -g` is the cleaner story today).
+```
+$ bun probe.js -- "say hi" foo
+process.argv: ["bun","probe.js","say hi","foo"]   # `--` GONE
+```
 
-**Revisit when:** preparing for the first npm publish after the rewrite. Decide then whether to reinstate a preflight or require Bun on the install side.
+vs. Node:
+```
+$ node probe.js -- "say hi" foo
+process.argv: ["node","probe.js","--","say hi","foo"]   # `--` SURVIVES
+```
+
+`fnc -- <prompt>` is a load-bearing PRD feature — the inline-prompt syntax. Losing `--` corrupts every prompt-passing invocation.
+
+**Why this:** the Go-port era's Node-shebang preflight is the proven cross-platform fix. Node sees the unstripped argv, serialises it via env, re-execs under Bun. Bun's later argv-strip doesn't matter because main.ts reads `FNC_ARGS_JSON` first. Adds ~30 ms cold-start (one node startup). Worth it for correctness.
+
+Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS need different hacks — preflight is uniform. A bun-only shim with a custom sentinel (`+` instead of `--`) would diverge from claude's CLI convention and the PRD.
+
+**Revisit when:** [oven-sh/bun#5510](https://github.com/oven-sh/bun/issues/5510) (or the equivalent argv-preservation tracker) ships in a stable bun. At that point we can drop the preflight and ship the single bun-shebang shim originally planned.
 
 ---
 
@@ -83,6 +98,20 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 **Why this:** the shared config is the canonical machine-readable source. User prefs are documentation that *references* the shared config. Reading the shared config means fnc and the worktree-paths plugin can't drift; user-pref docs evolve independently without breaking fnc's resolver.
 
 **Revisit when:** the shared-config schema changes, or if the worktree-paths plugin is replaced.
+
+---
+
+## 2026-05-27 — Unit tests in `test/unit/`, integration tests in `test/e2e/`
+
+**Decision:** Two test directories under `packages/cli/test/`:
+- `test/unit/` — pure-function tests. Import the module directly, assert on inputs/outputs. No subprocess spawns, no real claude.
+- `test/e2e/` — full integration tests. Spawn `bin/fnc.js` (via the preflight path), run against the real `claude` binary on PATH. No fake-claude bash scripts, no mocked Anthropic SDK — the build-plan's "no mocks/fakes" rule applies here.
+
+`bun test` discovers both by default (`**/*.test.ts`).
+
+**Context:** The build-plan's TDD protocol calls for tests in `test/e2e/` but pure parsers (argv intake, token classification, magic-positional state machine) don't need a subprocess to assert behavior — they're pure transformations. Forcing them through real-claude e2e wastes minutes-per-test for assertions a unit test resolves in milliseconds. The "no fakes" rule was specifically about the bash-fake-claude bug class that masked the SIGHUP race; it doesn't apply to pure-function tests because there's no fake to use.
+
+**Why this:** unit tests give fast, deterministic coverage of the parsing layer; e2e tests give honest coverage of the spawn / signal / launch behavior where the bash-fake class of bug actually lives. Right tool for each layer.
 
 ---
 
