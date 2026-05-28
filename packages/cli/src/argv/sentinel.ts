@@ -39,3 +39,31 @@ export function preSentinelArgs(passthrough: readonly string[]): string[] {
   if (idx < 0) return [...passthrough];
   return passthrough.slice(0, idx);
 }
+
+/**
+ * Insert `flags` into `args` such that they land BEFORE the first `--`
+ * sentinel (if any), otherwise at the end. Returns a fresh array.
+ *
+ * Centralises the pattern previously open-coded in `injectFragments` —
+ * post-sentinel tokens are prompt body, so flag pairs (e.g. `--name foo`
+ * / `--mcp-config <json>`) appended naively after `--` would be read by
+ * claude as positional prompt content. Every site that appends a flag
+ * pair to a passthrough that may contain `--` goes through this helper.
+ *
+ * The `flags` rest param is variadic to match the natural shape of
+ * `[FLAG, value]` pairs — call sites read like `insertFlagsBeforeSentinel(out, '--name', name)`.
+ */
+export function insertFlagsBeforeSentinel(
+  args: readonly string[],
+  ...flags: readonly string[]
+): string[] {
+  const out = [...args];
+  if (flags.length === 0) return out;
+  const idx = findPromptSentinel(out);
+  if (idx < 0) {
+    out.push(...flags);
+    return out;
+  }
+  out.splice(idx, 0, ...flags);
+  return out;
+}

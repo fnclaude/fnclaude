@@ -36,7 +36,7 @@ import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
 import { sdkLlmCall } from './name/sdk-llm.ts';
-import { findPromptSentinel, promptBody } from './argv/sentinel.ts';
+import { findPromptSentinel, insertFlagsBeforeSentinel, promptBody } from './argv/sentinel.ts';
 import { seedNoopDir } from './noop/seed.ts';
 import { resolveTemplateSourcePath } from './noop/template-source.ts';
 import { ensureCwd } from './path/ensure-cwd.ts';
@@ -288,7 +288,7 @@ if (
     passthrough: claudeArgs,
   })
 ) {
-  claudeArgs = [...claudeArgs, '--tmux'];
+  claudeArgs = insertFlagsBeforeSentinel(claudeArgs, '--tmux');
 }
 
 // Auto-name: when the user has typed a prompt body via `--` and hasn't given
@@ -317,7 +317,7 @@ if (process.env.FNC_INTERNAL_DISABLE_AUTONAME !== '1' && shouldAutoName(parsedWi
   const generated = await autoName({ prompt: body, llmCall, timeoutMs: 15_000 });
   const san = sanitizeForPath(generated);
   const final = san.kind === 'invalid' ? generated : san.value;
-  claudeArgs = [...claudeArgs, '--name', final];
+  claudeArgs = insertFlagsBeforeSentinel(claudeArgs, '--name', final);
 }
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on

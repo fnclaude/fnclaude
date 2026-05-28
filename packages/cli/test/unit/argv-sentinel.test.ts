@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   findPromptSentinel,
   hasPromptBody,
+  insertFlagsBeforeSentinel,
   promptBody,
   preSentinelArgs,
 } from '../../src/argv/sentinel.ts';
@@ -79,5 +80,61 @@ describe('preSentinelArgs', () => {
 
   test('returns up to FIRST sentinel only', () => {
     expect(preSentinelArgs(['--name', 'a', '--', 'b', '--', 'c'])).toEqual(['--name', 'a']);
+  });
+});
+
+describe('insertFlagsBeforeSentinel', () => {
+  test('no sentinel → tokens pushed at the end', () => {
+    expect(insertFlagsBeforeSentinel([], '--name', 'foo')).toEqual(['--name', 'foo']);
+    expect(insertFlagsBeforeSentinel(['--model', 'opus'], '--name', 'foo')).toEqual([
+      '--model',
+      'opus',
+      '--name',
+      'foo',
+    ]);
+  });
+
+  test('sentinel present → tokens inserted before --', () => {
+    expect(insertFlagsBeforeSentinel(['--', 'say hi'], '--name', 'foo')).toEqual([
+      '--name',
+      'foo',
+      '--',
+      'say hi',
+    ]);
+    expect(
+      insertFlagsBeforeSentinel(['--model', 'opus', '--', 'say hi'], '--name', 'foo'),
+    ).toEqual(['--model', 'opus', '--name', 'foo', '--', 'say hi']);
+  });
+
+  test('sentinel at position 0 → tokens prepended before --', () => {
+    expect(insertFlagsBeforeSentinel(['--', 'body'], '--tmux')).toEqual([
+      '--tmux',
+      '--',
+      'body',
+    ]);
+  });
+
+  test('multiple tokens inserted in given order', () => {
+    expect(
+      insertFlagsBeforeSentinel(['--', 'say hi'], '--mcp-config', '{"a":1}'),
+    ).toEqual(['--mcp-config', '{"a":1}', '--', 'say hi']);
+  });
+
+  test('only first `--` is treated as sentinel (post-sentinel `--` is prompt content)', () => {
+    expect(
+      insertFlagsBeforeSentinel(['--', 'a', '--', 'b'], '--name', 'foo'),
+    ).toEqual(['--name', 'foo', '--', 'a', '--', 'b']);
+  });
+
+  test('returned array is a fresh copy (no mutation of input)', () => {
+    const input = ['--model', 'opus', '--', 'body'];
+    const out = insertFlagsBeforeSentinel(input, '--name', 'foo');
+    expect(input).toEqual(['--model', 'opus', '--', 'body']);
+    expect(out).not.toBe(input);
+  });
+
+  test('no flags supplied → returns a fresh copy unchanged', () => {
+    expect(insertFlagsBeforeSentinel(['--', 'body'])).toEqual(['--', 'body']);
+    expect(insertFlagsBeforeSentinel(['--model', 'opus'])).toEqual(['--model', 'opus']);
   });
 });

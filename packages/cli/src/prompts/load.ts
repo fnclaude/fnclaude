@@ -20,6 +20,8 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { insertFlagsBeforeSentinel } from '../argv/sentinel.ts';
+
 export interface LoadFragmentsResult {
   content: string;
   warnings: string[];
@@ -89,12 +91,6 @@ export function injectFragments(
     return out;
   }
 
-  // No existing flag — splice before `--` if present, else push at end.
-  const sentinel = out.indexOf('--');
-  if (sentinel >= 0) {
-    out.splice(sentinel, 0, FLAG, content);
-  } else {
-    out.push(FLAG, content);
-  }
-  return out;
+  // No existing flag — insert before `--` if present, else push at end.
+  return insertFlagsBeforeSentinel(out, FLAG, content);
 }

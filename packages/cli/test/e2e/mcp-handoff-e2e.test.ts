@@ -346,10 +346,103 @@ describe.skipIf(SKIP_WINDOWS)('mcp wire handoff round-trip', () => {
     expect(envelope.error?.code).toBe(-32700);
   });
 
-  test('parent socket missing → JSON-RPC tool error -32000, subprocess exits 0', async () => {
+  // Regression for cli 2.0.0: the per-line handler was a placeholder that
+  // routed `tools/call` only and returned `-32601 method not implemented`
+  // for `initialize` — which is claude's FIRST message after spawn.
+  // claude treated the failure as "MCP server unreachable" and the four
+  // tools never showed up in the session.
+  test('initialize handshake → protocolVersion + serverInfo with cli version', async () => {
+    const { handlers } = makeCapturingHandlers({
+      restart: { action: 'done' },
+      switch: { action: 'done' },
+      spawn: { action: 'done' },
+      copy_to_clipboard: { action: 'done' },
+    });
+    listener = await startMcpListener({
+      socketPath,
+      onConnection: createParentDispatcher({ handlers }),
+    });
+
+    const initLine =
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2024-11-05' },
+      }) + '\n';
+    const { stdout, exitCode } = await runMcpWithStdin(socketPath, initLine);
+    expect(exitCode).toBe(0);
+    const envelope = parseFirstRpcEnvelope(stdout) as {
+      id: number;
+      result?: {
+        protocolVersion: string;
+        capabilities: { tools: object };
+        serverInfo: { name: string; version: string };
+      };
+      error?: { code: number; message: string };
+    };
+    expect(envelope.id).toBe(1);
+    expect(envelope.error).toBeUndefined();
+    expect(envelope.result?.protocolVersion).toBe('2024-11-05');
+    expect(envelope.result?.capabilities.tools).toEqual({});
+    expect(envelope.result?.serverInfo.name).toBe('fnclaude');
+    // version mirrors packages/cli/package.json — match the X.Y.Z shape.
+    expect(envelope.result?.serverInfo.version).toMatch(/^\d+\.\d+\.\d+(-.+)?$/);
+  });
+
+  test('tools/list → all four fnc_* tools with descriptions + JSON Schemas', async () => {
+    const { handlers } = makeCapturingHandlers({
+      restart: { action: 'done' },
+      switch: { action: 'done' },
+      spawn: { action: 'done' },
+      copy_to_clipboard: { action: 'done' },
+    });
+    listener = await startMcpListener({
+      socketPath,
+      onConnection: createParentDispatcher({ handlers }),
+    });
+
+    const listLine =
+      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n';
+    const { stdout, exitCode } = await runMcpWithStdin(socketPath, listLine);
+    expect(exitCode).toBe(0);
+    const envelope = parseFirstRpcEnvelope(stdout) as {
+      id: number;
+      result?: {
+        tools: Array<{
+          name: string;
+          description: string;
+          inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] };
+        }>;
+      };
+      error?: unknown;
+    };
+    expect(envelope.id).toBe(2);
+    expect(envelope.error).toBeUndefined();
+    const names = (envelope.result?.tools ?? []).map((t) => t.name).sort();
+    expect(names).toEqual([
+      'fnc_copy_to_clipboard',
+      'fnc_restart',
+      'fnc_spawn_session',
+      'fnc_switch_project',
+    ]);
+    for (const tool of envelope.result?.tools ?? []) {
+      expect(tool.description.length).toBeGreaterThan(0);
+      expect(tool.inputSchema.type).toBe('object');
+      expect(typeof tool.inputSchema.properties).toBe('object');
+    }
+  });
+
+  test('parent socket missing → JSON-RPC internal-error envelope, subprocess exits 0', async () => {
     // No listener for this case — point $FNC_SOCKET at a path that
     // doesn't exist. The subprocess should surface the dial failure as
-    // a tool-level JSON-RPC error rather than crashing.
+    // a JSON-RPC error rather than crashing. The current scaffold
+    // (`createJsonRpcServer`) reports handler throws as the spec-defined
+    // -32603 "Internal error"; Go canonical instead returns the failure
+    // as a tool-level error (`isError:true` content). The §8 work that
+    // ports the canonical tool-level error envelope will migrate this
+    // case off -32603 — for now we assert what the scaffold actually
+    // emits.
     const missingSocket = `/tmp/no-such-socket-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     const { stdout, exitCode } = await runMcpWithStdin(
@@ -361,6 +454,6 @@ describe.skipIf(SKIP_WINDOWS)('mcp wire handoff round-trip', () => {
     const envelope = parseFirstRpcEnvelope(stdout);
     expect(envelope.id).toBe(1);
     expect(envelope.result).toBeUndefined();
-    expect(envelope.error?.code).toBe(-32000);
+    expect(envelope.error?.code).toBe(-32603);
   });
 });

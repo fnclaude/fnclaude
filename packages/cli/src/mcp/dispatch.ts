@@ -3,24 +3,34 @@
  * JSON-RPC subprocess (the one claude invokes via the injected
  * --mcp-config; see docs/design.mcp.md §2).
  *
- * §2.7 contributed the routing wrapper. §7.5 (here) wires the entry point:
- *   - Read $FNC_SOCKET from env; fatal exit 2 if absent.
- *   - Build the four tool handlers, each of which dials the parent over
- *     the AF_UNIX socket using §7.6's dialAndCall.
- *   - Read line-delimited JSON-RPC requests from stdin until EOF, route
- *     `tools/call` requests to the appropriate handler, and write JSON
- *     responses to stdout. (Full JSON-RPC scaffolding — initialize,
- *     tools/list, notifications — lands in §7.3.)
+ * §2.7 contributed the routing wrapper. §7.5 wires the entry point and
+ * the per-tool wire handlers. §7.3 wrote the JSON-RPC scaffold
+ * (`createJsonRpcServer`); this module is what connects the two — building
+ * the `tools` record and `initializeResponse` from the tool schemas, then
+ * pumping stdin lines through `server.handle()` to stdout.
+ *
+ * Before this wiring landed, the per-line handler was a placeholder that
+ * only routed `tools/call` and returned `-32601 method not implemented`
+ * for everything else. Claude's first message in the MCP handshake is
+ * `initialize`; that error broke the connect handshake outright in cli
+ * 2.0.0 and the model never saw the four tools. The fix is to route every
+ * method through `createJsonRpcServer`.
  *
  * Matches Go canonical's dispatch shape (src/main.go:879-887): mcp
  * subcommand recognized ONLY at argv[0], '--noop' is the sole flag that
  * affects server behavior, anything else is ignored.
  */
 
+import { readFileSync } from 'node:fs';
+
+import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server.ts';
+import { TOOL_SCHEMAS } from './tool-schemas.ts';
 import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire.ts';
 
 const SUBCOMMAND = 'mcp';
 const NOOP_FLAG = '--noop';
+const MCP_PROTOCOL_VERSION = '2024-11-05';
+const MCP_SERVER_NAME = 'fnclaude';
 
 export function isMcpSubcommand(args: readonly string[]): boolean {
   return args.length > 0 && args[0] === SUBCOMMAND;
@@ -59,11 +69,6 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_copy_to_clipboard: 'copy_to_clipboard',
 };
 
-export interface McpTool {
-  name: McpToolName;
-  handler: (args: unknown) => Promise<WireResponse>;
-}
-
 export interface BuildToolsArgs {
   socketPath: string;
   /** Injectable for tests; defaults to the real {@link dialAndCall}. */
@@ -74,31 +79,103 @@ export interface BuildToolsArgs {
 }
 
 /**
- * Construct the four tool handlers. Each handler accepts an MCP tool-args
- * payload (object literal from the model's `tools/call`), wraps it in a
- * WireRequest with the matching `op`, and forwards through `dialAndCall`.
+ * Construct the tools record passed to `createJsonRpcServer`. Each entry
+ * has the description + JSON-Schema port'd from the Go canonical (via
+ * `TOOL_SCHEMAS`) and a handler that wraps the model's tool-args payload
+ * in a WireRequest with the matching `op`, then forwards through
+ * `dialAndCall`.
  *
- * §8 will add per-tool input validation in front of `dialAndCall`. This
- * function ships the wiring shape; the validation hooks in beside the
- * `op:` field assignment without changing the call-graph.
+ * Per §8 plan, per-tool input validation will land between the payload
+ * collation and the `dialAndCall` invocation. createJsonRpcServer wraps
+ * the returned object in the MCP `{content: [{type:"text", text: <json>}]}`
+ * envelope automatically, so handlers return the raw WireResponse and let
+ * the scaffold do the wrapping.
  */
-export function buildTools(args: BuildToolsArgs): McpTool[] {
+export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool> {
   const dialer = args.dialAndCall ?? dialAndCall;
-  return MCP_TOOL_NAMES.map((name) => ({
-    name,
-    handler: async (payload: unknown): Promise<WireResponse> => {
-      const op = TOOL_TO_OP[name];
-      const request: WireRequest = { op };
-      if (payload !== null && payload !== undefined && typeof payload === 'object') {
-        for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
-          // Don't let a caller-supplied `op` field override our routing.
-          if (k === 'op') continue;
-          (request as Record<string, unknown>)[k] = v;
+  const tools: Record<string, JsonRpcMcpTool> = {};
+  for (const name of MCP_TOOL_NAMES) {
+    const schema = TOOL_SCHEMAS[name];
+    tools[name] = {
+      description: schema.description,
+      inputSchema: schema.inputSchema,
+      handler: async (payload: unknown): Promise<object> => {
+        const op = TOOL_TO_OP[name];
+        const request: WireRequest = { op };
+        if (payload !== null && payload !== undefined && typeof payload === 'object') {
+          for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
+            // Don't let a caller-supplied `op` field override our routing.
+            if (k === 'op') continue;
+            (request as Record<string, unknown>)[k] = v;
+          }
         }
-      }
-      return dialer({ socketPath: args.socketPath, request });
+        // dialAndCall's WireResponse is a `{[k:string]: unknown}` shape —
+        // safe to widen to `object` for the jsonrpc-server's content
+        // wrapper, which just JSON.stringify's it.
+        return (await dialer({ socketPath: args.socketPath, request })) as object;
+      },
+    };
+  }
+  return tools;
+}
+
+let cachedVersion: string | null = null;
+
+function readPackageVersion(): string {
+  if (cachedVersion !== null) return cachedVersion;
+  try {
+    const pkgUrl = new URL('../../package.json', import.meta.url);
+    const raw = readFileSync(pkgUrl, 'utf8');
+    const parsed = JSON.parse(raw) as { version?: unknown };
+    cachedVersion = typeof parsed.version === 'string' ? parsed.version : '0.0.0-dev';
+  } catch {
+    cachedVersion = '0.0.0-dev';
+  }
+  return cachedVersion;
+}
+
+/**
+ * Build the `initialize` result body shared between Go canonical and TS.
+ * Per Go (`src/mcp.go:handleInitialize`): protocolVersion + capabilities
+ * + serverInfo. `capabilities.tools` is the empty object — claude reads it
+ * as "yes, tools/list is supported", not as a list itself.
+ */
+function buildInitializeResponse(): object {
+  return {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: { tools: {} },
+    serverInfo: {
+      name: MCP_SERVER_NAME,
+      version: readPackageVersion(),
     },
-  }));
+  };
+}
+
+interface ServerForTests {
+  handle(line: string): Promise<string | null>;
+}
+
+let testServer: ServerForTests | null = null;
+
+/**
+ * Test-only handler that drives one stdin line through the live JSON-RPC
+ * server. Spinning up the full stdin loop in a unit test is awkward
+ * (process.stdin is a global async iterable and contaminating it leaks
+ * between tests). Exposing the line handler directly lets tests drive
+ * `initialize` / `tools/list` / `notifications/*` without a subprocess.
+ *
+ * The first call constructs a server pointed at the real `dialAndCall` —
+ * tests that exercise `tools/call` should use the e2e harness instead.
+ * The server instance is cached so repeated calls share state.
+ */
+export async function handleMcpLine(line: string): Promise<string | null> {
+  if (testServer === null) {
+    testServer = createJsonRpcServer({
+      tools: buildTools({ socketPath: process.env.FNC_SOCKET ?? '' }),
+      initializeResponse: buildInitializeResponse(),
+    });
+  }
+  return testServer.handle(line);
 }
 
 /**
@@ -116,33 +193,24 @@ export async function runMcpServer(_flags: McpFlags): Promise<number> {
     return 2;
   }
 
-  const tools = buildTools({ socketPath });
-  const toolsByName = new Map(tools.map((t) => [t.name, t]));
+  const server = createJsonRpcServer({
+    tools: buildTools({ socketPath }),
+    initializeResponse: buildInitializeResponse(),
+  });
 
-  await runStdinLoop({ toolsByName });
+  await runStdinLoop(server);
   return 0;
 }
 
-interface StdinLoopArgs {
-  toolsByName: Map<string, McpTool>;
-}
-
 /**
- * Placeholder JSON-RPC loop until §7.3 lands. Reads newline-delimited
- * JSON from stdin; for each `tools/call` request, calls the matching
- * handler and writes a minimal JSON-RPC 2.0 response. For everything
- * else (including the eventual `initialize` / `tools/list`) writes a
- * method-not-found error.
- *
- * The shape here is just enough to surface a real tool-call to the
- * parent over the wire; §7.3 replaces this with the full scaffold.
+ * Newline-delimited JSON-RPC pump. Reads from process.stdin, hands each
+ * line to `server.handle()`, writes the resulting envelope (if any) to
+ * stdout. Notifications produce `null` and are dropped silently.
  */
-async function runStdinLoop(args: StdinLoopArgs): Promise<void> {
+async function runStdinLoop(server: { handle(line: string): Promise<string | null> }): Promise<void> {
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
 
-  // Read raw bytes from stdin; node:process exposes stdin as an async
-  // iterable of Uint8Array chunks.
   for await (const chunk of process.stdin) {
     buffer += decoder.decode(chunk as Uint8Array, { stream: true });
     let nl: number;
@@ -150,91 +218,14 @@ async function runStdinLoop(args: StdinLoopArgs): Promise<void> {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (line === '') continue;
-      await handleLine({ line, toolsByName: args.toolsByName });
+      const response = await server.handle(line);
+      if (response !== null) process.stdout.write(response + '\n');
     }
   }
   // Flush whatever bytes remain after EOF.
   const tail = buffer.trim();
   if (tail !== '') {
-    await handleLine({ line: tail, toolsByName: args.toolsByName });
+    const response = await server.handle(tail);
+    if (response !== null) process.stdout.write(response + '\n');
   }
-}
-
-interface JsonRpcRequest {
-  jsonrpc?: string;
-  id?: number | string | null;
-  method?: string;
-  params?: unknown;
-}
-
-async function handleLine(args: {
-  line: string;
-  toolsByName: Map<string, McpTool>;
-}): Promise<void> {
-  let req: JsonRpcRequest;
-  try {
-    req = JSON.parse(args.line) as JsonRpcRequest;
-  } catch (err) {
-    writeRpcError(null, -32700, `parse error: ${(err as Error).message}`);
-    return;
-  }
-
-  // Notifications (no `id`) get no response, even on error.
-  const id = req.id ?? null;
-  const isNotification = req.id === undefined;
-
-  if (req.method === 'tools/call') {
-    const params = (req.params ?? {}) as { name?: string; arguments?: unknown };
-    const tool = params.name !== undefined ? args.toolsByName.get(params.name) : undefined;
-    if (tool === undefined) {
-      if (!isNotification) {
-        writeRpcError(id, -32601, `unknown tool: ${params.name ?? '<missing>'}`);
-      }
-      return;
-    }
-    try {
-      const result = await tool.handler(params.arguments);
-      if (!isNotification) writeRpcToolResult(id, result);
-    } catch (err) {
-      if (!isNotification) {
-        writeRpcError(id, -32000, `tool error: ${(err as Error).message}`);
-      }
-    }
-    return;
-  }
-
-  // Full method dispatch (initialize, tools/list, etc.) lands with §7.3.
-  if (!isNotification) {
-    writeRpcError(id, -32601, `method not implemented yet (§7.3): ${req.method ?? '<missing>'}`);
-  }
-}
-
-function writeRpcToolResult(
-  id: number | string | null,
-  result: WireResponse,
-): void {
-  // Per design.mcp.md §2.3: marshal the Response JSON as a single text
-  // content item. The model reads `action` / `message` / `command` /
-  // `clipboard_ok` out of the embedded JSON string.
-  const envelope = {
-    jsonrpc: '2.0',
-    id,
-    result: {
-      content: [{ type: 'text', text: JSON.stringify(result) }],
-    },
-  };
-  process.stdout.write(JSON.stringify(envelope) + '\n');
-}
-
-function writeRpcError(
-  id: number | string | null,
-  code: number,
-  message: string,
-): void {
-  const envelope = {
-    jsonrpc: '2.0',
-    id,
-    error: { code, message },
-  };
-  process.stdout.write(JSON.stringify(envelope) + '\n');
 }
