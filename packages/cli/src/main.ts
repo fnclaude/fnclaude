@@ -17,6 +17,9 @@ import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
+import { autoName, shouldAutoName } from './name/auto-name.ts';
+import { sanitizeForPath } from './name/sanitize.ts';
+import { findPromptSentinel, promptBody } from './argv/sentinel.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
 import { injectFragments, loadFragments } from './prompts/load.ts';
 import { selectFragments } from './prompts/select.ts';
@@ -160,6 +163,36 @@ if (
   })
 ) {
   claudeArgs = [...claudeArgs, '--tmux'];
+}
+
+// Auto-name: when the user has typed a prompt body via `--` and hasn't given
+// --name / -n (and the session isn't print/resume/continue/from-pr), generate
+// a session name. Spec defaults: LLM-via-claude-p with 15s timeout, heuristic
+// fallback on error/timeout. ANTHROPIC_API_KEY → SDK fast-path is a follow-up.
+//
+// FNC_INTERNAL_DISABLE_AUTONAME=1 is an internal test escape — when set,
+// autoName is skipped entirely so e2e tests don't have to wait on a real
+// claude -p call (and don't see --name pollute their assertion shapes).
+if (process.env.FNC_INTERNAL_DISABLE_AUTONAME !== '1' && shouldAutoName(parsedWithIntercept)) {
+  const sentinelIdx = findPromptSentinel(parsedWithIntercept.passthrough);
+  const body = promptBody(parsedWithIntercept.passthrough, sentinelIdx).join(' ').trim();
+  const llmCall = process.env.ANTHROPIC_API_KEY !== undefined
+    ? undefined // TODO: Anthropic SDK fast-path
+    : async (prompt: string): Promise<string> => {
+        const system = "Generate a 1-3 word lowercase hyphen-separated label for this user's request. Output ONLY the label — no punctuation, no quotes, no explanation, no leading 'Label:'. Examples: 'fix-login-bug', 'add-dark-mode', 'refactor-auth'.";
+        const proc = Bun.spawn(
+          ['claude', '-p', '--model', 'claude-haiku-4-5', `${system}\n\nUser request: ${prompt}`],
+          { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+        );
+        const out = await new Response(proc.stdout).text();
+        const exit = await proc.exited;
+        if (exit !== 0) throw new Error(`claude -p exited ${exit}`);
+        return out;
+      };
+  const generated = await autoName({ prompt: body, llmCall, timeoutMs: 15_000 });
+  const san = sanitizeForPath(generated);
+  const final = san.kind === 'invalid' ? generated : san.value;
+  claudeArgs = [...claudeArgs, '--name', final];
 }
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on

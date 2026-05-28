@@ -49,6 +49,7 @@ async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<
       ...process.env,
       FNC_INTERNAL_DUMP_PLAN: '1',
       FNC_PROMPTS_DIR: EMPTY_PROMPTS_DIR,
+      FNC_INTERNAL_DISABLE_AUTONAME: '1',
       ...(opts.extraEnv ?? {}),
     },
     stdin: 'ignore',
@@ -341,6 +342,62 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-tmux gating (§5.4)', () => 
       rmSync(xdg, { recursive: true, force: true });
       rmSync(shell, { recursive: true, force: true });
     }
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
+  // ANTHROPIC_API_KEY set + no SDK fast-path wired yet → llmCall is undefined,
+  // so autoName falls straight through to the heuristic. Use this to test
+  // wiring deterministically without invoking claude -p.
+
+  test('-- "fix the login bug" → heuristic injects --name fix-login-bug', async () => {
+    const { plan, exitCode } = await runPlan(['--', 'fix the login bug'], {
+      extraEnv: {
+        ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+        FNC_INTERNAL_DISABLE_AUTONAME: '', // override runPlan's default disable
+      },
+    });
+    expect(exitCode).toBe(0);
+    const nameIdx = plan!.claudeArgs.indexOf('--name');
+    expect(nameIdx).toBeGreaterThanOrEqual(0);
+    expect(plan!.claudeArgs[nameIdx + 1]).toBe('fix-login-bug');
+  });
+
+  test('--name already given → no auto-name', async () => {
+    const { plan, exitCode } = await runPlan(['--name', 'mine', '--', 'do stuff'], {
+      extraEnv: {
+        ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+        FNC_INTERNAL_DISABLE_AUTONAME: '',
+      },
+    });
+    expect(exitCode).toBe(0);
+    // Only one --name in the output (the user's), no second auto-name appended.
+    const names = plan!.claudeArgs.filter((t) => t === '--name');
+    expect(names.length).toBe(1);
+    const nameIdx = plan!.claudeArgs.indexOf('--name');
+    expect(plan!.claudeArgs[nameIdx + 1]).toBe('mine');
+  });
+
+  test('-p (print mode) → no auto-name', async () => {
+    const { plan, exitCode } = await runPlan(['-p', '--', 'whatever'], {
+      extraEnv: {
+        ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+        FNC_INTERNAL_DISABLE_AUTONAME: '',
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--name');
+  });
+
+  test('no prompt body → no auto-name', async () => {
+    const { plan, exitCode } = await runPlan([], {
+      extraEnv: {
+        ANTHROPIC_API_KEY: 'placeholder-skip-sdk',
+        FNC_INTERNAL_DISABLE_AUTONAME: '',
+      },
+    });
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--name');
   });
 });
 
