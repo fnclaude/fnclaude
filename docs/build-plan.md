@@ -150,7 +150,7 @@ End of §6. claude is running.
 
 Depends on §6. This is the big chunk before any in-session feature can work.
 
-⏱ **§7.1** **Socket path computation** — `<base>/fnclaude-mcp-<pid>.sock` where `<base>` is `$XDG_RUNTIME_DIR` or OS temp dir. Design: [`design.md` §14], [`design.mcp.md` §1–2].
+✅ **§7.1 ⏱ Socket path computation** — `<base>/fnclaude-mcp-<pid>.sock` where `<base>` is `$XDG_RUNTIME_DIR` or OS temp dir. Design: [`design.md` §14], [`design.mcp.md` §1–2]. Implemented in `packages/cli/src/mcp/socket-path.ts` as the pure `computeSocketPath({ env, pid, platform })` function; Unix-only (throws on win32, see §7 follow-up).
 
 ⏱ **§7.2** **AF_UNIX listener startup** — bind, listen, accept loop. Best-effort unlink of stale socket file at startup. Cleanup on shutdown. Listener starts BEFORE claude is spawned. Listener-startup failure aborts the run (per Go canonical).
 
