@@ -237,11 +237,14 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — prompt fragment injection', () =>
     expect(plan!.claudeArgs).not.toContain('--append-system-prompt');
   });
 
-  test('missing FNC_PROMPTS_DIR (set to empty dir): warnings to stderr, claudeArgs clean', async () => {
+  test('missing FNC_PROMPTS_DIR (set to empty dir): warning deferred, claudeArgs clean', async () => {
+    // Warnings are deferred to post-claude-exit (§27). DUMP_PLAN exits
+    // before claude spawns, so the warning never flushes here — that's
+    // the point of the deferral.
     const { plan, stderr, exitCode } = await runPlan([]);
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).not.toContain('--append-system-prompt');
-    expect(stderr).toMatch(/missing|prompt/i);
+    expect(stderr).not.toMatch(/missing|prompt/i);
   });
 });
 
@@ -261,14 +264,16 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — worktree intercept (-w)', () => {
     }
   });
 
-  test('-w with bad chars sanitized → warning + sanitized name forwarded', async () => {
+  test('-w with bad chars sanitized → sanitized name forwarded (warning deferred §27)', async () => {
     const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-wsan-'));
     try {
       const { plan, stderr, exitCode } = await runPlan([shell, '-w', 'has spaces!'], { cwd: shell });
       expect(exitCode).toBe(0);
       expect(plan!.claudeArgs).toContain('has-spaces');
       expect(plan!.claudeArgs).not.toContain('has spaces!');
-      expect(stderr).toMatch(/sanitized|illegal/i);
+      // Sanitization warning is queued, but flushed after claude exits.
+      // DUMP_PLAN exits pre-spawn → warning never reaches stderr here.
+      expect(stderr).not.toMatch(/sanitized|illegal/i);
     } finally {
       rmSync(shell, { recursive: true, force: true });
     }
@@ -489,5 +494,93 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — parser errors', () => {
     const { stderr, exitCode } = await runPlan(['resume', 'continue']);
     expect(exitCode).toBe(2);
     expect(stderr).toMatch(/only one of|resume|continue/i);
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — warnings deferred-flush (§27)', () => {
+  /**
+   * Run fnc WITHOUT FNC_INTERNAL_DUMP_PLAN — i.e. through the real spawn
+   * path — but with a fake `claude` binary on PATH that exits 0 instantly.
+   * This lets us observe what fnc writes to stderr AROUND the (no-op)
+   * claude lifecycle, which is exactly the surface §27 governs.
+   */
+  async function runWithFakeClaude(
+    args: readonly string[],
+    opts: RunOptions = {},
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const shimDir = mkdtempSync(join(tmpdir(), 'fnc-fake-claude-'));
+    try {
+      const claudeShim = join(shimDir, 'claude');
+      writeFileSync(claudeShim, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const childPATH = `${shimDir}:${process.env.PATH ?? ''}`;
+      const proc = Bun.spawn(['node', BIN, ...args], {
+        cwd: opts.cwd ?? tmpdir(),
+        env: {
+          ...process.env,
+          PATH: childPATH,
+          FNC_PROMPTS_DIR: EMPTY_PROMPTS_DIR,
+          FNC_INTERNAL_DISABLE_AUTONAME: '1',
+          ...(opts.extraEnv ?? {}),
+        },
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const exitCode = await proc.exited;
+      return { stdout, stderr, exitCode };
+    } finally {
+      rmSync(shimDir, { recursive: true, force: true });
+    }
+  }
+
+  test('warning NOT in stderr under DUMP_PLAN (deferred until claude exit)', async () => {
+    // -w with bad chars produces a sanitization warning. With deferral,
+    // DUMP_PLAN exits before claude spawns → warning never flushes.
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-warn-defer-'));
+    try {
+      const { stderr, exitCode } = await runPlan([shell, '-w', 'has spaces!'], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(stderr).not.toMatch(/sanitized|illegal/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('warning IS in stderr after fake-claude exits (real launch path)', async () => {
+    // Same trigger as above, but going through the actual spawn → exit
+    // sequence. The fake claude exits immediately; fnc then flushes the
+    // queued sanitization warning to stderr.
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-warn-flush-'));
+    try {
+      const { stderr, exitCode } = await runWithFakeClaude([shell, '-w', 'has spaces!'], {
+        cwd: shell,
+      });
+      expect(exitCode).toBe(0);
+      expect(stderr).toMatch(/sanitized|illegal/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('no warnings → no extra stderr noise on real launch path', async () => {
+    // A clean launch (absolute path arg, no sanitization trigger, real
+    // prompts dir so no fragment-missing warnings) shouldn't produce any
+    // fnc-prefixed stderr after the fake claude exits.
+    const REAL_PROMPTS = resolve(CLI_ROOT, 'prompts');
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-warn-clean-'));
+    try {
+      const { stderr, exitCode } = await runWithFakeClaude([shell], {
+        cwd: shell,
+        extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS },
+      });
+      expect(exitCode).toBe(0);
+      expect(stderr).not.toMatch(/sanitized|illegal|missing/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
   });
 });

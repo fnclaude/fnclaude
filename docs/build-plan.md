@@ -214,7 +214,7 @@ Depends on the relevant features. Each item is independent.
 
 🌿 **§10.2** **Help text** — `--help` / `-h` output. Per Go canonical's `helpText` constant. Design: [`design.md` §1].
 
-🌿 **§10.3** **Warnings deferred-flush** — accumulate warnings during the run; flush to stderr AFTER claude exits and the user is back at their shell. Skip on silent-relaunch paths. Design: [`design.md` §27].
+✅ **§10.3** **Warnings deferred-flush** — accumulate warnings during the run; flush to stderr AFTER claude exits and the user is back at their shell. Skip on silent-relaunch paths. Design: [`design.md` §27].
 
 🌿 **§10.4** **`[exec.env]` config injection** — config file's `[exec.env]` table appended to claude's child env. Design: [`design.md` §5].
 
