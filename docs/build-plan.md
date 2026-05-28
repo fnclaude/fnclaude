@@ -158,9 +158,9 @@ Depends on §6. This is the big chunk before any in-session feature can work.
 
 ⏱ **§7.4** **Self-MCP `--mcp-config` injection** — inline JSON: `{"mcpServers":{"fnclaude":{"command":"<self-path>","args":["mcp"]}}}` (add `--noop` for noop sessions). Design: [`design.md` §29], [`design.mcp.md` §2.1].
 
-⏱ **§7.5** **MCP subprocess entry point** — `fnclaude mcp [--noop]` dispatch (the `mcp` subcommand from §2.7). Subprocess reads `$FNC_SOCKET`, implements the tool surface, dials parent per tool call. Design: [`design.mcp.md` §2.2–2.3].
+✅ **§7.5** **MCP subprocess entry point** — `fnclaude mcp [--noop]` dispatch (the `mcp` subcommand from §2.7). `runMcpServer` reads `$FNC_SOCKET` (fatal exit 2 if absent), constructs four tool handlers via `buildTools`, and pumps stdin → JSON-RPC handler → stdout. Each handler builds a `WireRequest` with the matching `op` (`restart` / `switch` / `spawn` / `copy_to_clipboard`) and forwards through `dialAndCall`. Full JSON-RPC scaffolding (initialize, tools/list) still pending in §7.3. Design: [`design.mcp.md` §2.2–2.3].
 
-⏱ **§7.6** **Request/Response wire format** — newline-delimited JSON, 10s dial timeout, 10s per-call deadline. Design: [`design.mcp.md` §3].
+✅ **§7.6** **Request/Response wire format** — `packages/cli/src/mcp/wire.ts` ships `dialAndCall({socketPath, request, dialTimeoutMs=10000, callTimeoutMs=10000})` with newline-delimited JSON over `Bun.connect({ unix })`. One request/response per connection; rejects on dial timeout, call timeout, malformed JSON, or any socket error. Design: [`design.mcp.md` §3].
 
 ⏱ **§7.7** **Per-tool dispatch on parent side** — accept connection, read request, route by `op`, write response, close. Each connection in its own concurrency unit. Design: [`design.mcp.md` §2.3].
 
