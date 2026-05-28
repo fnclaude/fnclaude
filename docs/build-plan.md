@@ -15,8 +15,11 @@ Dependency-ordered build of the CLI rewrite. Each item is a discrete feature wit
 Every code-shipping feature follows this loop:
 
 1. **Read** the PRD entry ([`prd.launcher.md`](prd.launcher.md) / [`prd.in-session.md`](prd.in-session.md)) and the corresponding [`design.md`](design.md) section.
-2. **Write a failing test** in `packages/cli/test/e2e/<feature>.test.ts`. The test invokes the **real** `claude` binary against the **real** `fnc` symlink — no mocks, no fakes, no shell-script stand-ins for claude. Use the user's actual `~/.local/bin/fnc` (which symlinks to `packages/cli/bin/fnc.js`) OR invoke `bun packages/cli/bin/fnc.js` directly; either way, the binary that runs is the dev source.
-3. **Run the test** with `bun test packages/cli/test/e2e/<feature>.test.ts`. Confirm it fails AND that the failure message points at the feature, not at unrelated assertions.
+2. **Write a failing test.** Pick the tier:
+   - **Unit test** (`packages/cli/test/unit/<feature>.test.ts`) — for pure functions, parsers, predicates, and any module that exposes a clean injectable seam. Mocks/fakes/dependency-injection are fine here (see "Mocks/fakes — what's allowed where" below).
+   - **e2e test** (`packages/cli/test/e2e/<feature>.test.ts`) — for the user-visible launch behavior. The test invokes the **real** `claude` binary against the **real** `fnc` symlink — no mocks, no fakes, no shell-script stand-ins for claude. Use the user's actual `~/.local/bin/fnc` (which symlinks to `packages/cli/bin/fnc.js`) OR invoke `bun packages/cli/bin/fnc.js` directly; either way, the binary that runs is the dev source.
+   - In practice, most features get **both**: a unit test for the pure logic and an e2e test that confirms the wiring through `main.ts`. The `FNC_INTERNAL_DUMP_PLAN` hook lets the e2e tier verify launch composition without spawning claude.
+3. **Run the test.** Confirm it fails AND that the failure message points at the feature, not at unrelated assertions.
 4. **Implement** the feature in `packages/cli/src/`.
 5. **Run the test again.** Confirm green.
 6. **Sanity-check** by reverting the implementation diff (`git stash --keep-index -- packages/cli/src/<file>`), rerunning the test (must FAIL), restoring (`git stash pop`), rerunning (must PASS). If both states pass, the test isn't catching what you fixed — rewrite it.
@@ -29,9 +32,15 @@ Every code-shipping feature follows this loop:
 - Verify `claude` is on PATH (`command -v claude` returns a path) — tests will hard-fail otherwise.
 - e2e tests are slow (real PTY, real claude); that's the cost. Don't bypass with mocks.
 
-**"No mocks/fakes" rule:**
-- Do NOT write a shell-script `fake-claude` that records argv to a file. The Go-canonical tests did this and it masked the SIGHUP bug that motivated the rewrite. Trap-vs-real-signal divergence is exactly the class of bug that fake binaries hide.
-- DO use real fixtures: temp dirs for cwd, real env vars, real config files in temp `$HOME` if needed for hermeticity.
+**Mocks/fakes — what's allowed where:**
+
+| Tier | Mocks/fakes? | Why |
+|---|---|---|
+| **Unit tests** (`test/unit/`) | ✅ allowed | Unit tests cover pure functions and small modules; injecting fakes for `gh`, `claude -p`, `git worktree list`, the LLM callback, etc. is fine — these are the boundaries the modules already expose for testability. |
+| **Integration tests** (if/when added) | 🤔 case-by-case | Argument exists either way. Default to real fixtures unless a specific dependency makes the test flaky, slow, or non-hermetic. Document the call. |
+| **e2e tests** (`test/e2e/`) | ❌ **never** | e2e tests invoke the **real** `claude` binary against the **real** `fnc` symlink (or `bun packages/cli/bin/fnc.js` directly). No shell-script `fake-claude` that records argv to a file — the Go-canonical tests did this and it masked the SIGHUP bug that motivated the rewrite. Trap-vs-real-signal divergence is exactly the class of bug that fake binaries hide. |
+
+DO use real fixtures at every tier: temp dirs for cwd, real env vars, real config files in temp `$HOME` if needed for hermeticity. Dependency injection at module boundaries (passing a `listWorktrees` or `llmCall` function as a parameter) is **not** the same as a fake binary and is the right pattern for unit-testable seams.
 
 ---
 
