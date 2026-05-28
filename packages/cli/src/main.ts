@@ -24,6 +24,7 @@ import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
 import { createRestartHandler } from './mcp/handlers/restart.ts';
+import { createSwitchHandler } from './mcp/handlers/switch.ts';
 import { injectMcpConfig } from './mcp/inject-config.ts';
 import { startMcpListener } from './mcp/listener.ts';
 import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch.ts';
@@ -419,17 +420,22 @@ if (!claudeBin.ok) {
 if (mcpSocketPath !== undefined) {
   try {
     // §7.7 + §8.x: wire per-tool dispatch onto each accepted socket.
-    // §8.1 (restart) and §8.4 (copy_to_clipboard) replace their stubs;
-    // §8.2/§8.3 still ride the stub fallback until they land.
+    // §8.1 (restart), §8.2 (switch) and §8.4 (copy_to_clipboard) replace
+    // their stubs; §8.3 still rides the stub fallback until it lands.
     const restartHandler = createRestartHandler({
       origArgs: argv,
       launchCWD: cwd,
+      trigger: handoffTrigger,
+    });
+    const switchHandler = createSwitchHandler({
+      origArgs: argv,
       trigger: handoffTrigger,
     });
     const dispatcher = createParentDispatcher({
       handlers: {
         ...stubParentHandlers,
         restart: restartHandler,
+        switch: switchHandler,
         copy_to_clipboard: handleCopyToClipboard,
       },
     });
