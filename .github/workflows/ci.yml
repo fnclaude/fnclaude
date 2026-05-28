@@ -76,7 +76,10 @@ jobs:
   # do the auth. That's why this workflow file must stay named `ci.yml`.
   publish:
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Publishing intentionally paused during the TS rewrite. Flip the leading
+    # `false &&` off to resume: release-please will start opening release PRs
+    # and auto-publish on their merge.
+    if: false && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write       # release-please creates tags + GitHub releases
