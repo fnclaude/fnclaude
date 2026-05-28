@@ -125,6 +125,68 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 
 ---
 
+## 2026-05-27 — Bun-native TOML for config loading
+
+**Decision:** `config/load.ts` reads `config.toml` via `import(path, { with: { type: 'toml' } })` — Bun's built-in import attribute support — rather than a third-party TOML parser.
+
+**Context:** fnclaude's config file is TOML (`$XDG_CONFIG_HOME/fnclaude/config.toml`). The options were: (a) a third-party parser (`@iarna/toml`, `smol-toml`, etc.) added as a dep, (b) hand-roll a subset parser, (c) use Bun's native TOML import attribute.
+
+**Why this:** Bun 1.x supports the import attribute natively — zero extra deps, no parse-drift versus the TOML spec, no bundle step complications. The only cost is a dynamic `import()` call (versus a synchronous parse), which is fine given config loading already happens once at startup behind an `await`. The catch: this is Bun-only — Node's module loader doesn't support `{ with: { type: 'toml' } }`. That's acceptable because the preflight already branches on runtime; the TOML import only runs on the Bun code path.
+
+**Revisit when:** Node lands import attributes with TOML support in LTS (currently only JSON is Stage 3+), or if the dep-free approach causes issues with bundlers during a future single-file distribution step.
+
+---
+
+## 2026-05-27 — Discriminated-union return shape for `resolveInput`
+
+**Decision:** `resolveInput()` returns a discriminated union (`kind: 'launch' | 'needs-clone' | 'needs-owner-lookup' | 'ambiguous' | 'error'`) rather than throwing on non-launch paths or returning a nullable.
+
+**Context:** `resolveInput` sits at the boundary between pure path/repo logic and side-effecting operations (gh CLI invocations, actual `git clone`). Three design shapes were available: (a) throw on non-launch paths so the caller uses try/catch, (b) return `null | LaunchCwd` and have separate functions for the error/clone cases, (c) discriminated union so the caller exhaustively switches on what to do next.
+
+**Why this:** control flow via exceptions makes it hard to exhaustively handle every branch — TypeScript doesn't enforce catch coverage. A nullable return collapses two distinct "not ready to launch" cases (needs-clone vs needs-owner-lookup) into one, losing the distinction. The discriminated union makes every variant explicit and TypeScript-checkable: the compiler will warn if a new variant is added but a switch arm is missing. Side effects (gh subprocess calls) stay at the caller boundary — the resolver stays pure-ish (filesystem reads only), which keeps it unit-testable without subprocess mocks.
+
+---
+
+## 2026-05-27 — Dependency injection at orchestrator boundaries for unit testability
+
+**Decision:** Side-effectful operations — `listWorktrees` (runs `git worktree list`), `llmCall` (Anthropic SDK or `claude -p`), `ghApi` / `ghClone` (gh subprocess calls) — are injected as callbacks into their respective orchestrators rather than imported and called directly.
+
+**Context:** These functions touch subprocesses, the network, or the filesystem in ways that can't run in unit tests without real tooling present. The question was whether to mock them at the module boundary (jest/vitest-style `vi.mock`), inject them explicitly, or restructure to avoid them.
+
+**Why this:** explicit injection is transparent at the call site — the orchestrator's signature documents exactly which side effects it needs, and tests wire in synchronous stubs without any module-mock infrastructure. `vi.mock` or equivalent would work but couples tests to module paths and requires a test framework that supports module interception; Bun's test runner supports `mock.module` but the explicit-injection approach works in any runner and makes the dependency graph readable in the type signature alone. Production wiring (`runGhApi`, `runGhClone`, `sdkLlmCall`, real `listWorktrees`) happens in `main.ts` at the top of the call graph.
+
+---
+
+## 2026-05-27 — `realpathSync(process.argv[1])` for exeDir instead of `import.meta.url`
+
+**Decision:** The directory containing the running binary (`exeDir`) is computed as `dirname(realpathSync(process.argv[1]))`, not via `import.meta.url` or `import.meta.dirname`.
+
+**Context:** `exeDir` is needed to locate sibling directories (`../prompts`, `../share/fnclaude/prompts`) relative to the installed binary. Two paths to get there: (a) `import.meta.url` / `import.meta.dirname` — the ESM-native approach, (b) `process.argv[1]` + `realpathSync`.
+
+**Why this:** `import.meta.url` resolves to the source file's URL, not the installed bin entry point. When `npm install -g` creates a symlink in `.bin/fnc → ../../packages/cli/bin/fnc.js`, `import.meta.url` in `main.ts` resolves to `…/packages/cli/src/main.ts` — the source layout, not the install layout. `process.argv[1]` is the script Node/Bun was given on the command line, which is `bin/fnc.js`; `realpathSync` resolves the `.bin/` symlink to the actual file, giving the true install-relative `exeDir`. The prompts directory candidates (`../prompts` relative to bin) then resolve correctly for both local dev (`packages/cli/bin/../prompts`) and global installs.
+
+---
+
+## 2026-05-27 — ensureCwd inode-trick + cleanup callback pattern
+
+**Decision:** When the resolved launch cwd doesn't exist, `ensureCwd` fabricates the full directory tree, returns a `cleanup()` callback, and `main.ts` calls it immediately after `Bun.spawn` returns (before `await proc.exited`). The kernel holds the cwd by inode reference in the child, so the dirs can be removed while the session runs.
+
+**Context:** Cross-cwd resume hands fnclaude a stored cwd that may no longer exist. `Bun.spawn` with a non-existent `cwd` returns `ENOENT` and the error message blames the claude binary, not the missing path. The options were: (a) pre-create and leave the dirs, (b) pre-create + cleanup after the session, (c) skip ensureCwd and add a better error message, (d) the inode-trick: create, spawn, cleanup immediately.
+
+**Why this:** option (a) leaks phantom directories into the user's filesystem. Option (c) is non-starter — missing cwd at a stored path is a valid use case (session started in a temp dir that's since been deleted), not an error. Option (d) is the Go canonical implementation (`src/pty_run.go:154-237`): once the child process has called `chdir`, the kernel pins the inode; the directory entries can be removed from the parent name space without pulling the rug out from under the running child. The cleanup callback is returned alongside the `ok: true` result (rather than being a separate call) so the creation and cleanup stay paired — callers can't forget to clean up, and the function is testable as a unit (create, verify exists, call cleanup, verify gone).
+
+---
+
+## 2026-05-27 — Deferred-flush warnings buffer rather than synchronous stderr writes
+
+**Decision:** Non-fatal launch warnings (worktree-name sanitization, prompt-fragment load failures, missing prompts dir) accumulate in a `WarningBuffer` and flush to stderr after `await proc.exited`, not at the point they're generated.
+
+**Context:** `claude`'s TUI takes over the terminal within milliseconds of spawn. Any `process.stderr.write` that happens before or shortly after spawn scrolls off-screen behind the TUI before the user has time to read it. The options were: (a) suppress warnings entirely, (b) write them before spawn (adds latency on every launch for output nobody will see), (c) write them synchronously at the generation site (same scroll-off problem), (d) buffer + flush post-exit.
+
+**Why this:** option (d) is the only shape where the user actually sees the warning — it lands in the shell after `claude` has exited, at the prompt where the user is about to type. Terminal errors that abort launch (`error` result from `resolveInput`, missing claude binary, clone failure) still write directly to stderr without buffering — those aren't background noise, they're the reason the launch is aborting. The distinction between "warning" (buffered) and "terminal error" (direct) is enforced by call site, not by the buffer itself. Silent-relaunch paths (§9) will need to suppress the flush to avoid writing to a dead terminal; a `// TODO` marks that gate site.
+
+---
+
 ## 2026-05-27 — `@anthropic-ai/sdk` for the auto-name fast-path
 
 **Decision:** When `ANTHROPIC_API_KEY` is set, auto-naming (§5.2) calls `claude-haiku-4-5` via `@anthropic-ai/sdk` (`client.messages.create`) instead of shelling out to `claude -p`. The SDK reads the key from `process.env` rather than us passing it explicitly. Same model + system prompt as the subprocess path, both kept in sync via `name/llm-prompt.ts`.
