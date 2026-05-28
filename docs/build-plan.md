@@ -154,7 +154,7 @@ Depends on §6. This is the big chunk before any in-session feature can work.
 
 ⏱ **§7.2** **AF_UNIX listener startup** — bind, listen, accept loop. Best-effort unlink of stale socket file at startup. Cleanup on shutdown. Listener starts BEFORE claude is spawned. Listener-startup failure aborts the run (per Go canonical).
 
-⏱ **§7.3** **JSON-RPC 2.0 server scaffold** — `initialize`, `tools/list`, `tools/call`, notification handling. MCP transport over stdio (subprocess invoked by claude per `--mcp-config`). Design: [`design.mcp.md` §3].
+✅ **§7.3** **JSON-RPC 2.0 server scaffold** — `initialize`, `tools/list`, `tools/call`, notification handling. MCP transport over stdio (subprocess invoked by claude per `--mcp-config`). Design: [`design.mcp.md` §3]. Implemented in `packages/cli/src/mcp/jsonrpc-server.ts` as `createJsonRpcServer({tools, initializeResponse})` — pure handler that takes one newline-delimited message and returns the response line (or null for notifications). Routes by method, injects tools via `Record<string, {description, inputSchema, handler}>`. Standard JSON-RPC error codes (-32700/-32600/-32601/-32603). Tool results wrapped in MCP's `{ content: [{ type: "text", text: <json> }] }` shape.
 
 ⏱ **§7.4** **Self-MCP `--mcp-config` injection** — inline JSON: `{"mcpServers":{"fnclaude":{"command":"<self-path>","args":["mcp"]}}}` (add `--noop` for noop sessions). Design: [`design.md` §29], [`design.mcp.md` §2.1].
 
