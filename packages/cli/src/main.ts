@@ -20,6 +20,7 @@ import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { startMcpListener } from './mcp/listener.ts';
+import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch.ts';
 import { computeSocketPath } from './mcp/socket-path.ts';
 import { autoName, shouldAutoName } from './name/auto-name.ts';
 import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt.ts';
@@ -392,13 +393,14 @@ if (!claudeBin.ok) {
 // without it once tools are wired (§8). design.mcp.md §2.1.
 if (mcpSocketPath !== undefined) {
   try {
+    // §7.7: wire per-tool dispatch onto each accepted socket. The
+    // handlers default to §8.1–§8.5 stubs until those land — the wire
+    // round-trips cleanly today; only the per-tool side effects (kill +
+    // re-exec, summary writes, clipboard, etc.) are deferred.
+    const dispatcher = createParentDispatcher({ handlers: stubParentHandlers });
     const listener = await startMcpListener({
       socketPath: mcpSocketPath,
-      onConnection: () => {
-        // §7.7 wires per-call dispatch onto each accepted socket. Until
-        // then, dials just open and idle; no tools fire yet (§8), so
-        // claude has no reason to dial in the interim.
-      },
+      onConnection: dispatcher,
     });
     mcpListenerStop = listener.stop;
   } catch (err) {
