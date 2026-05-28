@@ -194,7 +194,7 @@ Depends on §6 (and on switching the launcher to `Bun.Terminal` for output captu
 
 🌿 **§9.1** **Ring buffer** — 64 KB fixed-capacity circular byte buffer. Tee PTY output to stdout + ring. Design: [`design.md` §4].
 
-🌿 **§9.2** **Cross-cwd detection regex** — `/To resume, run:[\s\S]*?cd (\S+) && claude --resume ([0-9a-fA-F-]{36})/g`. Run against ring contents after claude exits. Validate destination per security rules (`isSafeDest`).
+✅ 🌿 **§9.2** **Cross-cwd detection regex** — `/To resume, run:[\s\S]*?cd (\S+) && claude --resume ([0-9a-fA-F-]{36})/g`. Run against ring contents after claude exits. Validate destination per security rules (`isSafeDest`). Pure parser shipped at [`launch/cross-cwd-parse.ts`](../packages/cli/src/launch/cross-cwd-parse.ts); §9.3 consumes.
 
 🌿 **§9.3** **Cross-cwd silent relaunch** — reconstructArgv (preserveArgs with nil deny → splitLeadingMagic → magic + dest + `--resume <uuid>` + rest). Process image replacement on Unix; equivalent on Windows.
 
