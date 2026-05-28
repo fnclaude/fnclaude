@@ -741,4 +741,32 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — warnings deferred-flush (§27)', 
       rmSync(shell, { recursive: true, force: true });
     }
   });
+
+  test('§9.3: no cross-cwd relaunch when ring is empty (inherit-branch real path)', async () => {
+    // The real-spawn test path runs under stdio inherit (no TTY), which
+    // means the ring buffer stays empty. The §9.3 post-exit gate should
+    // therefore return false uniformly — fnc exits with the fake-claude
+    // exit code (0), the warnings flush still runs, and there is NO
+    // observable relaunch spawn. The negative-path smoke is the part we
+    // can assert in CI; a positive cross-cwd test requires a real TTY +
+    // a claude stand-in that emits the resume hint, both of which are
+    // out-of-scope for these e2e tests.
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-crosscwd-noop-'));
+    try {
+      const start = Date.now();
+      const { stderr, exitCode } = await runWithFakeClaude([shell], { cwd: shell });
+      const dt = Date.now() - start;
+      expect(exitCode).toBe(0);
+      // No "second fnclaude" stderr — the relaunch path would either
+      // spawn a fresh fnc (and we'd see double-process output) or, in
+      // the wrong-decode case, throw a TypeError on `argv` shape.
+      expect(stderr).not.toMatch(/TypeError|ReferenceError|RangeError/);
+      // Sanity check that we're not silently hanging on a stuck
+      // relaunch loop; a misbehaving §9.3 that recurses would blow
+      // through the default 2-minute test timeout instead.
+      expect(dt).toBeLessThan(60_000);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
 });

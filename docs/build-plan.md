@@ -196,7 +196,7 @@ Depends on §6 (and on switching the launcher to `Bun.Terminal` for output captu
 
 ✅ 🌿 **§9.2** **Cross-cwd detection regex** — `/To resume, run:[\s\S]*?cd (\S+) && claude --resume ([0-9a-fA-F-]{36})/g`. Run against ring contents after claude exits. Validate destination per security rules (`isSafeDest`). Pure parser shipped at [`launch/cross-cwd-parse.ts`](../packages/cli/src/launch/cross-cwd-parse.ts); §9.3 consumes.
 
-🌿 **§9.3** **Cross-cwd silent relaunch** — reconstructArgv (preserveArgs with nil deny → splitLeadingMagic → magic + dest + `--resume <uuid>` + rest). Process image replacement on Unix; equivalent on Windows.
+✅ 🌿 **§9.3** **Cross-cwd silent relaunch** — reconstructArgv (preserveArgs with nil deny → splitLeadingMagic → magic + dest + `--resume <uuid>` + rest). Process image replacement via the §8.5 `reexecSelf` helper shared with the MCP handoff path. Pure decision lives at [`launch/cross-cwd-relaunch.ts`](../packages/cli/src/launch/cross-cwd-relaunch.ts); the post-exit wiring sits at the bottom of `main.ts`. On Windows the ring buffer stays empty under the inherit branch, so the decision returns false uniformly — no separate guard.
 
 End of §9. Cross-cwd resume works on Linux + Windows + macOS (per PRD item #12).
 

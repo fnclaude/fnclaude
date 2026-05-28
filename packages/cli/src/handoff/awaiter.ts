@@ -83,22 +83,52 @@ export function startHandoffAwaiter(args: StartHandoffAwaiterArgs): Promise<void
 }
 
 /**
- * Default re-exec primitive. Bun has no `execve` binding — true process
- * image replacement isn't possible. The closest stable analog is
- * `Bun.spawn(process.execPath, [bin, ...stashedArgv])`, then await the
+ * Default re-exec primitive. Wraps the reusable `reexecSelf` helper —
+ * shared with §9.3's cross-cwd silent relaunch path.
+ */
+async function defaultExecve(argv: string[]): Promise<void> {
+  await reexecSelf({ argv });
+}
+
+/**
+ * Process image replacement via Bun.spawn — shared between §8.5's
+ * handoff exec and §9.3's cross-cwd silent relaunch.
+ *
+ * Bun has no `execve` binding — true process image replacement isn't
+ * possible. The closest stable analog is
+ * `Bun.spawn(process.execPath, [bin, ...argv])`, then await the
  * child's exit and `process.exit` with the child's code.
  *
  * The fnc bin lives at `process.argv[1]` (already resolved by the
- * shim). We hand it back to the same runtime that's currently
- * executing (`process.execPath`) so any preflight/argv-rehydration
- * step runs identically on the relaunch.
+ * shim) by default; callers can override via `args.fncBin`. The same
+ * runtime that's currently executing (`process.execPath` by default)
+ * hosts the child so any preflight/argv-rehydration step runs
+ * identically on the relaunch.
+ *
+ * Never returns on success — `process.exit(code)` ends the parent
+ * before this promise resolves. The signature is `Promise<never>` to
+ * keep TypeScript honest about the control-flow.
  *
  * Deviation from Go canonical (true execve) is documented in
  * docs/decisions.md.
  */
-async function defaultExecve(argv: string[]): Promise<void> {
-  const binPath = process.argv[1] ?? '';
-  const child = Bun.spawn([process.execPath, binPath, ...argv], {
+export interface ReexecSelfArgs {
+  /** Argv to hand the new fnclaude process (excluding bin path / runtime). */
+  argv: string[];
+  /** Override the Bun executable. Defaults to `process.execPath`. */
+  bunExec?: string;
+  /**
+   * Override the fnc bin path passed to bun as argv[0]. Defaults to
+   * `process.argv[1] ?? ''` — the same script that the parent is
+   * running.
+   */
+  fncBin?: string;
+}
+
+export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
+  const bunExec = args.bunExec ?? process.execPath;
+  const fncBin = args.fncBin ?? process.argv[1] ?? '';
+  const child = Bun.spawn([bunExec, fncBin, ...args.argv], {
     cwd: process.cwd(),
     env: process.env,
     stdin: 'inherit',

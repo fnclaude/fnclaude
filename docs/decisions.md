@@ -301,3 +301,22 @@ TS/Bun has no execve binding. `node:child_process` only exposes spawn / exec / f
 **'never' as control signal, not real value:** the literal string `'never'` is not a permission mode claude understands. The handler treats it as a route selector and strips it from `OverrideRequest.permissionMode` before rendering the relaunch command — otherwise the paste-flow command line would carry `--permission-mode never`, which `claude` would reject. Tested explicitly (`switch-handler.test.ts` → "paste-flow command includes magic prefix + preserved/override flags").
 
 **Revisit when:** the config-driven mode comes back into play (e.g. `auto.handoff = "never"` is wired through the launcher so the model doesn't need to set it explicitly), in which case the handler probably takes both signals — config OR wire — through a single `mode === 'never'` check. Not yet needed since the model receives the user's preference via system-prompt fragments at session start.
+
+---
+
+## 2026-05-28 — §9.3 cross-cwd relaunch reuses §8.5's re-exec primitive
+
+**Decision:** Cross-cwd silent relaunch (§9.3) and MCP handoff (§8.5) share the same `reexecSelf({argv, bunExec?, fncBin?})` helper exported from [`handoff/awaiter.ts`](../packages/cli/src/handoff/awaiter.ts). The pure decision lives in [`launch/cross-cwd-relaunch.ts`](../packages/cli/src/launch/cross-cwd-relaunch.ts) as `decideCrossCwdRelaunch(input): {relaunch: false} | {relaunch: true, argv}`. main.ts's post-exit block consults the decision, stashes the argv on the handoff trigger (so a late MCP-handoff dispatch sees the slot taken), then calls `reexecSelf`.
+
+**Context:** §8.5 shipped first with `defaultExecve` doing `Bun.spawn(process.execPath, [bin, ...argv])` + `process.exit(<child-code>)`. §9.3 needs the same primitive in a different call site — after `await proc.exited`, no kill sequence, no MCP-trigger plumbing in front. Two choices:
+
+1. **Duplicate the spawn-and-await logic in main.ts.** Tightly couples §9.3 to the implementation detail (which bun bin, which fnc bin, which env shape) and means future tweaks (say, dropping `cwd: process.cwd()` to inherit from the parent's controlling tty in a tmux-aware way) need editing in two places.
+2. **Factor out `reexecSelf` and call it from both sites.** What we shipped. `defaultExecve` becomes a thin wrapper for §8.5's injection-seam shape; §9.3 in main.ts calls `reexecSelf` directly with `Promise<never>` typing so TS catches dead-code mistakes after the call.
+
+**Why option 2:** the two flows have identical observable semantics — same parent process becoming a child process that inherits stdio, same exit-code propagation, same env carry-over. The only difference is the argv composition, which both sites resolve before the call. Sharing the implementation means changes to the spawn shape (e.g. if we ever swap to a native bun execve binding) land once.
+
+**Stashing on the cross-cwd path:** `handoffTrigger.stashArgv(argv)` is called even though there's no MCP path to race here at the point we'd stash — claude has already exited, the awaiter's blocked on `awaitTrigger()` (which never fired). The stash exists as a defensive invariant: any future code that consults `handoffTrigger.getStashedArgv()` post-exit (debug dumps, future telemetry) sees the canonical "this is what we're relaunching with" record, regardless of which path produced the relaunch.
+
+**Decision skips the warnings flush:** §9.3 explicitly bypasses `warnings.flush(process.stderr)` before the re-exec — the new fnclaude process re-evaluates its inputs and will re-queue any warning that still applies. Showing stale warnings from the previous invocation right before the new claude session boots would be confusing and is exactly what "silent" in "silent relaunch" rules out.
+
+**Revisit when:** an observable difference shows up between handoff-exec and cross-cwd-exec — same controlling TTY, same exit-code semantics, same one-extra-PID cost. If a divergence ever surfaces (say, controlling-terminal handoff differs because §8.5 went through a kill sequence and §9.3 didn't), the seam stays but the bodies split.

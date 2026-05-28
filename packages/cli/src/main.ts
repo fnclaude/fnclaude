@@ -15,10 +15,11 @@ import { expandAliases } from './argv/expand.ts';
 import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
-import { startHandoffAwaiter } from './handoff/awaiter.ts';
+import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter.ts';
 import { handoffTrigger } from './handoff/trigger.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { composeEnv } from './launch/compose-env.ts';
+import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
@@ -574,11 +575,35 @@ if (useTerminal) {
   process.stdin.pause();
 }
 
+// §9.3: cross-cwd silent relaunch. After a clean exit, scan the ring
+// buffer for claude's "To resume, run: cd X && claude --resume UUID"
+// hint and silently re-exec fnclaude in the new cwd. Gated to skip
+// when an MCP handoff has already stashed argv (that path owns the
+// relaunch) and when claude exited non-zero (don't relaunch on a
+// crash). On Windows the ring buffer stays empty (inherit branch), so
+// the decision always returns false there — keeps the call shape
+// platform-uniform without a separate guard.
+const crossCwdDecision = decideCrossCwdRelaunch({
+  exitCode,
+  alreadyStashed: handoffTrigger.getStashedArgv() !== null,
+  ringSnapshot: ringBuffer.snapshot(),
+  origArgs: argv,
+});
+if (crossCwdDecision.relaunch) {
+  // Stash so future getStashedArgv() callers see this relaunch as
+  // owned. The cross-cwd path is "silent" — we skip the warnings
+  // flush below; the new fnclaude process re-evaluates and re-queues
+  // anything still applicable.
+  handoffTrigger.stashArgv(crossCwdDecision.argv);
+  await reexecSelf({ argv: crossCwdDecision.argv });
+  // Unreachable: reexecSelf calls process.exit. Typed as Promise<never>.
+}
+
 // Flush accumulated warnings to stderr now that claude has exited and the
 // user is back at their shell prompt where they have time to read them.
-// TODO(§9): silent-relaunch paths (cross-cwd resume, MCP handoff) should
-// skip this flush — the new fnclaude process will re-evaluate and re-queue
-// any still-applicable warnings. The relaunch hook lands with §9.
+// Silent-relaunch paths (cross-cwd resume above; MCP handoff via the
+// awaiter side-promise) skip this flush — the new fnclaude process
+// re-evaluates and re-queues any still-applicable warnings.
 warnings.flush(process.stderr);
 
 process.exit(exitCode);
