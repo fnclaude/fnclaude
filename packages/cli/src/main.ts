@@ -33,11 +33,18 @@ import { loadHostAliases } from './repo/host-aliases.ts';
 import { findOwner } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
+import { createWarningBuffer } from './warnings/buffer.ts';
 import { shouldInjectTmux } from './worktree/auto-tmux.ts';
 import { listWorktrees } from './worktree/git-list.ts';
 import { applyWorktreeIntercept } from './worktree/intercept.ts';
 
 const argv = readArgv();
+
+// Non-fatal warnings accumulate here; we flush after claude exits so the
+// user actually sees them. Terminal errors (the `exit(2)` / `exit(127)`
+// paths below) bypass the buffer and write straight to stderr — they're
+// the reason we're not launching, not background noise. Design: §27.
+const warnings = createWarningBuffer();
 
 // Internal test hook: dump raw argv before any other work. Lets e2e tests
 // verify the preflight + intake chain preserves `--` without spawning anything.
@@ -226,7 +233,7 @@ const intercept = applyWorktreeIntercept({
   passthrough: parsed.passthrough,
   listWorktrees,
 });
-for (const w of intercept.warnings) process.stderr.write(`${w}\n`);
+for (const w of intercept.warnings) warnings.add(w);
 cwd = intercept.launchCwd;
 const parsedWithIntercept = { ...parsed, passthrough: intercept.passthrough };
 
@@ -300,10 +307,10 @@ if (fragmentNames.length > 0) {
   });
   if (promptsDir.dir !== null) {
     const loaded = loadFragments(fragmentNames, promptsDir.dir);
-    for (const w of loaded.warnings) process.stderr.write(`${w}\n`);
+    for (const w of loaded.warnings) warnings.add(w);
     claudeArgs = injectFragments(claudeArgs, loaded.content);
   } else if (promptsDir.warning !== undefined) {
-    process.stderr.write(`${promptsDir.warning}\n`);
+    warnings.add(promptsDir.warning);
   }
 }
 
@@ -371,4 +378,13 @@ ensured.cleanup();
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
 
-process.exit(await proc.exited);
+const exitCode = await proc.exited;
+
+// Flush accumulated warnings to stderr now that claude has exited and the
+// user is back at their shell prompt where they have time to read them.
+// TODO(§9): silent-relaunch paths (cross-cwd resume, MCP handoff) should
+// skip this flush — the new fnclaude process will re-evaluate and re-queue
+// any still-applicable warnings. The relaunch hook lands with §9.
+warnings.flush(process.stderr);
+
+process.exit(exitCode);
