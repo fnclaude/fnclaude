@@ -417,20 +417,69 @@ if (!ensured.ok) {
   process.exit(2);
 }
 
+// §9.0: spawn claude via Bun.Terminal on POSIX so the launcher can tee PTY
+// output through a ring buffer for cross-cwd resume detection (§9.1+). On
+// Windows we fall back to stdio inherit until Bun.Terminal lands on win32.
+// Non-TTY contexts (piped stdin, FNC_INTERNAL_DUMP_PLAN tests) also use the
+// inherit shape — raw-mode forwarding requires a real terminal anyway.
+const useTerminal =
+  process.platform !== 'win32' &&
+  process.stdin.isTTY === true &&
+  process.stdout.isTTY === true;
+
 // Kernel routes Ctrl-C to the whole foreground pgrp; claude handles its
 // own SIGINT. Swallow it here so fnc survives to read claude's exit code.
+// Under Bun.Terminal the parent isn't in the same pgrp as the child, so
+// these handlers mostly cover the inherit branch — harmless either way.
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
 
 let exitCode: number;
 try {
-  const proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
-    cwd,
-    env: childEnv,
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
+  let proc: Bun.Subprocess;
+  if (useTerminal) {
+    // Tee PTY output → process.stdout so the user keeps seeing claude. The
+    // ring buffer added in §9.1 will read the same `data` chunks and scan
+    // them for the cross-cwd resume hint after exit.
+    const term = new Bun.Terminal({
+      cols: process.stdout.columns ?? 80,
+      rows: process.stdout.rows ?? 24,
+      data: (_t, chunk) => {
+        process.stdout.write(chunk);
+      },
+    });
+
+    proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
+      cwd,
+      env: childEnv,
+      terminal: term,
+    });
+
+    // Forward user stdin → PTY. Raw mode so the shell line discipline
+    // doesn't eat control sequences (Ctrl-C, arrow keys, etc.) before
+    // claude sees them. bun#25779 (control bytes not delivering signals
+    // through Bun.Terminal.write) was fixed before 1.3.14 — verified
+    // empirically on this version; no byte-interception workaround
+    // needed.
+    process.stdin.setRawMode(true);
+    process.stdin.on('data', (chunk: Buffer) => {
+      term.write(chunk);
+    });
+
+    // SIGWINCH no longer reaches claude directly (the PTY is owned by the
+    // launcher), so plumb terminal resizes through manually.
+    process.stdout.on('resize', () => {
+      term.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
+    });
+  } else {
+    proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
+      cwd,
+      env: childEnv,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    });
+  }
 
   ensured.cleanup();
 
@@ -442,6 +491,15 @@ try {
   if (mcpListenerStop !== undefined) {
     await mcpListenerStop();
   }
+}
+
+if (useTerminal) {
+  // Restore the terminal so the user's shell prompt comes back in cooked
+  // mode. setRawMode is a no-op when stdin isn't a TTY; we only entered
+  // raw mode in the useTerminal branch, so this is safe to call.
+  process.stdin.setRawMode(false);
+  // Stop reading stdin so process.exit doesn't block on an open listener.
+  process.stdin.pause();
 }
 
 // Flush accumulated warnings to stderr now that claude has exited and the
