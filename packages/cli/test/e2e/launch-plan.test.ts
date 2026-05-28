@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
@@ -263,6 +263,82 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — worktree intercept (-w)', () => {
       expect(plan!.claudeArgs).not.toContain('has spaces!');
       expect(stderr).toMatch(/sanitized|illegal/i);
     } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(SKIP_WINDOWS)('launch plan — auto-tmux gating (§5.4)', () => {
+  function makeConfigDir(autoTmux: string | null): string {
+    const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-xdg-'));
+    if (autoTmux !== null) {
+      const dir = join(xdg, 'fnclaude');
+      mkdirSync(dir);
+      writeFileSync(join(dir, 'config.toml'), `[auto]\ntmux = "${autoTmux}"\n`);
+    }
+    return xdg;
+  }
+
+  test('config auto.tmux="worktree" + -w name (no match) → --tmux injected', async () => {
+    const xdg = makeConfigDir('worktree');
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-at-'));
+    try {
+      const { plan, exitCode } = await runPlan([shell, '-w', 'new-feat'], {
+        cwd: shell,
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).toContain('--tmux');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('no config → no --tmux even with -w', async () => {
+    const xdg = makeConfigDir(null); // no config.toml
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-nt-'));
+    try {
+      const { plan, exitCode } = await runPlan([shell, '-w', 'new-feat'], {
+        cwd: shell,
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).not.toContain('--tmux');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('config "worktree" + --no-tmux → no --tmux', async () => {
+    const xdg = makeConfigDir('worktree');
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-nt2-'));
+    try {
+      const { plan, exitCode } = await runPlan([shell, '-w', 'new-feat', '--no-tmux'], {
+        cwd: shell,
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).not.toContain('--tmux');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('config "worktree" but no -w → no --tmux (only new-worktree triggers)', async () => {
+    const xdg = makeConfigDir('worktree');
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-nt3-'));
+    try {
+      const { plan, exitCode } = await runPlan([shell], {
+        cwd: shell,
+        extraEnv: { XDG_CONFIG_HOME: xdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(plan!.claudeArgs).not.toContain('--tmux');
+    } finally {
+      rmSync(xdg, { recursive: true, force: true });
       rmSync(shell, { recursive: true, force: true });
     }
   });

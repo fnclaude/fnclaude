@@ -14,6 +14,7 @@ import { readArgv } from './argv/intake.ts';
 import { expandAliases } from './argv/expand.ts';
 import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
+import { loadConfig } from './config/load.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { resolvePromptsDir } from './prompts/dir.ts';
@@ -22,6 +23,7 @@ import { selectFragments } from './prompts/select.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
+import { shouldInjectTmux } from './worktree/auto-tmux.ts';
 import { listWorktrees } from './worktree/git-list.ts';
 import { applyWorktreeIntercept } from './worktree/intercept.ts';
 
@@ -58,12 +60,16 @@ if (!parsed.ok) {
   process.exit(2);
 }
 
+// Load fnclaude config (auto.tmux + other settings the launcher consults).
+const HOME = homedir();
+const shellCwd = process.cwd();
+const configBase = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
+const config = await loadConfig({ path: join(configBase, 'fnclaude', 'config.toml') });
+
 // Load settings before resolution. Resolution-time settings only need user +
 // managed tiers (project/local require knowing projectRoot, which only matters
 // after launch). The managed-settings path is Linux-only for now; macOS &
 // Windows resolution to come.
-const HOME = homedir();
-const shellCwd = process.cwd();
 const settings = loadRepoSettings({
   userPath: join(HOME, '.claude', 'settings.json'),
   projectPath: join(shellCwd, '.claude', 'settings.json'),
@@ -141,6 +147,20 @@ if (!shortExpanded.ok) {
   process.exit(2);
 }
 let claudeArgs = shortExpanded.tokens;
+
+// Auto-tmux: if config has auto.tmux = "worktree" AND this is a brand-new
+// worktree (worktreeSet + no match) AND user didn't opt out, inject --tmux.
+if (
+  shouldInjectTmux({
+    configAutoTmux: config.autoTmux,
+    worktreeSet: parsed.worktreeSet,
+    worktreeMatched: intercept.worktreeMatched,
+    noTmux: parsed.noTmux,
+    passthrough: claudeArgs,
+  })
+) {
+  claudeArgs = [...claudeArgs, '--tmux'];
+}
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on
 // noop fallback + interactive (non-print) state of the session.
