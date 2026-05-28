@@ -15,6 +15,8 @@ import { expandAliases } from './argv/expand.ts';
 import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
+import { startHandoffAwaiter } from './handoff/awaiter.ts';
+import { handoffTrigger } from './handoff/trigger.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { composeEnv } from './launch/compose-env.ts';
 import { findClaude } from './launch/find-claude.ts';
@@ -511,6 +513,19 @@ try {
   }
 
   ensured.cleanup();
+
+  // §8.5: arm the kill-and-exec awaiter as a side-promise. If an MCP
+  // tool dispatches a handoff during the session, the awaiter wakes,
+  // SIGTERMs claude (escalating to SIGKILL after 200 ms if needed),
+  // waits for proc.exited, then re-execs fnclaude with the stashed
+  // argv via Bun.spawn (no native execve binding — see decisions.md).
+  // If no handoff fires, this promise sits idle until process exit
+  // and gets GC'd; the orphaned-promise pattern matches Go canonical's
+  // background goroutine. design.mcp.md §6.
+  void startHandoffAwaiter({
+    trigger: handoffTrigger,
+    proc,
+  });
 
   exitCode = await proc.exited;
 } finally {
