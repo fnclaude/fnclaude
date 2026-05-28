@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
@@ -31,10 +32,15 @@ interface RunResult {
   exitCode: number;
 }
 
-async function runPlan(args: readonly string[], extraEnv: Record<string, string> = {}): Promise<RunResult> {
+interface RunOptions {
+  cwd?: string;
+  extraEnv?: Record<string, string>;
+}
+
+async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
   const proc = Bun.spawn(['node', BIN, ...args], {
-    cwd: tmpdir(),
-    env: { ...process.env, FNC_INTERNAL_DUMP_PLAN: '1', ...extraEnv },
+    cwd: opts.cwd ?? tmpdir(),
+    env: { ...process.env, FNC_INTERNAL_DUMP_PLAN: '1', ...(opts.extraEnv ?? {}) },
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -66,10 +72,43 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — cwd resolution', () => {
     expect(plan!.usedNoopFallback).toBe(false);
   });
 
-  test('relative path arg → resolved against shell cwd', async () => {
-    const { plan, exitCode } = await runPlan(['some-dir']);
-    expect(exitCode).toBe(0);
-    expect(plan!.cwd).toBe(join(tmpdir(), 'some-dir'));
+  test('absolute path with existing dir → launches there', async () => {
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-abs-'));
+    try {
+      const sub = join(shell, 'some-dir');
+      mkdirSync(sub);
+      const { plan, exitCode } = await runPlan([sub], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(plan!.cwd).toBe(sub);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('bare name + local dir match → ambiguous (spec §18.1 disambiguation)', async () => {
+    // bare name 'foo' could mean local <shellCwd>/foo OR a gh repo 'foo'.
+    // Per spec, that ambiguity surfaces as a clean error — user has to be
+    // explicit (e.g. absolute path or owner-qualified).
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-ambig-'));
+    try {
+      mkdirSync(join(shell, 'some-dir'));
+      const { stderr, exitCode } = await runPlan(['some-dir'], { cwd: shell });
+      expect(exitCode).toBe(2);
+      expect(stderr).toMatch(/ambiguous/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
+  });
+
+  test('bare name with no local dir → needs-owner-lookup error (gh CLI not yet wired)', async () => {
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-bare-'));
+    try {
+      const { stderr, exitCode } = await runPlan(['totally-unique-name-xyz'], { cwd: shell });
+      expect(exitCode).toBe(2);
+      expect(stderr).toMatch(/gh CLI|owner|implemented/i);
+    } finally {
+      rmSync(shell, { recursive: true, force: true });
+    }
   });
 
   test('~ → home dir', async () => {

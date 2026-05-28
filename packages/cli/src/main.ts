@@ -7,7 +7,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 
 import { readArgv } from './argv/intake.ts';
 import { expandAliases } from './argv/expand.ts';
@@ -15,7 +15,9 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
-import { expandTilde, noopDir } from './path/resolve.ts';
+import { loadHostAliases } from './repo/host-aliases.ts';
+import { loadRepoSettings } from './repo/repo-settings.ts';
+import { resolveInput } from './repo/resolve-input.ts';
 
 const argv = readArgv();
 
@@ -50,19 +52,64 @@ if (!parsed.ok) {
   process.exit(2);
 }
 
-// Compute launch cwd. For now: no positional → noop; positional → tilde-expand
-// + make absolute relative to shell cwd. The full resolver (repo refs, gh CLI
-// lookup, clone) lands in a follow-up slice.
+// Load settings before resolution. Resolution-time settings only need user +
+// managed tiers (project/local require knowing projectRoot, which only matters
+// after launch). The managed-settings path is Linux-only for now; macOS &
+// Windows resolution to come.
+const HOME = homedir();
+const shellCwd = process.cwd();
+const settings = loadRepoSettings({
+  userPath: join(HOME, '.claude', 'settings.json'),
+  projectPath: join(shellCwd, '.claude', 'settings.json'),
+  localPath: join(shellCwd, '.claude', 'settings.local.json'),
+  managedPath: '/etc/claude-code/managed-settings.json',
+});
+const hostAliases = loadHostAliases({
+  systemPath: '/usr/share/fnrhombus/host-aliases.json',
+  userPath: join(HOME, '.local', 'share', 'fnrhombus', 'host-aliases.json'),
+});
+
+// Resolve the first positional (path or repo ref) to a launch cwd. The
+// resolver handles path short-circuit (/, ~, ~/) AND repo-ref refs whose owner
+// is already known (URL forms, owner/name, name@owner, gh:owner/name). Bare
+// names and clone execution route through the gh-CLI branches below; ambiguous
+// matches surface a clean error.
+const resolved = resolveInput({
+  input: parsed.firstPath,
+  shellCwd,
+  home: HOME,
+  xdgConfigHome: process.env.XDG_CONFIG_HOME,
+  settings: { cloneTemplate: settings.cloneTemplate, hostAliases },
+});
+
 let cwd: string;
 let usedNoopFallback = false;
-const HOME = homedir();
-if (parsed.firstPath === null) {
-  cwd = noopDir({ xdgConfigHome: process.env.XDG_CONFIG_HOME, home: HOME });
-  usedNoopFallback = true;
-  await mkdir(cwd, { recursive: true });
-} else {
-  const expanded = expandTilde(parsed.firstPath, HOME);
-  cwd = isAbsolute(expanded) ? expanded : join(process.cwd(), expanded);
+switch (resolved.kind) {
+  case 'launch':
+    cwd = resolved.launchCwd;
+    usedNoopFallback = resolved.usedNoopFallback;
+    if (usedNoopFallback) await mkdir(cwd, { recursive: true });
+    break;
+  case 'needs-clone':
+    process.stderr.write(
+      `fnclaude: ${resolved.destination} doesn't exist on disk. Would clone ${resolved.url} → ${resolved.destination}; clone execution not yet implemented in the TS rewrite.\n`,
+    );
+    process.exit(2);
+  case 'needs-owner-lookup':
+    process.stderr.write(
+      `fnclaude: bare name ${JSON.stringify(resolved.name)} needs gh CLI to find the owner; not yet implemented in the TS rewrite.\n`,
+    );
+    process.exit(2);
+  case 'ambiguous': {
+    const both = resolved.cloneDestination ?? resolved.repoRef ?? '?';
+    process.stderr.write(
+      `fnclaude: ambiguous reference — could be the local directory ${resolved.path} OR ${both}. Disambiguate by typing './<name>' for the local path.\n`,
+    );
+    process.exit(2);
+  }
+  case 'error':
+    process.stderr.write(`fnclaude: ${resolved.error}\n`);
+    process.exit(2);
 }
 
 // Build the final claude argv: prepend magic-captured flags (model/effort/
