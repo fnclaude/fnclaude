@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.6...cli-v2.1.0) (2026-05-29)
+
+
+### Features
+
+* **cli:** slash-injection keystone for parent-dispatch MCP tools ([#175](https://github.com/fnclaude/fnclaude/issues/175)) ([b0e30bb](https://github.com/fnclaude/fnclaude/commit/b0e30bb3ed2d48b2defacb96a55ac141320177e2))
+
 ## [2.0.6](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.5...cli-v2.0.6) (2026-05-29)
 
 
