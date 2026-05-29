@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.6](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.5...cli-v2.0.6) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cli:** disambiguate bare repo names found under multiple owners ([#173](https://github.com/fnclaude/fnclaude/issues/173)) ([b33a039](https://github.com/fnclaude/fnclaude/commit/b33a03978835a84bca29c09d87d2a8ea2a843dc7))
+
 ## [2.0.5](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.4...cli-v2.0.5) (2026-05-29)
 
 
