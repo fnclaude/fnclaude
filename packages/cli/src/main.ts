@@ -58,6 +58,7 @@ import { loadHostAliases } from './repo/host-aliases.ts';
 import { findOwner, formatOwnerLookupError } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
+import { resolveContextNoticeThreshold, startContextMonitor } from './usage/context-monitor.ts';
 import { createWarningBuffer } from './warnings/buffer.ts';
 import { shouldInjectTmux } from './worktree/auto-tmux.ts';
 import { listWorktrees } from './worktree/git-list.ts';
@@ -523,6 +524,9 @@ let exitCode: number;
 // Captured so the post-exit handoff branch can await it (keeps the
 // parent alive + foreground until the re-exec'd child exits).
 let handoffAwaiter: Promise<void> | undefined;
+// Stops the context-size monitor's poll timer on teardown. Only set on
+// the useTerminal branch; left undefined under stdio inherit.
+let contextMonitorStop: (() => void) | undefined;
 try {
   let proc: Bun.Subprocess;
   if (useTerminal) {
@@ -566,6 +570,22 @@ try {
     process.stdout.on('resize', () => {
       term.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
     });
+
+    // §9.0 / #170 part 2: context-size monitor. Polls the live session
+    // JSONL's latest-turn context size and, the FIRST time it crosses the
+    // threshold, injects ONE plain-text notice line into the PTY via the
+    // same raw `term.write` seam user keystrokes go through — suggesting
+    // the model call request_compact at a clean stopping point. Latches
+    // off after firing. Threshold defaults to 200k, overridable via
+    // [context] notice_threshold in config.toml or the
+    // FNC_CONTEXT_NOTICE_THRESHOLD env var.
+    contextMonitorStop = startContextMonitor({
+      launchCWD: cwd,
+      threshold: resolveContextNoticeThreshold({ configThreshold: config.contextNoticeThreshold }),
+      write: (payload) => {
+        term.write(payload);
+      },
+    }).stop;
   } else {
     proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
       cwd,
@@ -605,6 +625,11 @@ try {
   // parent's job.
   if (mcpListenerStop !== undefined) {
     await mcpListenerStop();
+  }
+  // Stop the context-size monitor's poll timer (idempotent; no-op if it
+  // already latched off after firing).
+  if (contextMonitorStop !== undefined) {
+    contextMonitorStop();
   }
 }
 
