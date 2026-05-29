@@ -19,7 +19,15 @@
  * through. WireRequest's `op` field is the one we constrain.
  */
 
-export type WireOp = 'restart' | 'switch' | 'spawn' | 'copy_to_clipboard';
+export type WireOp =
+  | 'restart'
+  | 'switch'
+  | 'spawn'
+  | 'copy_to_clipboard'
+  | 'compact'
+  | 'set_effort'
+  | 'set_model'
+  | 'run_slash';
 
 export interface WireRequest {
   op: WireOp;

@@ -52,9 +52,24 @@ export const stubParentHandlers: ParentDispatchHandlers = {
     action: 'done',
     message: '§8.4 fnc_copy_to_clipboard not yet implemented',
   }),
+  // Batch-2 slash-injection ops. Stubbed until main.ts binds the live PTY
+  // writer; the keystone-backed handlers replace these at wiring time.
+  compact: async (_req) => ({ action: 'queued' }),
+  set_effort: async (_req) => ({ action: 'queued' }),
+  set_model: async (_req) => ({ action: 'queued' }),
+  run_slash: async (_req) => ({ action: 'queued' }),
 };
 
-const KNOWN_OPS = new Set<WireOp>(['restart', 'switch', 'spawn', 'copy_to_clipboard']);
+const KNOWN_OPS = new Set<WireOp>([
+  'restart',
+  'switch',
+  'spawn',
+  'copy_to_clipboard',
+  'compact',
+  'set_effort',
+  'set_model',
+  'run_slash',
+]);
 
 function isWireOp(value: unknown): value is WireOp {
   return typeof value === 'string' && KNOWN_OPS.has(value as WireOp);

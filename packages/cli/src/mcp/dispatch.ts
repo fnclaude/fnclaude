@@ -54,9 +54,26 @@ export const MCP_TOOL_NAMES = [
   'fnc_switch_project',
   'fnc_spawn_session',
   'fnc_copy_to_clipboard',
+  'request_compact',
+  'fnc_set_effort',
+  'fnc_set_model',
+  'fnc_run_slash_command',
 ] as const;
 
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
+
+/**
+ * The generic slash tool (C4) is opt-in: it injects arbitrary slash
+ * commands into the live TUI and stays out of the tool list unless the
+ * operator enables it with `FNC_ENABLE_SLASH_TOOL=1`. The remaining tools
+ * are always registered.
+ */
+const OPT_IN_TOOLS: ReadonlySet<McpToolName> = new Set(['fnc_run_slash_command']);
+
+function toolEnabled(name: McpToolName, env: Record<string, string | undefined>): boolean {
+  if (!OPT_IN_TOOLS.has(name)) return true;
+  return env.FNC_ENABLE_SLASH_TOOL === '1';
+}
 
 /**
  * Mapping from the MCP-visible tool name to the wire `op` value the
@@ -67,6 +84,10 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_switch_project: 'switch',
   fnc_spawn_session: 'spawn',
   fnc_copy_to_clipboard: 'copy_to_clipboard',
+  request_compact: 'compact',
+  fnc_set_effort: 'set_effort',
+  fnc_set_model: 'set_model',
+  fnc_run_slash_command: 'run_slash',
 };
 
 export interface BuildToolsArgs {
@@ -76,6 +97,8 @@ export interface BuildToolsArgs {
     socketPath: string;
     request: WireRequest;
   }) => Promise<WireResponse>;
+  /** Injectable env for the opt-in gate; defaults to `process.env`. */
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -93,8 +116,10 @@ export interface BuildToolsArgs {
  */
 export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool> {
   const dialer = args.dialAndCall ?? dialAndCall;
+  const env = args.env ?? process.env;
   const tools: Record<string, JsonRpcMcpTool> = {};
   for (const name of MCP_TOOL_NAMES) {
+    if (!toolEnabled(name, env)) continue;
     const schema = TOOL_SCHEMAS[name];
     tools[name] = {
       description: schema.description,
