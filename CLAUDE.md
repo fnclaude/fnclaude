@@ -62,16 +62,23 @@ code change.**
 **When Tom describes a bug, or you find one referenced in an issue, the
 FIRST action is to land a committed test that reproduces it** — not a
 shell command you ran once, not a theory, not a fix proposal. A
-regression assertion that fails in CI for the right reason. Investigation
-follows.
+regression assertion that fails in CI for the right reason.
+
+**Do not read source files, form diagnoses, or theorize about root cause
+before that test exists and fails for the right reason.** The failing
+committed test is the gate that unlocks investigation. No test → no
+investigation. This isn't intake ceremony — it's the only way to confirm
+you're looking at the actual bug rather than a theory about it.
 
 This is upstream of the "write the failing test first" workflow below.
 That rule covers the *implementation phase* of a known bug; this rule
-covers the *intake phase*. The reproducer's size doesn't matter — one
-assertion in an existing file, or a new e2e harness that launches a
-subprocess and inspects its protocol output, both count. What matters
-is that the bug becomes visible in CI before you touch the code that's
-supposed to fix it.
+covers the *intake phase*. The reproducer level doesn't matter — unit,
+integration, or e2e — but pick the **cheapest level that faithfully
+replicates the bug**. A unit test on the broken function is preferred
+over an integration test, which is preferred over e2e. Don't reach for
+an e2e harness if a unit assertion on the same code path catches the
+same failure. What matters is that the bug is visible in CI before you
+touch the code that's supposed to fix it.
 
 If reproduction needs new infrastructure to be observable (e.g. starting
 the MCP server as a subprocess and verifying the JSON-RPC handshake),
