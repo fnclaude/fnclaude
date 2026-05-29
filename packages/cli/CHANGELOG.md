@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.3...cli-v2.0.4) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cli:** fix cross-cwd resume — quoted paths, screen clear, picker loop ([#164](https://github.com/fnclaude/fnclaude/issues/164)) ([8f02bc9](https://github.com/fnclaude/fnclaude/commit/8f02bc94c0f1c92030cdd6754432ca8efb2592df))
+
 ## [2.0.3](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.2...cli-v2.0.3) (2026-05-29)
 
 
