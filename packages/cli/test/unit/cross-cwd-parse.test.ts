@@ -135,6 +135,81 @@ describe('parseCrossCwdHint', () => {
     expect(parseCrossCwdHint(text)).toBeNull();
   });
 
+  // claude shell-quotes the cwd in its cross-cwd hint when the path
+  // contains a char outside [A-Za-z0-9_./:=@+,-] (its O4 builder). The
+  // emitted command then looks like:
+  //   cd '/home/tom/my project' && claude --resume <uuid>
+  // The exact text claude prints (verbatim from its binary's template).
+  const claudeHint = (command: string): string =>
+    [
+      '',
+      'This conversation is from a different directory.',
+      '',
+      'To resume, run:',
+      `  ${command}`,
+      '',
+      '(Command copied to clipboard)',
+      '',
+    ].join('\n');
+
+  test('quoted cwd with a space → unquoted and accepted', () => {
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(`cd '/home/tom/my project' && claude --resume ${uuid}`);
+    const r = parseCrossCwdHint(text);
+    expect(r).toEqual({
+      cwd: '/home/tom/my project',
+      uuid,
+    });
+  });
+
+  test('quoted cwd containing an escaped single quote → unquoted', () => {
+    // claude escapes an inner ' as '"'"' inside the single-quoted run.
+    // Path: /home/tom/o'brien dir
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(
+      `cd '/home/tom/o'"'"'brien dir' && claude --resume ${uuid}`,
+    );
+    const r = parseCrossCwdHint(text);
+    expect(r).toEqual({
+      cwd: "/home/tom/o'brien dir",
+      uuid,
+    });
+  });
+
+  test('bare cwd (no quoting needed) still works', () => {
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(`cd /home/tom/plain && claude --resume ${uuid}`);
+    expect(parseCrossCwdHint(text)).toEqual({
+      cwd: '/home/tom/plain',
+      uuid,
+    });
+  });
+
+  test('quoted cwd with a $ char → accepted (real filename byte claude quoted)', () => {
+    // claude quotes precisely because the path has a char outside its
+    // bare-safe set; $ in a quoted run is a legitimate filename byte, not
+    // injection — the dest is handed to Bun.spawn as cwd, never to a shell.
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(`cd '/home/tom/$weird dir' && claude --resume ${uuid}`);
+    expect(parseCrossCwdHint(text)).toEqual({
+      cwd: '/home/tom/$weird dir',
+      uuid,
+    });
+  });
+
+  test('quoted cwd with a `..` traversal segment → null', () => {
+    // The `..` and absolute-path checks still apply to quoted paths.
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(`cd '/home/tom/../etc bad' && claude --resume ${uuid}`);
+    expect(parseCrossCwdHint(text)).toBeNull();
+  });
+
+  test('quoted relative path → null', () => {
+    const uuid = '12345678-1234-4abc-89ab-1234567890ab';
+    const text = claudeHint(`cd 'rel ative/dir' && claude --resume ${uuid}`);
+    expect(parseCrossCwdHint(text)).toBeNull();
+  });
+
   test('realistic claude output fixture', () => {
     // The "To resume, run:" / cd / --resume sequence is what survives the
     // TUI render — design.md §4 calls out that the surrounding "different
