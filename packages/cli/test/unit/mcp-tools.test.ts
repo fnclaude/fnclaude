@@ -19,7 +19,7 @@ import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch.ts';
 import type { WireRequest, WireResponse } from '../../src/mcp/wire.ts';
 
 describe('MCP_TOOL_NAMES', () => {
-  test('exposes the original four plus the Batch-2 slash tools', () => {
+  test('exposes the original four plus the Batch-2 slash tools and get_usage', () => {
     expect(MCP_TOOL_NAMES).toEqual([
       'fnc_restart',
       'fnc_switch_project',
@@ -29,6 +29,7 @@ describe('MCP_TOOL_NAMES', () => {
       'fnc_set_effort',
       'fnc_set_model',
       'fnc_run_slash_command',
+      'get_usage',
     ]);
   });
 });

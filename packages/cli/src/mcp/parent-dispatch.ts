@@ -58,6 +58,14 @@ export const stubParentHandlers: ParentDispatchHandlers = {
   set_effort: async (_req) => ({ action: 'queued' }),
   set_model: async (_req) => ({ action: 'queued' }),
   run_slash: async (_req) => ({ action: 'queued' }),
+  // get_usage returns structured data — stub yields an empty report until
+  // main.ts binds the launchCWD-bound reader.
+  get_usage: async (_req) => ({
+    action: 'usage',
+    session: { cost_usd: 0, by_model: {} },
+    limits: null,
+    context: { used: null, model: null },
+  }),
 };
 
 const KNOWN_OPS = new Set<WireOp>([
@@ -69,6 +77,7 @@ const KNOWN_OPS = new Set<WireOp>([
   'set_effort',
   'set_model',
   'run_slash',
+  'get_usage',
 ]);
 
 function isWireOp(value: unknown): value is WireOp {

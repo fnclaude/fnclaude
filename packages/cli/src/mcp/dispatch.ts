@@ -58,6 +58,7 @@ export const MCP_TOOL_NAMES = [
   'fnc_set_effort',
   'fnc_set_model',
   'fnc_run_slash_command',
+  'get_usage',
 ] as const;
 
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
@@ -88,6 +89,7 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_set_effort: 'set_effort',
   fnc_set_model: 'set_model',
   fnc_run_slash_command: 'run_slash',
+  get_usage: 'get_usage',
 };
 
 export interface BuildToolsArgs {

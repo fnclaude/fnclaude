@@ -27,7 +27,8 @@ export type WireOp =
   | 'compact'
   | 'set_effort'
   | 'set_model'
-  | 'run_slash';
+  | 'run_slash'
+  | 'get_usage';
 
 export interface WireRequest {
   op: WireOp;
