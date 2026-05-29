@@ -70,6 +70,18 @@ committed test is the gate that unlocks investigation. No test → no
 investigation. This isn't intake ceremony — it's the only way to confirm
 you're looking at the actual bug rather than a theory about it.
 
+**This holds even when you resume a bug mid-investigation** — e.g. after
+a context compaction whose summary already contains heavy diagnosis ("two
+hypotheses", a root-cause theory, a half-built repro). Inherited
+investigation is NOT a substitute for a committed failing test. If no such
+test exists yet, writing one is still your *first* action, before reading
+another source file — discard the carried-over theory until a failing test
+confirms it. A test written *after* a diagnosis only validates the
+diagnosis; if it's incomplete, the test goes green while the bug survives.
+And stash-sanity every repro (fail without the fix, pass with it) — a repro
+that passes both ways, e.g. an injected seam that bypasses the buggy line,
+reproduces nothing.
+
 This is upstream of the "write the failing test first" workflow below.
 That rule covers the *implementation phase* of a known bug; this rule
 covers the *intake phase*. The reproducer level doesn't matter — unit,
