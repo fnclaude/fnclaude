@@ -38,6 +38,14 @@ export interface FnConfig {
    * "fall back to $TMUX auto-detect, then paste-flow".
    */
   autoSpawnCommand: string | undefined;
+  /**
+   * `[context] notice_threshold`. Context-size (in tokens) at which the
+   * launcher injects a one-shot compaction notice into the live session
+   * (#170 part 2). `undefined` means "use the built-in default"; the
+   * monitor resolves the effective value. A non-positive or non-numeric
+   * value degrades to undefined (defensive).
+   */
+  contextNoticeThreshold: number | undefined;
   execEnv: Record<string, string> | undefined;
 }
 
@@ -49,6 +57,7 @@ const EMPTY: FnConfig = {
   autoTmux: undefined,
   autoHandoff: undefined,
   autoSpawnCommand: undefined,
+  contextNoticeThreshold: undefined,
   execEnv: undefined,
 };
 
@@ -76,8 +85,17 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
     autoTmux: pickAutoTmux(root),
     autoHandoff: pickAutoHandoff(root),
     autoSpawnCommand: pickAutoSpawnCommand(root),
+    contextNoticeThreshold: pickContextNoticeThreshold(root),
     execEnv: pickExecEnv(root),
   };
+}
+
+function pickContextNoticeThreshold(root: Record<string, unknown>): number | undefined {
+  const context = root.context;
+  if (context === null || typeof context !== 'object' || Array.isArray(context)) return undefined;
+  const v = (context as Record<string, unknown>).notice_threshold;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return undefined;
+  return v;
 }
 
 function pickAutoTmux(root: Record<string, unknown>): string | undefined {

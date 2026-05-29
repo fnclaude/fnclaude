@@ -1,0 +1,230 @@
+/**
+ * Unit tests for the context-size monitor (#170 part 2).
+ *
+ * The monitor watches the live session's context size and, the FIRST time
+ * it crosses a threshold, injects EXACTLY ONE plain-text notice line into
+ * the PTY via the raw write seam (NOT the slash formatter), then latches
+ * off for the rest of the session. These tests drive a scripted sequence
+ * of token counts (below → crossing → above) through the injected seams
+ * and assert: no notice below, exactly one notice at the crossing with the
+ * correct `<fnc-notice>…Nk…</fnc-notice>` format and rounded N, no second
+ * notice on further growth, the configurable threshold fires earlier, and
+ * nothing is captured back through the writer.
+ */
+
+import { describe, expect, test } from 'bun:test';
+
+import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
+import {
+  CONTEXT_NOTICE_THRESHOLD_ENV,
+  DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+  createContextMonitor,
+  formatContextNotice,
+  resolveContextNoticeThreshold,
+  startContextMonitor,
+} from '../../src/usage/context-monitor.ts';
+
+function spyWriter(): { write: PtyWriter; calls: string[] } {
+  const calls: string[] = [];
+  return { write: (p) => calls.push(p), calls };
+}
+
+describe('formatContextNotice', () => {
+  test('rounds tokens to the nearest k and wraps in <fnc-notice>', () => {
+    expect(formatContextNotice(200_000)).toBe(
+      '<fnc-notice>context at 200k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
+    );
+  });
+
+  test('rounds to nearest thousand (204_600 → 205k)', () => {
+    expect(formatContextNotice(204_600)).toContain('context at 205k tokens');
+  });
+
+  test('rounds down (201_400 → 201k)', () => {
+    expect(formatContextNotice(201_400)).toContain('context at 201k tokens');
+  });
+
+  test('terminator is carriage return, not newline', () => {
+    const p = formatContextNotice(200_000);
+    expect(p.endsWith('\r')).toBe(true);
+    expect(p.includes('\n')).toBe(false);
+  });
+
+  test('is NOT a slash command — never matches the slash formatter', () => {
+    const notice = formatContextNotice(200_000);
+    expect(notice.startsWith('/')).toBe(false);
+    // And it is distinct from anything formatSlashCommand would produce.
+    expect(notice).not.toBe(formatSlashCommand('compact'));
+  });
+});
+
+describe('createContextMonitor — single-notice latch', () => {
+  test('NO notice while below threshold', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+
+    expect(m.tick(50_000)).toBe(false);
+    expect(m.tick(150_000)).toBe(false);
+    expect(m.tick(199_999)).toBe(false);
+    expect(spy.calls).toEqual([]);
+    expect(m.hasFired()).toBe(false);
+  });
+
+  test('EXACTLY ONE notice fires at the crossing with correct rounded N', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+
+    // Below → below → crossing.
+    expect(m.tick(50_000)).toBe(false);
+    expect(m.tick(199_000)).toBe(false);
+    const fired = m.tick(201_400); // crosses; rounds to 201k
+    expect(fired).toBe(true);
+
+    expect(spy.calls).toEqual([
+      '<fnc-notice>context at 201k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
+    ]);
+    expect(m.hasFired()).toBe(true);
+  });
+
+  test('NO second notice on further growth (latched off)', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+
+    expect(m.tick(205_000)).toBe(true);
+    // Keep growing — must stay silent.
+    expect(m.tick(260_000)).toBe(false);
+    expect(m.tick(300_000)).toBe(false);
+    expect(m.tick(999_000)).toBe(false);
+
+    expect(spy.calls.length).toBe(1);
+  });
+
+  test('null reading is a no-op (no assistant turn / unreadable JSONL)', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+
+    expect(m.tick(null)).toBe(false);
+    expect(m.tick(null)).toBe(false);
+    expect(spy.calls).toEqual([]);
+    expect(m.hasFired()).toBe(false);
+  });
+
+  test('writer side effects are not captured back into the monitor', () => {
+    // A writer that "emits output" the model must never receive. The
+    // monitor must ignore everything beyond handing bytes to the writer:
+    // tick returns a plain boolean, nothing resembling captured output.
+    const observed: string[] = [];
+    const m = createContextMonitor({
+      threshold: 200_000,
+      write: (p) => {
+        observed.push(p);
+        // simulate the TUI emitting a result that must NOT flow back
+      },
+    });
+
+    const result = m.tick(210_000);
+    expect(result).toBe(true);
+    expect(observed.length).toBe(1);
+    // The only side effect is the single raw PTY write.
+    expect(observed[0]).toContain('<fnc-notice>');
+  });
+});
+
+describe('resolveContextNoticeThreshold — default + configurable', () => {
+  test('no config, no env → built-in default', () => {
+    expect(resolveContextNoticeThreshold({ configThreshold: undefined, env: {} })).toBe(
+      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+    );
+  });
+
+  test('config value wins over default', () => {
+    expect(resolveContextNoticeThreshold({ configThreshold: 120_000, env: {} })).toBe(120_000);
+  });
+
+  test('env override wins over config', () => {
+    expect(
+      resolveContextNoticeThreshold({
+        configThreshold: 120_000,
+        env: { [CONTEXT_NOTICE_THRESHOLD_ENV]: '80000' },
+      }),
+    ).toBe(80_000);
+  });
+
+  test('non-positive / non-numeric config degrades to default', () => {
+    expect(resolveContextNoticeThreshold({ configThreshold: 0, env: {} })).toBe(
+      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+    );
+    expect(resolveContextNoticeThreshold({ configThreshold: Number.NaN, env: {} })).toBe(
+      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+    );
+  });
+});
+
+describe('configurable threshold fires earlier', () => {
+  test('a lower configured threshold fires at a smaller context size', () => {
+    const spy = spyWriter();
+    const threshold = resolveContextNoticeThreshold({ configThreshold: 100_000, env: {} });
+    const m = createContextMonitor({ threshold, write: spy.write });
+
+    // 120k would NOT cross the 200k default, but crosses the 100k config.
+    expect(m.tick(90_000)).toBe(false);
+    expect(m.tick(120_000)).toBe(true);
+    expect(spy.calls).toEqual([
+      '<fnc-notice>context at 120k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
+    ]);
+  });
+});
+
+describe('startContextMonitor — polling integration over injected seams', () => {
+  test('polls the reader on each interval, fires once at crossing, then stops polling', () => {
+    const spy = spyWriter();
+
+    // Scripted sequence of context reads, one per interval tick.
+    const sequence: Array<number | null> = [null, 50_000, 199_000, 205_000, 260_000, 300_000];
+    let idx = 0;
+
+    // Fake setInterval that hands us the callback; we drive ticks manually.
+    let cb: (() => void) | null = null;
+    let cleared = false;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      // Return an object with unref so the production unref() branch is safe.
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    // clearInterval is global; monitor calls it on the returned handle.
+    const origClear = globalThis.clearInterval;
+    globalThis.clearInterval = (() => {
+      cleared = true;
+    }) as unknown as typeof clearInterval;
+
+    try {
+      const running = startContextMonitor({
+        launchCWD: '/tmp/x',
+        threshold: 200_000,
+        write: spy.write,
+        intervalMs: 10,
+        setIntervalFn: fakeSetInterval,
+        readContextTokens: () => {
+          const v = sequence[idx] ?? null;
+          idx += 1;
+          return v;
+        },
+      });
+
+      expect(cb).not.toBeNull();
+      // Drive the poll callback once per scripted read.
+      for (let i = 0; i < sequence.length; i += 1) cb?.();
+
+      // Exactly one notice, at the 205_000 crossing.
+      expect(spy.calls).toEqual([
+        '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
+      ]);
+      expect(running.monitor.hasFired()).toBe(true);
+      // Latched: clearInterval was invoked once the notice fired.
+      expect(cleared).toBe(true);
+    } finally {
+      globalThis.clearInterval = origClear;
+    }
+  });
+});
