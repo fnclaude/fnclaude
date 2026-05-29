@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.4.0...cli-v2.5.0) (2026-05-29)
+
+
+### Features
+
+* **cli:** get_usage MCP tool + budget.md fragment ([#184](https://github.com/fnclaude/fnclaude/issues/184)) ([f802c32](https://github.com/fnclaude/fnclaude/commit/f802c32ed5d76326d23b31718df73f67a1c52460))
+
 ## [2.4.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.3.0...cli-v2.4.0) (2026-05-29)
 
 
