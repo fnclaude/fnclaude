@@ -46,3 +46,36 @@ describe('reexecSelf — clear screen before relaunch', () => {
     expect(events.indexOf('spawn')).toBeLessThan(events.indexOf('exit:0'));
   });
 });
+
+describe('reexecSelf — relaunch argv overrides inherited FNC_ARGS_JSON', () => {
+  // Regression for the `fnc resume` picker loop (#55). The relaunch child is
+  // spawned with the parent's env, which still carries the FNC_ARGS_JSON the
+  // node→bun shim stuffed in for the *original* invocation (e.g. `["resume"]`).
+  // main.ts's readArgv() reads FNC_ARGS_JSON *before* process.argv, so a stale
+  // value shadows the reconstructed cross-cwd argv — the relaunched process
+  // re-runs `resume`, lands back in the picker, and loops forever. reexecSelf
+  // must hand the child a FNC_ARGS_JSON matching the argv it relaunches with.
+  test('child env FNC_ARGS_JSON is the relaunch argv, not the inherited value', async () => {
+    const prev = process.env.FNC_ARGS_JSON;
+    process.env.FNC_ARGS_JSON = JSON.stringify(['resume']); // the stale loop trigger
+    let capturedEnv: Record<string, string | undefined> | undefined;
+    try {
+      await reexecSelf({
+        argv: ['/home/tom/src/proj', '--resume', 'abc-123'],
+        clearScreen: () => {},
+        spawn: (_argv, env) => {
+          capturedEnv = env;
+          return { exited: Promise.resolve(0) } as Pick<Bun.Subprocess, 'exited'>;
+        },
+        exit: () => undefined as never,
+      });
+    } finally {
+      if (prev === undefined) delete process.env.FNC_ARGS_JSON;
+      else process.env.FNC_ARGS_JSON = prev;
+    }
+
+    expect(capturedEnv?.FNC_ARGS_JSON).toBe(
+      JSON.stringify(['/home/tom/src/proj', '--resume', 'abc-123']),
+    );
+  });
+});

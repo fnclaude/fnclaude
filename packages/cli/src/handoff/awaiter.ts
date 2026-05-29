@@ -131,8 +131,15 @@ export interface ReexecSelfArgs {
    * CLEAR_SCREEN_SEQ to process.stdout.
    */
   clearScreen?: (seq: string) => void;
-  /** Test seam: spawn the relaunch child. Defaults to Bun.spawn. */
-  spawn?: (argv: string[]) => Pick<Bun.Subprocess, 'exited'>;
+  /**
+   * Test seam: spawn the relaunch child. Defaults to Bun.spawn. Receives
+   * the child env (with FNC_ARGS_JSON rewritten to the relaunch argv) as a
+   * second argument so callers/tests can assert on it.
+   */
+  spawn?: (
+    argv: string[],
+    env: Record<string, string | undefined>,
+  ) => Pick<Bun.Subprocess, 'exited'>;
   /** Test seam: process exit. Defaults to process.exit. */
   exit?: (code: number) => never;
 }
@@ -147,15 +154,28 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
     });
   const spawn =
     args.spawn ??
-    ((argv: string[]): Pick<Bun.Subprocess, 'exited'> =>
+    ((argv: string[], env: Record<string, string | undefined>): Pick<Bun.Subprocess, 'exited'> =>
       Bun.spawn(argv, {
         cwd: process.cwd(),
-        env: process.env,
+        env,
         stdin: 'inherit',
         stdout: 'inherit',
         stderr: 'inherit',
       }));
   const exit = args.exit ?? ((code: number): never => process.exit(code));
+
+  // Rewrite FNC_ARGS_JSON to THIS relaunch's argv. The parent inherited the
+  // var from the node→bun preflight shim (bin/fnc.js), where it holds the
+  // *original* invocation (e.g. `["resume"]`). main.ts's readArgv() reads
+  // FNC_ARGS_JSON before process.argv, so passing the parent's stale value
+  // would shadow the reconstructed argv below — the relaunched process would
+  // re-run the original command (back to the picker) and loop forever (#55).
+  // Stamping it with the real relaunch argv keeps readArgv and the spawn argv
+  // in agreement and preserves the `--`-safety the shim provides.
+  const childEnv: Record<string, string | undefined> = {
+    ...process.env,
+    FNC_ARGS_JSON: JSON.stringify(args.argv),
+  };
 
   // Clear the screen before handing off — hides the flicker of claude's
   // "This conversation is from a different directory." block that already
@@ -164,7 +184,7 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
   // silentRelaunch / silentRelaunchHandoff (pty_run_unix.go).
   clearScreen(CLEAR_SCREEN_SEQ);
 
-  const child = spawn([bunExec, fncBin, ...args.argv]);
+  const child = spawn([bunExec, fncBin, ...args.argv], childEnv);
   const code = await child.exited;
   return exit(code);
 }
