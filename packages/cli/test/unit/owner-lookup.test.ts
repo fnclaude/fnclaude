@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { findOwner, type GhApiCall, type GhApiResult } from '../../src/repo/owner-lookup.ts';
+import {
+  findOwner,
+  formatOwnerLookupError,
+  type GhApiCall,
+  type GhApiResult,
+} from '../../src/repo/owner-lookup.ts';
 
 function makeGhApi(table: Record<string, GhApiResult>): GhApiCall {
   return async (path: string) => {
@@ -54,6 +59,42 @@ describe('findOwner — happy path', () => {
   });
 });
 
+describe('findOwner — ambiguity', () => {
+  test('two owners both have the repo → ambiguous, lists both', async () => {
+    const ghApi = makeGhApi({
+      'user': { ok: true, body: 'fnrhombus\n' },
+      '/user/orgs': { ok: true, body: 'anthropics\nopenai\n' },
+      'repos/anthropics/dupe': { ok: true, body: '{"id":1}' },
+      'repos/openai/dupe': { ok: true, body: '{"id":2}' },
+    });
+    const r = await findOwner({ name: 'dupe', ghApi });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('ambiguous');
+      if (r.reason === 'ambiguous') {
+        expect(r.owners).toEqual(['anthropics', 'openai']);
+      }
+    }
+  });
+
+  test('user and an org both have the repo → ambiguous, user listed first', async () => {
+    const ghApi = makeGhApi({
+      'user': { ok: true, body: 'me\n' },
+      '/user/orgs': { ok: true, body: 'orgA\norgB\n' },
+      'repos/me/x': { ok: true, body: '{}' },
+      'repos/orgB/x': { ok: true, body: '{}' },
+    });
+    const r = await findOwner({ name: 'x', ghApi });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('ambiguous');
+      if (r.reason === 'ambiguous') {
+        expect(r.owners).toEqual(['me', 'orgB']);
+      }
+    }
+  });
+});
+
 describe('findOwner — failure paths', () => {
   test('gh api user fails → reason=gh-failed', async () => {
     const ghApi = makeGhApi({
@@ -94,6 +135,36 @@ describe('findOwner — failure paths', () => {
     const r = await findOwner({ name: 'x', ghApi });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('gh-failed');
+  });
+});
+
+describe('findOwner — surfaced disambiguation (call site)', () => {
+  test('end-to-end: ambiguous bare name surfaces a disambiguation message', async () => {
+    const ghApi = makeGhApi({
+      'user': { ok: true, body: 'fnrhombus\n' },
+      '/user/orgs': { ok: true, body: 'anthropics\nopenai\n' },
+      'repos/anthropics/dupe': { ok: true, body: '{"id":1}' },
+      'repos/openai/dupe': { ok: true, body: '{"id":2}' },
+    });
+    const r = await findOwner({ name: 'dupe', ghApi });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      const msg = formatOwnerLookupError(r, 'dupe');
+      expect(msg).toMatch(/ambiguous/i);
+      expect(msg).toContain('anthropics/dupe');
+      expect(msg).toContain('openai/dupe');
+    }
+  });
+
+  test('not-found surfaces the no-repo message', () => {
+    const msg = formatOwnerLookupError({ ok: false, reason: 'not-found' }, 'x');
+    expect(msg).toMatch(/no repo named "x"/);
+    expect(msg).not.toMatch(/ambiguous/i);
+  });
+
+  test('gh-failed surfaces the auth hint', () => {
+    const msg = formatOwnerLookupError({ ok: false, reason: 'gh-failed' }, 'x');
+    expect(msg).toMatch(/gh CLI lookup failed/);
   });
 });
 
