@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.2.0...cli-v2.3.0) (2026-05-29)
+
+
+### Features
+
+* **cli:** four slash-injection MCP tools over the C0 keystone ([#180](https://github.com/fnclaude/fnclaude/issues/180)) ([aa1e5b0](https://github.com/fnclaude/fnclaude/commit/aa1e5b05e111e977a1526aaf124801fdfa01f1fd))
+
 ## [2.2.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.1.0...cli-v2.2.0) (2026-05-29)
 
 
