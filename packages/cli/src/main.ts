@@ -48,7 +48,7 @@ import { buildCloneUrl, computeCloneDestination } from './repo/clone.ts';
 import { cloneRepo } from './repo/clone-exec.ts';
 import { runGhApi, runGhClone } from './repo/gh-runner.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
-import { findOwner } from './repo/owner-lookup.ts';
+import { findOwner, formatOwnerLookupError } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
 import { createWarningBuffer } from './warnings/buffer.ts';
@@ -177,15 +177,7 @@ switch (resolved.kind) {
     // re-route through the resolver as if owner had been on the input.
     const ownerR = await findOwner({ name: resolved.name, ghApi: runGhApi });
     if (!ownerR.ok) {
-      if (ownerR.reason === 'gh-failed') {
-        process.stderr.write(
-          `fnclaude: bare name "${resolved.name}" — gh CLI lookup failed (not authenticated? no network?). Try \`gh auth login\` or pass owner explicitly (\`${resolved.name}@<owner>\` or \`<owner>/${resolved.name}\`).\n`,
-        );
-      } else {
-        process.stderr.write(
-          `fnclaude: no repo named "${resolved.name}" found under your gh user or any of your orgs.\n`,
-        );
-      }
+      process.stderr.write(`${formatOwnerLookupError(ownerR, resolved.name)}\n`);
       process.exit(2);
     }
     // Build a synthetic ref for the resolved owner and recompute destination.

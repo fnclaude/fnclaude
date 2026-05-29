@@ -5,8 +5,11 @@
  *   1. `gh api user` → authenticated user's login
  *   2. `gh api /user/orgs` → comma/newline-separated org logins
  *   3. For each candidate (user first, then orgs in API order),
- *      `gh api repos/<owner>/<name>` → 200 means we found it.
- * First match wins.
+ *      `gh api repos/<owner>/<name>` → 200 means that owner has it.
+ * All candidates are checked; exactly one match wins. If more than one
+ * owner has a repo by this name, the result is 'ambiguous' (listing every
+ * matching owner) so the caller can ask the user to disambiguate rather
+ * than silently picking the first.
  *
  * The gh subprocess is injected as `ghApi` so unit tests can stub it
  * without spawning anything. The real spawner lives in `gh-runner.ts`.
@@ -15,6 +18,7 @@
  *   - `gh api user` errors AND we have no other candidates → 'gh-failed'.
  *   - `gh api /user/orgs` errors → continue with user-only candidates.
  *   - No candidate's repo exists → 'not-found'.
+ *   - More than one candidate has the repo → 'ambiguous'.
  */
 
 export type GhApiResult =
@@ -30,7 +34,8 @@ export interface FindOwnerArgs {
 
 export type FindOwnerResult =
   | { ok: true; owner: string }
-  | { ok: false; reason: 'gh-failed' | 'not-found' };
+  | { ok: false; reason: 'gh-failed' | 'not-found' }
+  | { ok: false; reason: 'ambiguous'; owners: string[] };
 
 export async function findOwner(args: FindOwnerArgs): Promise<FindOwnerResult> {
   const candidates: string[] = [];
@@ -48,12 +53,37 @@ export async function findOwner(args: FindOwnerArgs): Promise<FindOwnerResult> {
 
   if (candidates.length === 0) return { ok: false, reason: 'gh-failed' };
 
+  const matches: string[] = [];
   for (const owner of candidates) {
     const r = await args.ghApi(`repos/${owner}/${args.name}`);
-    if (r.ok) return { ok: true, owner };
+    if (r.ok) matches.push(owner);
   }
 
-  return { ok: false, reason: 'not-found' };
+  if (matches.length === 0) return { ok: false, reason: 'not-found' };
+  if (matches.length === 1) return { ok: true, owner: matches[0]! };
+  return { ok: false, reason: 'ambiguous', owners: matches };
+}
+
+/**
+ * Map a failed owner lookup to the stderr message shown to the user.
+ * Pure so the call-site surfacing (main.ts `needs-owner-lookup` branch)
+ * is testable without spawning gh. The `ambiguous` case lists every
+ * matching owner and tells the user how to disambiguate.
+ */
+export function formatOwnerLookupError(
+  result: Extract<FindOwnerResult, { ok: false }>,
+  name: string,
+): string {
+  switch (result.reason) {
+    case 'gh-failed':
+      return `fnclaude: bare name "${name}" — gh CLI lookup failed (not authenticated? no network?). Try \`gh auth login\` or pass owner explicitly (\`${name}@<owner>\` or \`<owner>/${name}\`).`;
+    case 'ambiguous': {
+      const owners = result.owners.map((o) => `${o}/${name}`).join(', ');
+      return `fnclaude: ambiguous bare name "${name}" — found under multiple owners: ${owners}. Disambiguate by passing the owner explicitly (\`${name}@<owner>\` or \`<owner>/${name}\`).`;
+    }
+    case 'not-found':
+      return `fnclaude: no repo named "${name}" found under your gh user or any of your orgs.`;
+  }
 }
 
 function parseLoginBody(body: string): string {
