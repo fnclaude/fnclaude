@@ -26,7 +26,14 @@ import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permissi
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
+import { createPtyWriterHolder } from './mcp/handlers/inject-slash.ts';
 import { createRestartHandler } from './mcp/handlers/restart.ts';
+import {
+  createRequestCompactHandler,
+  createRunSlashCommandHandler,
+  createSetEffortHandler,
+  createSetModelHandler,
+} from './mcp/handlers/slash-tools.ts';
 import { createSpawnHandler } from './mcp/handlers/spawn.ts';
 import { createSwitchHandler } from './mcp/handlers/switch.ts';
 import { injectMcpConfig } from './mcp/inject-config.ts';
@@ -409,6 +416,14 @@ if (!claudeBin.ok) {
   process.exit(127);
 }
 
+// Deferred-binding PTY writer for the slash-injection MCP tools (C0–C4).
+// The dispatcher is wired below BEFORE the terminal exists; the keystone
+// handlers take `slashWriter.write` now and we bind it to the real
+// `term.write` once the terminal spawns (further down). Until bound, a
+// write is a no-op (fire-and-forget) — but the terminal binds long before
+// any tool call can arrive.
+const slashWriter = createPtyWriterHolder();
+
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
 // subprocess claude launches per --mcp-config can dial back over
 // $FNC_SOCKET. Bind failure is fatal per Go canonical — we can't run
@@ -452,6 +467,12 @@ if (mcpSocketPath !== undefined) {
         switch: switchHandler,
         spawn: spawnHandler,
         copy_to_clipboard: handleCopyToClipboard,
+        // Batch-2 slash-injection tools — thin wrappers over the C0
+        // keystone, all sharing the deferred-bound PTY writer.
+        compact: createRequestCompactHandler({ write: slashWriter.write }),
+        set_effort: createSetEffortHandler({ write: slashWriter.write }),
+        set_model: createSetModelHandler({ write: slashWriter.write }),
+        run_slash: createRunSlashCommandHandler({ write: slashWriter.write }),
       },
     });
     const listener = await startMcpListener({
@@ -520,6 +541,13 @@ try {
       cwd,
       env: childEnv,
       terminal: term,
+    });
+
+    // Bind the slash-injection writer to the live PTY input — the same
+    // path user keystrokes take below. The MCP tool handlers wired before
+    // spawn now route into this terminal.
+    slashWriter.bind((payload: string) => {
+      term.write(payload);
     });
 
     // Forward user stdin → PTY. Raw mode so the shell line discipline

@@ -19,12 +19,16 @@ import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch.ts';
 import type { WireRequest, WireResponse } from '../../src/mcp/wire.ts';
 
 describe('MCP_TOOL_NAMES', () => {
-  test('exposes exactly the four tools from design.mcp.md §4', () => {
+  test('exposes the original four plus the Batch-2 slash tools', () => {
     expect(MCP_TOOL_NAMES).toEqual([
       'fnc_restart',
       'fnc_switch_project',
       'fnc_spawn_session',
       'fnc_copy_to_clipboard',
+      'request_compact',
+      'fnc_set_effort',
+      'fnc_set_model',
+      'fnc_run_slash_command',
     ]);
   });
 });
@@ -144,6 +148,9 @@ describe('buildTools — per-tool handler shape', () => {
     const tools = buildTools({
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
+      // Opt in to the generic slash tool so every name in MCP_TOOL_NAMES
+      // is present for this completeness check.
+      env: { FNC_ENABLE_SLASH_TOOL: '1' },
     });
     // Schema port from §7.5 wiring: each entry carries description +
     // inputSchema so the jsonrpc-server's tools/list response is complete.

@@ -378,3 +378,15 @@ When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), th
 **Tool-error envelope migration deferred:** Go canonical surfaces tool failures (e.g. socket unavailable) as MCP tool-level errors (`isError: true` inside the JSON-RPC `result`), NOT as JSON-RPC protocol errors. The current scaffold catches handler throws and emits `-32603 Internal error` instead. The `mcp-handoff-e2e.test.ts` "parent socket missing" test was updated to assert `-32603` for now; the §8 work that ports the canonical tool-level error envelope will migrate it off `-32603` into the result-content shape.
 
 **Revisit when:** Go canonical drifts on a tool description or schema (rare — these are stable enough to be considered API surface), or the §8 tool-error envelope work lands. Both will edit `tool-schemas.ts` and/or `dispatch.ts:buildTools`.
+
+---
+
+## 2026-05-28 — Batch-2 slash tools wrap the C0 keystone; env-var opt-in for the generic tool
+
+**Decision:** The four Batch-2 MCP tools (`request_compact`, `fnc_set_effort`, `fnc_set_model`, `fnc_run_slash_command`) are thin per-tool handlers in [`mcp/handlers/slash-tools.ts`](../packages/cli/src/mcp/handlers/slash-tools.ts), each translating its wire args into a single call on the C0 keystone (`formatSlashCommand` + the bound `PtyWriter`). They share one deferred-bound PTY writer (`createPtyWriterHolder`) wired in `main.ts` and bound to `term.write` right after the terminal spawns. The generic `fnc_run_slash_command` is gated behind `FNC_ENABLE_SLASH_TOOL=1` and omitted from `tools/list` entirely when unset.
+
+**Context:** #60 (#170 for `request_compact`). The keystone (#175) deliberately captures no output and stays generic; per-tool validation (effort/model vocabularies from `argv/classify.ts`) lives in the wrappers. `request_compact` takes an optional `follow_up` that queues a second NON-slash prompt line after `/compact` so the model auto-resumes; the simple queued-both approach ships now, with a `TODO(#170)` noting the JSONL-polling fallback if a line queued during compaction proves lossy. The effort/model tools slash-inject on the default assumption that `/effort` and `/model` are live TUI slash commands; if confirmed otherwise the fallback is the restart-with-override path `fnc_restart` already supports — flagged as an open question, not built.
+
+**Why an env var for the opt-in (not config.toml):** fnclaude's config is TOML with a small hand-rolled picker surface (`config/load.ts`); the generic slash tool is a power-user escape hatch where an env var is the lowest-ceremony gate that's trivially testable (`buildTools({ env })`) and needs no schema churn. The gate lives in `dispatch.ts:buildTools` (registration-time `continue`) so an un-opted tool never reaches `tools/list`, and is mirrored as `slashToolEnabled()` for callers that want the predicate directly.
+
+**Revisit when:** the slash-vs-restart open question for effort/model resolves (may remove the slash-inject path for one or both), or the `follow_up` queued-both approach proves lossy in live use (build the JSONL-polling fallback).
