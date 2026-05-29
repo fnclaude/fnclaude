@@ -48,10 +48,32 @@ export interface CrossCwdRelaunchInput {
    * + injected `--resume`).
    */
   origArgs: readonly string[];
+  /**
+   * Loop-guard probe: returns true iff claude can actually resolve
+   * `uuid` when launched from `cwd` — i.e. `<uuid>.jsonl` lives under the
+   * project dir `cwd` encodes to. When the hint cwd does NOT host the
+   * session (orphaned worktree sessions whose recorded cwd encodes to a
+   * different project dir than the one the jsonl is filed under),
+   * relaunching `claude --resume <uuid>` there hits "No conversation
+   * found" and bounces back to the picker → infinite loop. The decision
+   * refuses to relaunch in that case.
+   *
+   * Optional: when omitted, the check is skipped and relaunch proceeds
+   * (back-compat / pure-unit callers). The production call-site in
+   * main.ts always supplies a real filesystem probe.
+   */
+  sessionExists?: (cwd: string, uuid: string) => boolean;
 }
 
 export type CrossCwdRelaunchDecision =
   | { relaunch: false }
+  /**
+   * The hint parsed and was safe, but claude can't resolve the session
+   * from the hint cwd (the loop trigger). The call-site surfaces this to
+   * the user instead of silently relaunching into a picker. `cwd`/`uuid`
+   * carry the offending values for the message.
+   */
+  | { relaunch: false; reason: 'unresolvable'; cwd: string; uuid: string }
   | { relaunch: true; argv: string[] };
 
 /**
@@ -81,6 +103,13 @@ export function decideCrossCwdRelaunch(
   const text = new TextDecoder().decode(input.ringSnapshot);
   const hint = parseCrossCwdHint(text);
   if (hint === null) return { relaunch: false };
+
+  // Loop guard: if claude can't resolve the session from the hint cwd,
+  // relaunching there would bounce straight back to the picker. Refuse,
+  // and report why so the caller can tell the user rather than spin.
+  if (input.sessionExists !== undefined && !input.sessionExists(hint.cwd, hint.uuid)) {
+    return { relaunch: false, reason: 'unresolvable', cwd: hint.cwd, uuid: hint.uuid };
+  }
 
   const preserved = preserveArgs(input.origArgs, EMPTY_DENY, EMPTY_BARE_OK);
   const withOverrides = applyOverrides(preserved, {});

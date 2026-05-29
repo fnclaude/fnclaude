@@ -83,6 +83,54 @@ describe('decideCrossCwdRelaunch — gate conditions', () => {
   });
 });
 
+describe('decideCrossCwdRelaunch — loop guard (session must resolve in hint cwd)', () => {
+  // The picker loop: claude's hint gives a cwd that does NOT host the
+  // session's <uuid>.jsonl (e.g. an orphaned worktree session whose
+  // recorded cwd encodes to a different project dir). Relaunching
+  // `claude --resume <uuid>` from that cwd hits "No conversation found"
+  // and bounces straight back to the picker — an infinite loop. fnc must
+  // detect the mismatch and refuse to relaunch.
+
+  test('hint cwd does NOT host the session → relaunch:false with reason', () => {
+    const d = decideCrossCwdRelaunch({
+      exitCode: 0,
+      alreadyStashed: false,
+      ringSnapshot: encode(HINT('/home/tom/gone', UUID)),
+      origArgs: [],
+      sessionExists: () => false, // the loop-trigger condition
+    });
+    expect(d).toEqual({ relaunch: false, reason: 'unresolvable', cwd: '/home/tom/gone', uuid: UUID });
+  });
+
+  test('hint cwd DOES host the session → relaunch proceeds', () => {
+    const seen: Array<[string, string]> = [];
+    const d = decideCrossCwdRelaunch({
+      exitCode: 0,
+      alreadyStashed: false,
+      ringSnapshot: encode(HINT('/dest/dir', UUID)),
+      origArgs: [],
+      sessionExists: (cwd, uuid) => {
+        seen.push([cwd, uuid]);
+        return true;
+      },
+    });
+    expect(d).toEqual({ relaunch: true, argv: ['/dest/dir', '--resume', UUID] });
+    expect(seen).toEqual([['/dest/dir', UUID]]);
+  });
+
+  test('no sessionExists seam → defaults to allowing relaunch (back-compat)', () => {
+    // When the caller doesn't supply the probe, behavior is unchanged:
+    // relaunch proceeds. The production call-site supplies a real FS probe.
+    const d = decideCrossCwdRelaunch({
+      exitCode: 0,
+      alreadyStashed: false,
+      ringSnapshot: encode(HINT('/dest/dir', UUID)),
+      origArgs: [],
+    });
+    expect(d).toEqual({ relaunch: true, argv: ['/dest/dir', '--resume', UUID] });
+  });
+});
+
 describe('decideCrossCwdRelaunch — argv reconstruction', () => {
   test('no orig args → [dest, --resume, uuid]', () => {
     const d = decideCrossCwdRelaunch({

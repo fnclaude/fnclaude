@@ -5,7 +5,7 @@
 // feature transforms live in their own modules under src/; main composes
 // them in order.
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -22,7 +22,7 @@ import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts
 import { composeEnv } from './launch/compose-env.ts';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch.ts';
 import { findClaude } from './launch/find-claude.ts';
-import { readLivePermissionMode } from './launch/live-permission-reader.ts';
+import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
@@ -646,6 +646,14 @@ const crossCwdDecision = decideCrossCwdRelaunch({
   alreadyStashed: handoffTrigger.getStashedArgv() !== null,
   ringSnapshot: ringBuffer.snapshot(),
   origArgs: argv,
+  // Loop guard: claude resolves `--resume <uuid>` only from the cwd whose
+  // project-dir encoding hosts `<uuid>.jsonl`. Orphaned worktree sessions
+  // (recorded cwd encodes to a different dir than the jsonl is filed under,
+  // e.g. a worktree that's since been removed) would relaunch into a cwd
+  // where claude can't find the session → it bounces to the picker → the
+  // user re-picks → claude re-emits the hint → infinite loop. Probe the
+  // filesystem so the decision can refuse the futile relaunch.
+  sessionExists: (cwd, uuid) => existsSync(sessionJSONLPath(cwd, uuid)),
 });
 if (crossCwdDecision.relaunch) {
   // Stash so future getStashedArgv() callers see this relaunch as
@@ -655,6 +663,21 @@ if (crossCwdDecision.relaunch) {
   handoffTrigger.stashArgv(crossCwdDecision.argv);
   await reexecSelf({ argv: crossCwdDecision.argv });
   // Unreachable: reexecSelf calls process.exit. Typed as Promise<never>.
+} else if (
+  'reason' in crossCwdDecision &&
+  crossCwdDecision.reason === 'unresolvable'
+) {
+  // Break the picker loop: claude pointed us at a cwd that doesn't host
+  // the session (typically an orphaned worktree session). Relaunching
+  // there would just bounce back to the picker. Tell the user plainly
+  // and stop instead of spinning.
+  process.stderr.write(
+    `fnclaude: cannot resume session ${crossCwdDecision.uuid} — its recorded ` +
+      `directory (${crossCwdDecision.cwd}) no longer hosts the session log. ` +
+      `This usually means the session ran in a worktree that has since been ` +
+      `removed. Resume it from the directory where it was created, or start ` +
+      `a fresh session.\n`,
+  );
 }
 
 // Flush accumulated warnings to stderr now that claude has exited and the
