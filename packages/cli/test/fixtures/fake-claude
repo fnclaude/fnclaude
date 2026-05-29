@@ -1,0 +1,103 @@
+#!/usr/bin/env bun
+/**
+ * fake-claude — a scriptable stand-in for the real `claude` binary, used
+ * by the cli test suite to exercise fnc's spawn/launch/relaunch paths
+ * without a real Claude Code install or an Anthropic API key.
+ *
+ * The file is named exactly `claude` once copied into a temp PATH dir by
+ * `runWithFakeClaude` (findClaude walks PATH for a file literally named
+ * `claude`), so the launcher resolves it as the real binary.
+ *
+ * Behaviour is driven entirely by env vars so a single fixture covers
+ * every scripted scenario the tests need:
+ *
+ *   FAKE_CLAUDE_LOG=<path>
+ *     Append one JSON line per invocation describing
+ *     `{argv, cwd, env}` — argv is process.argv.slice(2) (the args fnc
+ *     handed claude), cwd is process.cwd() (the launch cwd fnc spawned
+ *     us in), env is a small allow-listed subset (the knobs + the loop
+ *     signature FNC_ARGS_JSON). This log is for TEST ASSERTIONS ONLY; it
+ *     is never written to stdout, so it can't be mistaken for
+ *     model-visible output.
+ *
+ *   FAKE_CLAUDE_EMIT_HINT=<dir>:<uuid>
+ *     Print the cross-cwd resume hint line in EXACTLY the shape real
+ *     claude emits (matched by HINT_RE in
+ *     src/launch/cross-cwd-parse.ts):
+ *         To resume, run: cd <dir> && claude --resume <uuid>
+ *     then exit 0. <dir> is split off at the FIRST colon so absolute
+ *     POSIX paths (which never contain a colon in the test fixtures)
+ *     survive intact while the trailing token is the uuid.
+ *
+ *   FAKE_CLAUDE_EXIT=<n>
+ *     Exit with code <n> (after logging + any hint emission).
+ *
+ *   default
+ *     Log the invocation and exit 0.
+ */
+
+import { appendFileSync } from 'node:fs';
+
+const argv = process.argv.slice(2);
+
+const logPath = process.env.FAKE_CLAUDE_LOG;
+if (logPath !== undefined && logPath !== '') {
+  // Allow-list of env keys worth asserting on. FNC_ARGS_JSON is the #55
+  // loop signature: if the stale `["resume"]` leaks into our env, the
+  // relaunched fnc re-runs the picker and re-spawns us — the log lets the
+  // test see exactly what each invocation's argv + inherited args-json was.
+  const envSubset: Record<string, string | undefined> = {
+    FNC_ARGS_JSON: process.env.FNC_ARGS_JSON,
+    FAKE_CLAUDE_EMIT_HINT: process.env.FAKE_CLAUDE_EMIT_HINT,
+    FAKE_CLAUDE_EXIT: process.env.FAKE_CLAUDE_EXIT,
+  };
+  const record = {
+    argv,
+    cwd: process.cwd(),
+    env: envSubset,
+  };
+  try {
+    appendFileSync(logPath, `${JSON.stringify(record)}\n`);
+  } catch {
+    // A log-write failure shouldn't change the exit behaviour the test is
+    // exercising; swallow it and let the scenario play out.
+  }
+}
+
+const emitHint = process.env.FAKE_CLAUDE_EMIT_HINT;
+// Real claude prints the cross-cwd resume hint only when the user picks a
+// session from the interactive picker — i.e. a bare `--resume` with NO
+// session id (or a no-arg launch) — NOT when launched with an explicit
+// `--resume <uuid>`. Mirror that exactly: a resolved `--resume <uuid>`
+// resumes silently. This is what lets the #55 loop terminate cleanly under
+// the fix (picker launch → one relaunch with the uuid → quiet resume). A
+// fixture that emitted on every invocation would loop forever regardless of
+// the fix; one that suppressed on ANY `--resume` would never emit at all,
+// since the picker launch itself carries a bare `--resume`.
+const resumeIdx = argv.indexOf('--resume');
+const next = resumeIdx >= 0 ? argv[resumeIdx + 1] : undefined;
+const UUID_SHAPE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+// "Resolved" = `--resume` immediately followed by a uuid-shaped token.
+const resolvedResume =
+  resumeIdx >= 0 && next !== undefined && UUID_SHAPE.test(next);
+if (emitHint !== undefined && emitHint !== '' && !resolvedResume) {
+  // Split at the FIRST colon: <dir>:<uuid>. The dir is an absolute POSIX
+  // path in the fixtures (no colon), the uuid is the canonical 8-4-4-4-12.
+  const sep = emitHint.indexOf(':');
+  if (sep >= 0) {
+    const dir = emitHint.slice(0, sep);
+    const uuid = emitHint.slice(sep + 1);
+    // EXACT real-claude shape — see HINT_RE in cross-cwd-parse.ts:
+    //   /To resume, run:[\s\S]*?cd (\S+) && claude --resume ([0-9a-fA-F-]{36})/
+    process.stdout.write(`To resume, run: cd ${dir} && claude --resume ${uuid}\n`);
+  }
+}
+
+const exitRaw = process.env.FAKE_CLAUDE_EXIT;
+if (exitRaw !== undefined && exitRaw !== '') {
+  const code = Number.parseInt(exitRaw, 10);
+  process.exit(Number.isNaN(code) ? 0 : code);
+}
+
+process.exit(0);
