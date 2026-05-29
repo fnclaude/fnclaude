@@ -30,5 +30,11 @@ export function composeEnv(args: ComposeEnvArgs): Record<string, string> {
   }
   if (args.handoff !== undefined) out.FNCLAUDE_HANDOFF = args.handoff;
   if (args.socket !== undefined) out.FNC_SOCKET = args.socket;
+  // Strip FNC_ARGS_JSON: it's the Node-shim → main.ts argv handoff and must
+  // not propagate into claude's env. Claude forwards env to MCP subprocesses
+  // verbatim; the `fnc mcp` subprocess prefers FNC_ARGS_JSON over process.argv,
+  // would see the parent's argv (no "mcp"), fall through past isMcpSubcommand,
+  // run main.ts as a launcher, and ENOEXEC trying to spawn the claude binary.
+  delete out.FNC_ARGS_JSON;
   return out;
 }
