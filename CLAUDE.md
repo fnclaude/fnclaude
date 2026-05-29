@@ -6,6 +6,19 @@
 
 Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.claude/CLAUDE.git.md`. Don't restate them here.
 
+## Issue tracking — check BOTH repos
+
+The canonical issues repo is **`fnclaude/fnclaude`** (matches the cwd `origin` remote). A legacy **`fnrhombus/fnclaude`** repo still exists from before the org migration and may collect misfiled issues — `gh issue create` run from a stale clone, a browser tab pointed at the old URL, an agent that resolved the owner from memory.
+
+**When asked "what issues exist" (any phrasing — open issues, bugs, features, the backlog, what's filed):** query *both* repos before answering. A bare `gh issue list` only hits the cwd remote and will silently miss anything sitting in `fnrhombus/fnclaude`.
+
+```sh
+gh issue list --repo fnclaude/fnclaude --state open --limit 100
+gh issue list --repo fnrhombus/fnclaude --state open --limit 100
+```
+
+Anything that lands in `fnrhombus/fnclaude` is misplaced by definition — transfer it with `gh issue transfer <number> fnclaude/fnclaude` (the issue keeps its body and comments; only the number changes). Don't leave stragglers there; the legacy repo should drain to zero.
+
 ## Release flow
 
 This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 3-package monorepo (`fnclaude`, `@fnclaude/cli`, `@fnclaude/renderer`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
