@@ -16,6 +16,7 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
 import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter.ts';
+import { decidePostExitTeardown } from './handoff/post-exit-teardown.ts';
 import { handoffTrigger } from './handoff/trigger.ts';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version.ts';
 import { composeEnv } from './launch/compose-env.ts';
@@ -506,6 +507,9 @@ process.on('SIGTERM', () => {});
 const ringBuffer = new RingBuffer();
 
 let exitCode: number;
+// Captured so the post-exit handoff branch can await it (keeps the
+// parent alive + foreground until the re-exec'd child exits).
+let handoffAwaiter: Promise<void> | undefined;
 try {
   let proc: Bun.Subprocess;
   if (useTerminal) {
@@ -562,7 +566,14 @@ try {
   // If no handoff fires, this promise sits idle until process exit
   // and gets GC'd; the orphaned-promise pattern matches Go canonical's
   // background goroutine. design.mcp.md §6.
-  void startHandoffAwaiter({
+  //
+  // Captured (not voided): the handoff teardown branch below awaits it
+  // so the parent stays alive + in the controlling tty's foreground
+  // process group until the re-exec'd child exits. Without that, the
+  // main flow's `process.exit` races the re-exec and, if it wins,
+  // orphans the child → its setRawMode(true) hits EIO. See the
+  // post-exit teardown decision below.
+  handoffAwaiter = startHandoffAwaiter({
     trigger: handoffTrigger,
     proc,
   });
@@ -577,11 +588,47 @@ try {
   }
 }
 
-if (useTerminal) {
+// §8.5: decide who owns shutdown. When an MCP handoff (restart / project
+// transfer) has stashed argv, the awaiter side-promise owns the relaunch
+// and the parent must NOT run its own teardown+exit tail — doing so races
+// the spawn-based re-exec and, if the self-exit wins, orphans the child
+// out of the tty's foreground process group → its setRawMode(true) hits
+// EIO (errno 5). In that case we hand the tty over: release the parent's
+// stdin reader (so the child reads the tty alone) and leave termios to the
+// child, then await the awaiter (which keeps the parent alive + foreground
+// until the child exits, then process.exits with its code).
+const teardown = decidePostExitTeardown({
+  handoffStashed: handoffTrigger.getStashedArgv() !== null,
+  useTerminal,
+});
+
+if (teardown.kind === 'defer-to-handoff') {
+  if (teardown.releaseStdin) {
+    // Stop forwarding our stdin → PTY so the re-exec'd child owns the
+    // tty input fd exclusively. We deliberately do NOT setRawMode(false):
+    // the child re-enters raw mode, and flipping cooked here then having
+    // the child flip raw races the window where the child isn't yet
+    // foreground. Leave termios as the child expects to find it.
+    process.stdin.pause();
+  }
+  // Wait for the awaiter to SIGTERM claude (already done by now), reexec
+  // the child, and process.exit with the child's code. handoffAwaiter is
+  // always set here — it's armed unconditionally after spawn, before the
+  // trigger could ever fire.
+  await handoffAwaiter;
+  // Unreachable: reexecSelf inside the awaiter calls process.exit. Guard
+  // against a never-resolving await (e.g. a bug in the awaiter path)
+  // hanging the parent on a dead tty.
+  process.exit(exitCode);
+}
+
+if (teardown.restoreRawMode) {
   // Restore the terminal so the user's shell prompt comes back in cooked
   // mode. setRawMode is a no-op when stdin isn't a TTY; we only entered
   // raw mode in the useTerminal branch, so this is safe to call.
   process.stdin.setRawMode(false);
+}
+if (teardown.releaseStdin) {
   // Stop reading stdin so process.exit doesn't block on an open listener.
   process.stdin.pause();
 }
