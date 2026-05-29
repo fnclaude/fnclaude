@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.2...cli-v2.0.3) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cli:** defer tty teardown to handoff awaiter on MCP restart ([#161](https://github.com/fnclaude/fnclaude/issues/161)) ([a41251e](https://github.com/fnclaude/fnclaude/commit/a41251edcf27b4e847d7c0391fe34a1639934c69))
+
 ## [2.0.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.1...cli-v2.0.2) (2026-05-29)
 
 
