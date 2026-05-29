@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.1.0...cli-v2.2.0) (2026-05-29)
+
+
+### Features
+
+* **cli:** add session-usage reader (tokens, cost, context from JSONL) ([#178](https://github.com/fnclaude/fnclaude/issues/178)) ([0367602](https://github.com/fnclaude/fnclaude/commit/03676026b2d146b471512d0c92dd0236c2372403))
+
 ## [2.1.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.6...cli-v2.1.0) (2026-05-29)
 
 
