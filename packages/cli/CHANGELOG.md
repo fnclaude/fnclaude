@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.3.0...cli-v2.4.0) (2026-05-29)
+
+
+### Features
+
+* **cli:** context-size monitor with one-shot compaction notice ([#182](https://github.com/fnclaude/fnclaude/issues/182)) ([898494b](https://github.com/fnclaude/fnclaude/commit/898494b1ee9a56386252e4b4affa1ad5d2d2f574))
+
 ## [2.3.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.2.0...cli-v2.3.0) (2026-05-29)
 
 
