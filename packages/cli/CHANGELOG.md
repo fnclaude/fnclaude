@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.1...cli-v2.0.2) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cli:** strip FNC_ARGS_JSON from claude child env ([#158](https://github.com/fnclaude/fnclaude/issues/158)) ([e2726e6](https://github.com/fnclaude/fnclaude/commit/e2726e6a2b4eb14f7015fa663a82ccba0c6245cf))
+
 ## [2.0.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.0...cli-v2.0.1) (2026-05-28)
 
 
