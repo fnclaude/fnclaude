@@ -93,4 +93,35 @@ describe('composeEnv', () => {
       FNC_SOCKET: '/sock',
     });
   });
+
+  // Regression: FNC_ARGS_JSON is an internal preflight handoff between the
+  // Node shim (bin/fnc.js) and main.ts, smuggling the unstripped argv across
+  // bun's `--` removal. It MUST NOT leak into claude's env — claude forwards
+  // its env to MCP subprocesses verbatim, and the fnc mcp subprocess reads
+  // FNC_ARGS_JSON in preference to process.argv. If it sees the parent's
+  // (probably empty) argv, isMcpSubcommand() returns false, the launcher
+  // path runs, and the subprocess crashes trying to Bun.spawn claude
+  // (ENOEXEC, because claude is a Node script not an executable). Claude's
+  // MCP client reports "Failed to connect" after a 30s timeout, breaking
+  // every MCP self-server interaction.
+  test('FNC_ARGS_JSON stripped from result (must not leak into MCP subprocess via claude)', () => {
+    const result = composeEnv({
+      processEnv: { PATH: '/bin', FNC_ARGS_JSON: '[]' },
+      execEnv: undefined,
+      handoff: undefined,
+      socket: undefined,
+    });
+    expect(result.FNC_ARGS_JSON).toBeUndefined();
+    expect(result.PATH).toBe('/bin');
+  });
+
+  test('FNC_ARGS_JSON stripped even when execEnv tries to set it', () => {
+    const result = composeEnv({
+      processEnv: { PATH: '/bin' },
+      execEnv: { FNC_ARGS_JSON: '["foo"]' },
+      handoff: undefined,
+      socket: undefined,
+    });
+    expect(result.FNC_ARGS_JSON).toBeUndefined();
+  });
 });
