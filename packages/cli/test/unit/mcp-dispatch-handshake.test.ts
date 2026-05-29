@@ -78,8 +78,8 @@ describe('dispatch — tools/list', () => {
       inputSchema: { type: string; properties: object; required?: string[] };
     }>;
     // The opt-in fnc_run_slash_command is absent without
-    // FNC_ENABLE_SLASH_TOOL=1, so seven of the eight names show here.
-    expect(tools).toHaveLength(7);
+    // FNC_ENABLE_SLASH_TOOL=1, so eight of the nine names show here.
+    expect(tools).toHaveLength(8);
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       'fnc_copy_to_clipboard',
@@ -88,6 +88,7 @@ describe('dispatch — tools/list', () => {
       'fnc_set_model',
       'fnc_spawn_session',
       'fnc_switch_project',
+      'get_usage',
       'request_compact',
     ]);
     for (const t of tools) {

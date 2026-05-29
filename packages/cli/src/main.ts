@@ -26,6 +26,7 @@ import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permissi
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
+import { createGetUsageHandler } from './mcp/handlers/get-usage.ts';
 import { createPtyWriterHolder } from './mcp/handlers/inject-slash.ts';
 import { createRestartHandler } from './mcp/handlers/restart.ts';
 import {
@@ -474,6 +475,9 @@ if (mcpSocketPath !== undefined) {
         set_effort: createSetEffortHandler({ write: slashWriter.write }),
         set_model: createSetModelHandler({ write: slashWriter.write }),
         run_slash: createRunSlashCommandHandler({ write: slashWriter.write }),
+        // get_usage returns structured budget data read from the session
+        // JSONL; launchCWD is the encoded-cwd half of that path.
+        get_usage: createGetUsageHandler({ launchCWD: cwd }),
       },
     });
     const listener = await startMcpListener({

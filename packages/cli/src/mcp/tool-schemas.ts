@@ -297,6 +297,22 @@ const RUN_SLASH_COMMAND: McpToolSchema = {
   },
 };
 
+const GET_USAGE: McpToolSchema = {
+  description:
+    "Return current budget headroom for this session — per-model cost + token breakdown, current context-window size, and subscription limits. Use it at high-token decision points (parallel subagent fan-out, large file reads, deep exploration) to inform model-tier and parallelism choices per the user's preferences; don't poll continuously. Args: session_id (the current Claude session ID — read $CLAUDE_CODE_SESSION_ID from your shell env via Bash, since the env var isn't exposed to MCP tool input directly). Response shape: { session: { cost_usd, by_model: { <model-id>: { input, output, cache_read, cache_write, cost } } }, limits, context: { used, model } }. IMPORTANT — `limits` is `null` in this version: the anthropic-ratelimit-unified-* headers that carry the 5-hour / weekly-all / weekly-Sonnet quotas never reach fnclaude (they flow over claude's own API connection, not the terminal fnclaude wraps), so live limits are NOT observable yet. Treat `null` as \"not yet observed\", never as \"no limit\" or zero. `context.used` is the latest assistant turn's context size in tokens (null if no assistant turn yet).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      session_id: {
+        type: 'string',
+        description:
+          'The current Claude session ID. Read the value of $CLAUDE_CODE_SESSION_ID from your shell env via Bash and pass it verbatim.',
+      },
+    },
+    required: ['session_id'],
+  },
+};
+
 export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_restart: RESTART,
   fnc_switch_project: SWITCH_PROJECT,
@@ -306,4 +322,5 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_set_effort: SET_EFFORT,
   fnc_set_model: SET_MODEL,
   fnc_run_slash_command: RUN_SLASH_COMMAND,
+  get_usage: GET_USAGE,
 };
