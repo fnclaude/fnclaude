@@ -112,6 +112,9 @@ async function defaultExecve(argv: string[]): Promise<void> {
  * Deviation from Go canonical (true execve) is documented in
  * docs/decisions.md.
  */
+/** ANSI: clear the screen + home the cursor. Mirrors Go's clearScreen(). */
+const CLEAR_SCREEN_SEQ = '\x1b[2J\x1b[H';
+
 export interface ReexecSelfArgs {
   /** Argv to hand the new fnclaude process (excluding bin path / runtime). */
   argv: string[];
@@ -123,18 +126,45 @@ export interface ReexecSelfArgs {
    * running.
    */
   fncBin?: string;
+  /**
+   * Test seam: emit the clear-screen escape. Defaults to writing
+   * CLEAR_SCREEN_SEQ to process.stdout.
+   */
+  clearScreen?: (seq: string) => void;
+  /** Test seam: spawn the relaunch child. Defaults to Bun.spawn. */
+  spawn?: (argv: string[]) => Pick<Bun.Subprocess, 'exited'>;
+  /** Test seam: process exit. Defaults to process.exit. */
+  exit?: (code: number) => never;
 }
 
 export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
   const bunExec = args.bunExec ?? process.execPath;
   const fncBin = args.fncBin ?? process.argv[1] ?? '';
-  const child = Bun.spawn([bunExec, fncBin, ...args.argv], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
+  const clearScreen =
+    args.clearScreen ??
+    ((seq: string): void => {
+      process.stdout.write(seq);
+    });
+  const spawn =
+    args.spawn ??
+    ((argv: string[]): Pick<Bun.Subprocess, 'exited'> =>
+      Bun.spawn(argv, {
+        cwd: process.cwd(),
+        env: process.env,
+        stdin: 'inherit',
+        stdout: 'inherit',
+        stderr: 'inherit',
+      }));
+  const exit = args.exit ?? ((code: number): never => process.exit(code));
+
+  // Clear the screen before handing off — hides the flicker of claude's
+  // "This conversation is from a different directory." block that already
+  // scrolled to the terminal before the cross-cwd hint was detected.
+  // Mirrors Go canonical's clearScreen() call immediately before exec in
+  // silentRelaunch / silentRelaunchHandoff (pty_run_unix.go).
+  clearScreen(CLEAR_SCREEN_SEQ);
+
+  const child = spawn([bunExec, fncBin, ...args.argv]);
   const code = await child.exited;
-  process.exit(code);
+  return exit(code);
 }
