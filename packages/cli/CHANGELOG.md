@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.5](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.4...cli-v2.0.5) (2026-05-29)
+
+
+### Bug Fixes
+
+* **cli:** stamp relaunch argv into FNC_ARGS_JSON so resume can't loop ([#166](https://github.com/fnclaude/fnclaude/issues/166)) ([2a36523](https://github.com/fnclaude/fnclaude/commit/2a36523ef997e0cbfb114c5dd265c8bc5ef6b137))
+
 ## [2.0.4](https://github.com/fnclaude/fnclaude/compare/cli-v2.0.3...cli-v2.0.4) (2026-05-29)
 
 
