@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.5.1...cli-v2.6.0) (2026-05-30)
+
+
+### Features
+
+* **cli:** bootstrap a fresh repo when a clone target doesn't exist ([#189](https://github.com/fnclaude/fnclaude/issues/189)) ([f15bb4b](https://github.com/fnclaude/fnclaude/commit/f15bb4bb70c08886d62e5f2651aeecc0f03d8c2b))
+
 ## [2.5.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.5.0...cli-v2.5.1) (2026-05-30)
 
 
