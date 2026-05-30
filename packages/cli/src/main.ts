@@ -54,7 +54,12 @@ import { injectFragments, loadFragments } from './prompts/load.ts';
 import { isInteractiveSession, selectFragments } from './prompts/select.ts';
 import { buildCloneUrl, computeCloneDestination } from './repo/clone.ts';
 import { cloneRepo } from './repo/clone-exec.ts';
-import { runGhApi, runGhClone } from './repo/gh-runner.ts';
+import { isRepoNotFoundError } from './repo/clone-failure.ts';
+import { parseCloneUrl } from './repo/clone-url.ts';
+import { bootstrapRepo } from './repo/bootstrap.ts';
+import { confirm } from './repo/confirm.ts';
+import { runGitInit } from './repo/git-runner.ts';
+import { runGhApi, runGhClone, runGhRepoCreate } from './repo/gh-runner.ts';
 import { loadHostAliases } from './repo/host-aliases.ts';
 import { findOwner, formatOwnerLookupError } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
@@ -138,6 +143,62 @@ const resolved = resolveInput({
   settings: { cloneTemplate: settings.cloneTemplate, hostAliases },
 });
 
+// Clone the ref into `destination`; if the clone fails *because the repo
+// doesn't exist*, offer to bootstrap a fresh local repo (and optionally the
+// private GitHub remote) instead of hard-failing. Returns the cwd to launch
+// in, or null when the caller should abort (already printed + must exit 2).
+// Shared by both `needs-clone` and `needs-owner-lookup`.
+async function cloneOrBootstrap(url: string, destination: string): Promise<string | null> {
+  process.stderr.write(`fnclaude: cloning ${url} → ${destination}\n`);
+  const cloneR = await cloneRepo({
+    url,
+    destination,
+    ghClone: runGhClone,
+    mkdirp: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
+  });
+  if (cloneR.ok) return destination;
+
+  // Only the repo-not-found failure is recoverable; auth/network/etc still
+  // hard-fail as before.
+  if (!isRepoNotFoundError(cloneR.stderr)) {
+    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
+    return null;
+  }
+
+  const parts = parseCloneUrl(url);
+  if (parts === null) {
+    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
+    return null;
+  }
+
+  const boot = await bootstrapRepo({
+    owner: parts.owner,
+    name: parts.name,
+    host: parts.host,
+    destination,
+    url,
+    deps: {
+      confirm,
+      mkdirp: async (path) => {
+        await mkdir(path, { recursive: true });
+      },
+      gitInit: runGitInit,
+      ghRepoCreate: runGhRepoCreate,
+      log: (msg) => process.stderr.write(`${msg}\n`),
+    },
+  });
+  if (boot.kind === 'launched') return boot.cwd;
+  if (boot.kind === 'error') {
+    process.stderr.write(`fnclaude: ${boot.error}\n`);
+    return null;
+  }
+  // declined → restore today's behavior: print the original clone error.
+  process.stderr.write(`fnclaude: ${cloneR.error}\n`);
+  return null;
+}
+
 let cwd: string;
 let usedNoopFallback = false;
 let workspaceFromRef = '';
@@ -163,21 +224,10 @@ switch (resolved.kind) {
     break;
   case 'needs-clone': {
     // Repo ref resolved cleanly but the destination doesn't exist on disk.
-    // Clone it, then launch in the new directory.
-    process.stderr.write(`fnclaude: cloning ${resolved.url} → ${resolved.destination}\n`);
-    const cloneR = await cloneRepo({
-      url: resolved.url,
-      destination: resolved.destination,
-      ghClone: runGhClone,
-      mkdirp: async (path) => {
-        await mkdir(path, { recursive: true });
-      },
-    });
-    if (!cloneR.ok) {
-      process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-      process.exit(2);
-    }
-    cwd = resolved.destination;
+    // Clone it (or bootstrap, if it doesn't exist), then launch there.
+    const launchCwd = await cloneOrBootstrap(resolved.url, resolved.destination);
+    if (launchCwd === null) process.exit(2);
+    cwd = launchCwd;
     workspaceFromRef = resolved.workspace;
     break;
   }
@@ -221,20 +271,9 @@ switch (resolved.kind) {
       break;
     }
     const url = buildCloneUrl(syntheticRef);
-    process.stderr.write(`fnclaude: cloning ${url} → ${destR.path}\n`);
-    const cloneR = await cloneRepo({
-      url,
-      destination: destR.path,
-      ghClone: runGhClone,
-      mkdirp: async (path) => {
-        await mkdir(path, { recursive: true });
-      },
-    });
-    if (!cloneR.ok) {
-      process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-      process.exit(2);
-    }
-    cwd = destR.path;
+    const launchCwd = await cloneOrBootstrap(url, destR.path);
+    if (launchCwd === null) process.exit(2);
+    cwd = launchCwd;
     workspaceFromRef = resolved.workspace;
     break;
   }

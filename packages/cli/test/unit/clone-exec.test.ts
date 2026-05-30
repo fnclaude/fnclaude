@@ -45,11 +45,14 @@ describe('cloneRepo', () => {
     const r = await cloneRepo({
       url: 'https://github.com/x/y.git',
       destination: '/tmp/y@x',
-      ghClone: makeGhClone({ ok: false, error: 'auth required' }),
+      ghClone: makeGhClone({ ok: false, error: 'auth required', stderr: 'gh auth login' }),
       mkdirp: async () => {},
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('auth required');
+    if (!r.ok) {
+      expect(r.error).toContain('auth required');
+      expect(r.stderr).toContain('gh auth login');
+    }
   });
 
   test('mkdirp failure surfaces as result.ok false (clone not attempted)', async () => {

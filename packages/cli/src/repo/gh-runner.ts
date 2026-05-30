@@ -54,15 +54,59 @@ export async function runGhClone(url: string, destination: string): Promise<GhCl
     proc = Bun.spawn(['gh', 'repo', 'clone', url, destination], {
       stdin: 'ignore',
       stdout: 'inherit',
-      stderr: 'inherit',
+      // Pipe (not inherit) so we can both show gh's output live AND keep a
+      // copy to classify the failure (repo-not-found → offer bootstrap).
+      stderr: 'pipe',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `failed to spawn gh: ${msg}`, stderr: '' };
+  }
+  // Tee stderr: write each chunk through to the real stderr so the user
+  // still sees gh's progress/errors live, while accumulating the text.
+  let captured = '';
+  const decoder = new TextDecoder();
+  const reader = proc.stderr.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value !== undefined) {
+      process.stderr.write(value);
+      captured += decoder.decode(value, { stream: true });
+    }
+  }
+  captured += decoder.decode();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    return { ok: false, error: `gh exited ${exitCode}`, stderr: captured };
+  }
+  return { ok: true };
+}
+
+/**
+ * `gh repo create <owner>/<name> --private` — creates an EMPTY private
+ * remote (no --source/--push, since the freshly-bootstrapped local repo has
+ * no commits yet and origin already points at the eventual URL).
+ */
+export async function runGhRepoCreate(
+  owner: string,
+  name: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn(['gh', 'repo', 'create', `${owner}/${name}`, '--private'], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `failed to spawn gh: ${msg}` };
   }
+  const stderr = await new Response(proc.stderr).text();
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
-    return { ok: false, error: `gh exited ${exitCode}` };
+    return { ok: false, error: stderr.trim() || `gh exited ${exitCode}` };
   }
   return { ok: true };
 }
