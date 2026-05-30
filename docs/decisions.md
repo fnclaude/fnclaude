@@ -6,6 +6,18 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-05-30 — File-only structured logging (always-on JSONL under the state dir)
+
+**Decision:** The launcher writes a structured per-launch JSONL log to a file under the platform STATE dir (`$XDG_STATE_HOME/fnclaude/logs` on Linux, `~/Library/Logs/fnclaude` on macOS, `%LOCALAPPDATA%\fnclaude\logs` on Windows), one file per process (`fnclaude-<epoch-ms>-<pid>.jsonl`). Logging is **always on** at level `INFO` by default, overridable via the `FNC_LOG` env var (`debug`/`info`/`warn`/`error`, or `silent`/`off`/`none` to disable). Old logs are pruned to the most-recent 50 files on each launch. The whole subsystem is best-effort and **never throws** — any fs failure (missing dir, permission error, full disk) degrades silently to a no-op logger. New modules live under `packages/cli/src/log/`; `main.ts` builds the logger once after the launch cwd is resolved and emits boot / ensure-cwd / spawn / exit / relaunch events.
+
+**Context:** `fnc resume` (and the cross-cwd silent relaunch) into a directory that no longer exists fails, and there was no way to observe what happens at the session-transition / re-exec boundary. fnc wraps the real `claude` CLI in a `Bun.Terminal` PTY and tees PTY output to stdout, so during a live session **the controlling terminal IS claude's TUI**. Anything written to stdout/stderr at session time corrupts claude's render.
+
+**Why file-only:** because the session-time terminal belongs to claude, a console sink is unusable — it would garble the TUI. The existing `process.stderr.write("fnclaude: …")` diagnostics stay (they're on pre-terminal/fatal paths where stderr is still safe); this subsystem *adds* a file sink alongside them rather than rerouting them. A persistent file is also the only sink that survives the re-exec boundary where the resume-to-removed-dir bug fires. Epoch-ms filenames keep concurrent sessions from colliding and stay Windows-filename-safe (no colons). Always-on-INFO (rather than opt-in) means the next time the bug reproduces, the evidence is already on disk; best-effort/never-throws means logging can never become a new failure mode for the launcher — same posture as `ensureCwd`'s swallow-on-cleanup.
+
+**Revisit when:** a `[logging] level` key is added to `config.toml` (the `initLogging` precedence already accepts a `configLevel` source — env > config > default — it's just not wired to the config loader yet), or if a session-time sink that doesn't touch claude's TUI (a journald/syslog socket, say) becomes worth the complexity.
+
+---
+
 ## 2026-05-27 — Bun.spawn with stdio inherit for the MVP launcher
 
 **Decision:** The minimal launcher spawns `claude` via `Bun.spawn` with `stdin/stdout/stderr` all set to `"inherit"`. No PTY layer (no `Bun.Terminal`, no `node-pty`, no FFI).

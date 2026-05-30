@@ -15,6 +15,7 @@ import { expandAliases } from './argv/expand.ts';
 import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
+import { initLogging } from './log/init.ts';
 import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter.ts';
 import { decidePostExitTeardown } from './handoff/post-exit-teardown.ts';
 import { handoffTrigger } from './handoff/trigger.ts';
@@ -530,15 +531,31 @@ if (mcpSocketPath !== undefined) {
   }
 }
 
+// Structured file logging. Best-effort, file-ONLY (the session-time
+// controlling terminal is claude's TUI, so a stdout/stderr sink would corrupt
+// its render). Built here — cwd is resolved, but before ensureCwd — so the
+// resume/cross-cwd transition into a removed dir is observable at the exact
+// boundary where terminal logging is unusable. initLogging never throws; on
+// any fs failure it returns a no-op logger. Default level INFO, FNC_LOG
+// overrides. design: docs/decisions.md.
+const { logger } = initLogging({
+  env: process.env,
+  platform: process.platform,
+  home: HOME,
+});
+logger.info('boot', { argv: process.argv.slice(2), cwd, ppid: process.ppid });
+
 // Fabricate the cwd tree if missing — Bun.spawn would otherwise return ENOENT
 // blaming the claude binary. The cleanup() unlinks any fabricated dirs right
 // after spawn, since the kernel holds the cwd by inode reference once the
 // child has chdir'd (which posix_spawn does before returning to us).
 const ensured = ensureCwd(cwd);
 if (!ensured.ok) {
+  logger.error('ensure_cwd.failed', { cwd, error: ensured.error });
   process.stderr.write(`fnclaude: ${ensured.error}\n`);
   process.exit(2);
 }
+logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
 
 // §9.0: spawn claude via Bun.Terminal on POSIX so the launcher can tee PTY
 // output through a ring buffer for cross-cwd resume detection (§9.1+). On
@@ -589,6 +606,7 @@ try {
       env: childEnv,
       terminal: term,
     });
+    logger.info('claude.spawn', { claudePid: proc.pid, cwd });
 
     // Bind the slash-injection writer to the live PTY input — the same
     // path user keystrokes take below. The MCP tool handlers wired before
@@ -637,9 +655,11 @@ try {
       stdout: 'inherit',
       stderr: 'inherit',
     });
+    logger.info('claude.spawn', { claudePid: proc.pid, cwd });
   }
 
   ensured.cleanup();
+  logger.info('ensure_cwd.cleanup', { removed: ensured.created });
 
   // §8.5: arm the kill-and-exec awaiter as a side-promise. If an MCP
   // tool dispatches a handoff during the session, the awaiter wakes,
@@ -662,6 +682,7 @@ try {
   });
 
   exitCode = await proc.exited;
+  logger.info('claude.exit', { code: exitCode, signal: proc.signalCode ?? null });
 } finally {
   // Stop the MCP listener + unlink the socket file even if spawn or
   // proc.exited throws. design.mcp.md §7 — socket file cleanup is the
@@ -691,6 +712,7 @@ const teardown = decidePostExitTeardown({
 });
 
 if (teardown.kind === 'defer-to-handoff') {
+  logger.info('relaunch.handoff', {});
   if (teardown.releaseStdin) {
     // Stop forwarding our stdin → PTY so the re-exec'd child owns the
     // tty input fd exclusively. We deliberately do NOT setRawMode(false):
@@ -749,6 +771,7 @@ if (crossCwdDecision.relaunch) {
   // flush below; the new fnclaude process re-evaluates and re-queues
   // anything still applicable.
   handoffTrigger.stashArgv(crossCwdDecision.argv);
+  logger.info('relaunch.cross_cwd', { argv: crossCwdDecision.argv });
   await reexecSelf({ argv: crossCwdDecision.argv });
   // Unreachable: reexecSelf calls process.exit. Typed as Promise<never>.
 } else if (
@@ -759,6 +782,10 @@ if (crossCwdDecision.relaunch) {
   // the session (typically an orphaned worktree session). Relaunching
   // there would just bounce back to the picker. Tell the user plainly
   // and stop instead of spinning.
+  logger.warn('relaunch.unresolvable', {
+    cwd: crossCwdDecision.cwd,
+    uuid: crossCwdDecision.uuid,
+  });
   process.stderr.write(
     `fnclaude: cannot resume session ${crossCwdDecision.uuid} — its recorded ` +
       `directory (${crossCwdDecision.cwd}) no longer hosts the session log. ` +
