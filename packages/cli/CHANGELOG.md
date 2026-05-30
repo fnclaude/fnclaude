@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.0...cli-v2.7.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **cli:** submit injected TUI commands instead of parking them in the box ([#193](https://github.com/fnclaude/fnclaude/issues/193)) ([3db3223](https://github.com/fnclaude/fnclaude/commit/3db3223d75f8ad75fe52667b28d6ca0c14bcd6a7))
+
 ## [2.7.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.6.0...cli-v2.7.0) (2026-05-30)
 
 
