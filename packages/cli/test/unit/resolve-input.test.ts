@@ -87,6 +87,48 @@ describe('resolveInput — path short-circuit (/, ~, ~/) skips repo lookup', () 
   });
 });
 
+describe('resolveInput — explicit relative paths (., .., ./x, ../x) are paths, never repo refs', () => {
+  // `.` is unambiguously the current directory — it can't be a repo named ".".
+  // Before the fix it hit the bare-name dual-lookup branch: join(shellCwd, ".")
+  // always exists, so it resolved to `ambiguous` and `fnc .` errored out. The
+  // ambiguity-disambiguation message itself names `./<name>` as the local-path
+  // syntax, so `.`/`..`/`./…`/`../…` must short-circuit to launch like /, ~, ~/.
+
+  test('bare "." → launch in shellCwd (never ambiguous)', () => {
+    const r = assertKind(resolveInput(args({ input: '.' })), 'launch');
+    expect(r.launchCwd).toBe(SHELL_CWD);
+    expect(r.usedNoopFallback).toBe(false);
+  });
+
+  test('bare "." is not treated as a bare repo name even though shellCwd exists', () => {
+    // Regression guard: shellCwd always exists, so the old code returned
+    // `ambiguous` here. Pin that it never does again.
+    const r = resolveInput(args({ input: '.' }));
+    expect(r.kind).not.toBe('ambiguous');
+    expect(r.kind).not.toBe('needs-owner-lookup');
+  });
+
+  test('"./name" → launch in shellCwd/name (the disambiguation syntax), not a clone', () => {
+    const r = assertKind(resolveInput(args({ input: './arch-setup' })), 'launch');
+    expect(r.launchCwd).toBe(join(SHELL_CWD, 'arch-setup'));
+  });
+
+  test('".." → launch in the parent of shellCwd', () => {
+    const r = assertKind(resolveInput(args({ input: '..' })), 'launch');
+    expect(r.launchCwd).toBe(join(SHELL_CWD, '..'));
+  });
+
+  test('"../sibling" → launch in the sibling dir', () => {
+    const r = assertKind(resolveInput(args({ input: '../sibling' })), 'launch');
+    expect(r.launchCwd).toBe(join(SHELL_CWD, '../sibling'));
+  });
+
+  test('explicit relative path short-circuit does NOT check existence', () => {
+    const r = assertKind(resolveInput(args({ input: './nope/missing' })), 'launch');
+    expect(r.launchCwd).toBe(join(SHELL_CWD, 'nope/missing'));
+  });
+});
+
 describe('resolveInput — resolved-owner repo refs (owner already known)', () => {
   test('owner/name with clone destination not on disk → needs-clone', () => {
     const r = assertKind(

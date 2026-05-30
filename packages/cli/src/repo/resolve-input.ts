@@ -7,7 +7,8 @@
  *
  * Mirrors Go canonical `src/resolver.go:resolveLaunchCwd` minus the gh
  * branches:
- *   - Short-circuit for /, ~, ~/ → launch unconditionally (no fs check)
+ *   - Short-circuit for /, ~, ~/, ., .., ./x, ../x → launch unconditionally
+ *     (explicit paths, no fs check)
  *   - Everything else → dual lookup
  *       path:  is <shellCwd>/<input> a directory?
  *       repo:  parse, compute clone destination, does it exist?
@@ -75,6 +76,14 @@ function isPathShortCircuit(input: string): boolean {
   if (input === '~') return true;
   if (input.startsWith('/')) return true;
   if (input.startsWith('~/')) return true;
+  // Explicit relative paths are unambiguously paths, never repo refs. `.`
+  // and `..` can't be repo names, and `./<name>` is the very syntax the
+  // ambiguous-reference error tells the user to type for "the local path".
+  // Short-circuiting here keeps a bare `.` (or `./foo`) out of the bare-name
+  // dual-lookup branch, where `join(shellCwd, ".")` always exists and so
+  // every `fnc .` resolved to `ambiguous`.
+  if (input === '.' || input === '..') return true;
+  if (input.startsWith('./') || input.startsWith('../')) return true;
   return false;
 }
 
@@ -91,9 +100,9 @@ export function resolveInput(args: ResolveInputArgs): ResolveResult {
     };
   }
 
-  // 2. Path short-circuit: /, ~, ~/ skip the repo lookup entirely
-  //    (per specs.md §18.1). Don't check whether the directory exists —
-  //    user said "go here", we go there.
+  // 2. Path short-circuit: /, ~, ~/, ., .., ./x, ../x skip the repo lookup
+  //    entirely (per specs.md §18.1). Don't check whether the directory
+  //    exists — user said "go here", we go there.
   if (isPathShortCircuit(input)) {
     const expanded = expandTilde(input, home);
     const launchCwd = isAbsolute(expanded) ? expanded : join(shellCwd, expanded);
