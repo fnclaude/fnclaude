@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.5.0...cli-v2.5.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **cli:** treat ., .., ./x, ../x as paths, not ambiguous repo refs ([#187](https://github.com/fnclaude/fnclaude/issues/187)) ([e6b7f56](https://github.com/fnclaude/fnclaude/commit/e6b7f568550dfaf6ed818714b8a1b536e55bda3d))
+
 ## [2.5.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.4.0...cli-v2.5.0) (2026-05-29)
 
 
