@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.6.0...cli-v2.7.0) (2026-05-30)
+
+
+### Features
+
+* **cli:** add file-only structured logging for the launcher ([#194](https://github.com/fnclaude/fnclaude/issues/194)) ([c8f0e64](https://github.com/fnclaude/fnclaude/commit/c8f0e64e3a1bdeabf8151f854543cf20c2b92b9a))
+
 ## [2.6.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.5.1...cli-v2.6.0) (2026-05-30)
 
 
