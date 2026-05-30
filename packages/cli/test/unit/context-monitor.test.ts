@@ -18,6 +18,7 @@ import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/injec
 import {
   CONTEXT_NOTICE_THRESHOLD_ENV,
   DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+  createCompactAcceptGate,
   createContextMonitor,
   formatContextNotice,
   resolveContextNoticeThreshold,
@@ -29,10 +30,18 @@ function spyWriter(): { write: PtyWriter; calls: string[] } {
   return { write: (p) => calls.push(p), calls };
 }
 
+/** Synchronous schedule seam so the separate CR write lands deterministically. */
+const syncSchedule = (fn: () => void): void => fn();
+
+/** The two writes injectSubmittedLine produces for a notice body. */
+function noticeWrites(body: string): string[] {
+  return [`\x1b[200~${body}\x1b[201~`, '\r'];
+}
+
 describe('formatContextNotice', () => {
-  test('rounds tokens to the nearest k and wraps in <fnc-notice>', () => {
+  test('rounds tokens to the nearest k and wraps in <fnc-notice> — BODY only, no terminator', () => {
     expect(formatContextNotice(200_000)).toBe(
-      '<fnc-notice>context at 200k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
+      '<fnc-notice>context at 200k tokens — call request_compact at the next clean stopping point</fnc-notice>',
     );
   });
 
@@ -44,10 +53,18 @@ describe('formatContextNotice', () => {
     expect(formatContextNotice(201_400)).toContain('context at 201k tokens');
   });
 
-  test('terminator is carriage return, not newline', () => {
-    const p = formatContextNotice(200_000);
-    expect(p.endsWith('\r')).toBe(true);
-    expect(p.includes('\n')).toBe(false);
+  test('body carries NO terminator — submit comes from the separate CR write', () => {
+    // The notice body must contain neither a CR nor an LF; injectSubmittedLine
+    // supplies the Return keypress as a SEPARATE bare-CR write.
+    const body = formatContextNotice(200_000);
+    expect(body.includes('\r')).toBe(false);
+    expect(body.includes('\n')).toBe(false);
+
+    // The monitor submits it via the two-write contract: body, then CR.
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+    m.tick(200_000);
+    expect(spy.calls).toEqual([`\x1b[200~${body}\x1b[201~`, '\r']);
   });
 
   test('is NOT a slash command — never matches the slash formatter', () => {
@@ -72,7 +89,7 @@ describe('createContextMonitor — single-notice latch', () => {
 
   test('EXACTLY ONE notice fires at the crossing with correct rounded N', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
 
     // Below → below → crossing.
     expect(m.tick(50_000)).toBe(false);
@@ -80,15 +97,17 @@ describe('createContextMonitor — single-notice latch', () => {
     const fired = m.tick(201_400); // crosses; rounds to 201k
     expect(fired).toBe(true);
 
-    expect(spy.calls).toEqual([
-      '<fnc-notice>context at 201k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
-    ]);
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>context at 201k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+      ),
+    );
     expect(m.hasFired()).toBe(true);
   });
 
   test('NO second notice on further growth (latched off)', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
 
     expect(m.tick(205_000)).toBe(true);
     // Keep growing — must stay silent.
@@ -96,12 +115,13 @@ describe('createContextMonitor — single-notice latch', () => {
     expect(m.tick(300_000)).toBe(false);
     expect(m.tick(999_000)).toBe(false);
 
-    expect(spy.calls.length).toBe(1);
+    // One notice = exactly the two writes (body + CR), no more.
+    expect(spy.calls.length).toBe(2);
   });
 
   test('null reading is a no-op (no assistant turn / unreadable JSONL)', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
 
     expect(m.tick(null)).toBe(false);
     expect(m.tick(null)).toBe(false);
@@ -116,6 +136,7 @@ describe('createContextMonitor — single-notice latch', () => {
     const observed: string[] = [];
     const m = createContextMonitor({
       threshold: 200_000,
+      schedule: syncSchedule,
       write: (p) => {
         observed.push(p);
         // simulate the TUI emitting a result that must NOT flow back
@@ -124,9 +145,10 @@ describe('createContextMonitor — single-notice latch', () => {
 
     const result = m.tick(210_000);
     expect(result).toBe(true);
-    expect(observed.length).toBe(1);
-    // The only side effect is the single raw PTY write.
+    // Two writes: bracketed-paste body, then the separate CR.
+    expect(observed.length).toBe(2);
     expect(observed[0]).toContain('<fnc-notice>');
+    expect(observed[1]).toBe('\r');
   });
 });
 
@@ -164,14 +186,16 @@ describe('configurable threshold fires earlier', () => {
   test('a lower configured threshold fires at a smaller context size', () => {
     const spy = spyWriter();
     const threshold = resolveContextNoticeThreshold({ configThreshold: 100_000, env: {} });
-    const m = createContextMonitor({ threshold, write: spy.write });
+    const m = createContextMonitor({ threshold, write: spy.write, schedule: syncSchedule });
 
     // 120k would NOT cross the 200k default, but crosses the 100k config.
     expect(m.tick(90_000)).toBe(false);
     expect(m.tick(120_000)).toBe(true);
-    expect(spy.calls).toEqual([
-      '<fnc-notice>context at 120k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
-    ]);
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>context at 120k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+      ),
+    );
   });
 });
 
@@ -204,6 +228,7 @@ describe('startContextMonitor — polling integration over injected seams', () =
         threshold: 200_000,
         write: spy.write,
         intervalMs: 10,
+        schedule: syncSchedule,
         setIntervalFn: fakeSetInterval,
         readContextTokens: () => {
           const v = sequence[idx] ?? null;
@@ -216,15 +241,89 @@ describe('startContextMonitor — polling integration over injected seams', () =
       // Drive the poll callback once per scripted read.
       for (let i = 0; i < sequence.length; i += 1) cb?.();
 
-      // Exactly one notice, at the 205_000 crossing.
-      expect(spy.calls).toEqual([
-        '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>\r',
-      ]);
+      // Exactly one notice, at the 205_000 crossing — submitted as two writes.
+      expect(spy.calls).toEqual(
+        noticeWrites(
+          '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+        ),
+      );
       expect(running.monitor.hasFired()).toBe(true);
       // Latched: clearInterval was invoked once the notice fired.
       expect(cleared).toBe(true);
     } finally {
       globalThis.clearInterval = origClear;
     }
+  });
+});
+
+describe('createCompactAcceptGate — JSONL-growth signal with timeout fallback', () => {
+  /** Fake monotonic clock + a sleep that advances it; no real timers. */
+  function fakeClock(): { now: () => number; sleep: (ms: number) => Promise<void> } {
+    let t = 0;
+    return {
+      now: () => t,
+      sleep: (ms: number) => {
+        t += ms;
+        return Promise.resolve();
+      },
+    };
+  }
+
+  test('resolves as soon as the session JSONL grows past the baseline', async () => {
+    const clock = fakeClock();
+    // Baseline read is 100; it grows to 150 on the second poll.
+    const sizes = [100, 100, 150, 999];
+    let i = 0;
+    const reads: number[] = [];
+    const gate = createCompactAcceptGate({
+      launchCWD: '/tmp/x',
+      now: clock.now,
+      sleep: clock.sleep,
+      pollMs: 200,
+      timeoutMs: 10_000,
+      readJsonlSize: () => {
+        const v = sizes[i] ?? 999;
+        i += 1;
+        reads.push(v);
+        return v;
+      },
+    });
+
+    await gate();
+    // Reads: baseline(100), poll1(100 — no growth), poll2(150 — growth → resolve).
+    expect(reads.slice(0, 3)).toEqual([100, 100, 150]);
+    // Resolved on growth, well before the 10s timeout.
+    expect(clock.now()).toBeLessThan(10_000);
+  });
+
+  test('resolves on timeout when the size never grows (no hang)', async () => {
+    const clock = fakeClock();
+    const gate = createCompactAcceptGate({
+      launchCWD: '/tmp/x',
+      now: clock.now,
+      sleep: clock.sleep,
+      pollMs: 200,
+      timeoutMs: 1000,
+      readJsonlSize: () => 100, // never grows
+    });
+
+    await gate(); // must resolve, not hang
+    // The fake clock advanced to (or past) the deadline via the polling sleeps.
+    expect(clock.now()).toBeGreaterThanOrEqual(1000);
+  });
+
+  test('growth strictly above baseline is required — equal size keeps polling to timeout', async () => {
+    const clock = fakeClock();
+    const gate = createCompactAcceptGate({
+      launchCWD: '/tmp/x',
+      now: clock.now,
+      sleep: clock.sleep,
+      pollMs: 500,
+      timeoutMs: 1000,
+      readJsonlSize: () => 42, // baseline == every poll; never strictly grows
+    });
+
+    await gate();
+    expect(clock.now()).toBeGreaterThanOrEqual(1000);
   });
 });

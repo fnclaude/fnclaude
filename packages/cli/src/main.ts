@@ -511,7 +511,7 @@ if (mcpSocketPath !== undefined) {
         copy_to_clipboard: handleCopyToClipboard,
         // Batch-2 slash-injection tools — thin wrappers over the C0
         // keystone, all sharing the deferred-bound PTY writer.
-        compact: createRequestCompactHandler({ write: slashWriter.write }),
+        compact: createRequestCompactHandler({ write: slashWriter.write, launchCWD: cwd }),
         set_effort: createSetEffortHandler({ write: slashWriter.write }),
         set_model: createSetModelHandler({ write: slashWriter.write }),
         run_slash: createRunSlashCommandHandler({ write: slashWriter.write }),

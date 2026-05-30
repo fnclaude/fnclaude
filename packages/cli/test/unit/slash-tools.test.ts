@@ -29,49 +29,150 @@ function spyWriter(): { write: PtyWriter; calls: string[] } {
   return { write: (p) => calls.push(p), calls };
 }
 
+/** Synchronous schedule seam so the separate CR write lands deterministically. */
+const syncSchedule = (fn: () => void): void => fn();
+
 describe('request_compact (C1)', () => {
-  test('no instructions → queues bare /compact, returns queued, no output', async () => {
+  test('no instructions → submits /compact as bracket-wrapped body + separate CR', async () => {
     const spy = spyWriter();
-    const handler = createRequestCompactHandler({ write: spy.write });
+    const handler = createRequestCompactHandler({ write: spy.write, schedule: syncSchedule });
     const r = await handler({ op: 'compact' });
     expect(r).toEqual({ action: 'queued' });
-    expect(spy.calls).toEqual(['/compact\r']);
+    // The bug: a single bulk write of "/compact\r" is treated as a paste and
+    // the trailing CR is swallowed. The fix submits the body bracketed-paste
+    // wrapped, then a SEPARATE bare CR so it lexes as a Return keypress.
+    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
   });
 
-  test('instructions appended after the command', async () => {
+  test('instructions appended after the command, submitted as two writes', async () => {
     const spy = spyWriter();
-    const handler = createRequestCompactHandler({ write: spy.write });
+    const handler = createRequestCompactHandler({ write: spy.write, schedule: syncSchedule });
     await handler({ op: 'compact', instructions: 'focus on the auth refactor' });
-    expect(spy.calls).toEqual(['/compact focus on the auth refactor\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/compact focus on the auth refactor\x1b[201~', '\r']);
   });
 
-  test('follow_up queues a second NON-slash prompt line after /compact, in order', async () => {
+  test('follow_up is NOT written back-to-back — only /compact lands before the gate resolves', async () => {
     const spy = spyWriter();
-    const handler = createRequestCompactHandler({ write: spy.write });
+    // A pending gate we control: the follow_up must wait for it.
+    let release!: () => void;
+    const gate = (): Promise<void> => new Promise<void>((res) => (release = res));
+    let tracked: Promise<void> | undefined;
+    const handler = createRequestCompactHandler({
+      write: spy.write,
+      schedule: syncSchedule,
+      awaitAccepted: gate,
+      trackFollowUp: (p) => (tracked = p),
+    });
     const r = await handler({
       op: 'compact',
       instructions: 'keep the renderer work',
       follow_up: 'now continue with step 3',
     });
     expect(r).toEqual({ action: 'queued' });
+    // ONLY /compact so far — the follow_up has NOT been written (never back-to-back).
+    expect(spy.calls).toEqual(['\x1b[200~/compact keep the renderer work\x1b[201~', '\r']);
+
+    // Resolve the gate; await the detached follow_up work.
+    release();
+    await tracked;
+    // Now the follow_up lands as its OWN two-write submit, AFTER /compact.
     expect(spy.calls).toEqual([
-      '/compact keep the renderer work\r',
-      'now continue with step 3\r',
+      '\x1b[200~/compact keep the renderer work\x1b[201~',
+      '\r',
+      '\x1b[200~now continue with step 3\x1b[201~',
+      '\r',
     ]);
-    // The follow_up must NOT be a slash command.
-    expect(spy.calls[1]!.startsWith('/')).toBe(false);
+    // The follow_up body must NOT be a slash command.
+    expect(spy.calls[2]!.includes('/now')).toBe(false);
+  });
+
+  test('short single-line follow_up is injected INLINE (no file spill)', async () => {
+    const spy = spyWriter();
+    let spilled: string | null = null;
+    let tracked: Promise<void> | undefined;
+    const handler = createRequestCompactHandler({
+      write: spy.write,
+      schedule: syncSchedule,
+      awaitAccepted: async () => {},
+      spillFollowUp: (c) => {
+        spilled = c;
+        return '/tmp/should-not-be-used.md';
+      },
+      trackFollowUp: (p) => (tracked = p),
+    });
+    await handler({ op: 'compact', follow_up: 'continue with step 3' });
+    await tracked;
+    expect(spilled).toBeNull(); // never spilled
+    expect(spy.calls).toEqual([
+      '\x1b[200~/compact\x1b[201~',
+      '\r',
+      '\x1b[200~continue with step 3\x1b[201~',
+      '\r',
+    ]);
+  });
+
+  test('long follow_up spills to a file — a POINTER line is injected, not the body', async () => {
+    const spy = spyWriter();
+    const long = 'x'.repeat(250);
+    let spilled: string | null = null;
+    let tracked: Promise<void> | undefined;
+    const handler = createRequestCompactHandler({
+      write: spy.write,
+      schedule: syncSchedule,
+      awaitAccepted: async () => {},
+      spillFollowUp: (c) => {
+        spilled = c;
+        return '/tmp/fnc-followup-FIXED.md';
+      },
+      trackFollowUp: (p) => (tracked = p),
+    });
+    await handler({ op: 'compact', follow_up: long });
+    await tracked;
+    expect(spilled).toBe(long); // full body persisted
+    expect(spy.calls).toEqual([
+      '\x1b[200~/compact\x1b[201~',
+      '\r',
+      '\x1b[200~Read the file /tmp/fnc-followup-FIXED.md and follow the instructions in it.\x1b[201~',
+      '\r',
+    ]);
+  });
+
+  test('multi-line follow_up spills to a file even when short', async () => {
+    const spy = spyWriter();
+    let spilled: string | null = null;
+    let tracked: Promise<void> | undefined;
+    const handler = createRequestCompactHandler({
+      write: spy.write,
+      schedule: syncSchedule,
+      awaitAccepted: async () => {},
+      spillFollowUp: (c) => {
+        spilled = c;
+        return '/tmp/fnc-followup-ML.md';
+      },
+      trackFollowUp: (p) => (tracked = p),
+    });
+    await handler({ op: 'compact', follow_up: 'line one\nline two' });
+    await tracked;
+    expect(spilled).toBe('line one\nline two');
+    expect(spy.calls[2]).toBe(
+      '\x1b[200~Read the file /tmp/fnc-followup-ML.md and follow the instructions in it.\x1b[201~',
+    );
   });
 
   test('empty/whitespace follow_up is ignored — only /compact is written', async () => {
     const spy = spyWriter();
-    const handler = createRequestCompactHandler({ write: spy.write });
+    const handler = createRequestCompactHandler({
+      write: spy.write,
+      schedule: syncSchedule,
+      awaitAccepted: async () => {},
+    });
     await handler({ op: 'compact', follow_up: '   ' });
-    expect(spy.calls).toEqual(['/compact\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
   });
 
   test('captures no output — response carries only action', async () => {
     const spy = spyWriter();
-    const handler = createRequestCompactHandler({ write: spy.write });
+    const handler = createRequestCompactHandler({ write: spy.write, schedule: syncSchedule });
     const r = await handler({ op: 'compact' });
     expect(Object.keys(r).sort()).toEqual(['action']);
   });
@@ -80,19 +181,19 @@ describe('request_compact (C1)', () => {
 describe('fnc_set_effort (C2)', () => {
   test('valid level → /effort <level>, queued', async () => {
     const spy = spyWriter();
-    const handler = createSetEffortHandler({ write: spy.write });
+    const handler = createSetEffortHandler({ write: spy.write, schedule: syncSchedule });
     const r = await handler({ op: 'set_effort', effort: 'high' });
     expect(r).toEqual({ action: 'queued' });
-    expect(spy.calls).toEqual(['/effort high\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/effort high\x1b[201~', '\r']);
   });
 
   test('every vocabulary value is accepted', async () => {
     for (const level of ['low', 'medium', 'high', 'xhigh', 'max', 'auto']) {
       const spy = spyWriter();
-      const handler = createSetEffortHandler({ write: spy.write });
+      const handler = createSetEffortHandler({ write: spy.write, schedule: syncSchedule });
       const r = await handler({ op: 'set_effort', effort: level });
       expect(r.action).toBe('queued');
-      expect(spy.calls).toEqual([`/effort ${level}\r`]);
+      expect(spy.calls).toEqual([`\x1b[200~/effort ${level}\x1b[201~`, '\r']);
     }
   });
 
@@ -117,19 +218,19 @@ describe('fnc_set_effort (C2)', () => {
 describe('fnc_set_model (C3)', () => {
   test('valid model → /model <name>, queued', async () => {
     const spy = spyWriter();
-    const handler = createSetModelHandler({ write: spy.write });
+    const handler = createSetModelHandler({ write: spy.write, schedule: syncSchedule });
     const r = await handler({ op: 'set_model', model: 'opus' });
     expect(r).toEqual({ action: 'queued' });
-    expect(spy.calls).toEqual(['/model opus\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/model opus\x1b[201~', '\r']);
   });
 
   test('every vocabulary value is accepted', async () => {
     for (const model of ['opus', 'sonnet', 'haiku']) {
       const spy = spyWriter();
-      const handler = createSetModelHandler({ write: spy.write });
+      const handler = createSetModelHandler({ write: spy.write, schedule: syncSchedule });
       const r = await handler({ op: 'set_model', model });
       expect(r.action).toBe('queued');
-      expect(spy.calls).toEqual([`/model ${model}\r`]);
+      expect(spy.calls).toEqual([`\x1b[200~/model ${model}\x1b[201~`, '\r']);
     }
   });
 
@@ -153,17 +254,17 @@ describe('fnc_set_model (C3)', () => {
 describe('fnc_run_slash_command (C4)', () => {
   test('arbitrary command → /<command>, queued', async () => {
     const spy = spyWriter();
-    const handler = createRunSlashCommandHandler({ write: spy.write });
+    const handler = createRunSlashCommandHandler({ write: spy.write, schedule: syncSchedule });
     const r = await handler({ op: 'run_slash', command: 'clear' });
     expect(r).toEqual({ action: 'queued' });
-    expect(spy.calls).toEqual(['/clear\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/clear\x1b[201~', '\r']);
   });
 
   test('leading slash is normalized, args appended', async () => {
     const spy = spyWriter();
-    const handler = createRunSlashCommandHandler({ write: spy.write });
+    const handler = createRunSlashCommandHandler({ write: spy.write, schedule: syncSchedule });
     await handler({ op: 'run_slash', command: '/cost', args: ['detail'] });
-    expect(spy.calls).toEqual(['/cost detail\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/cost detail\x1b[201~', '\r']);
   });
 
   test('empty command → error, no write', async () => {

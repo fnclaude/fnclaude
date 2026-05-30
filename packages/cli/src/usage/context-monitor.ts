@@ -47,7 +47,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { PtyWriter } from '../mcp/handlers/inject-slash.ts';
+import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash.ts';
 import { encodeCWDForProjects } from '../launch/live-permission-reader.ts';
 import { computeSessionUsage } from './session-usage.ts';
 
@@ -81,13 +81,15 @@ export function resolveContextNoticeThreshold(args: {
 }
 
 /**
- * Format the one-shot notice payload for a given context-token count.
- * N is rounded to the nearest thousand and rendered as `Nk`. The trailing
- * `\r` submits the line, matching the slash keystone's Enter semantics.
+ * Format the one-shot notice payload BODY for a given context-token count.
+ * N is rounded to the nearest thousand and rendered as `Nk`. There is NO
+ * trailing terminator — the line is submitted via {@link injectSubmittedLine}
+ * (bracketed-paste body + a SEPARATE CR), which is what actually dispatches
+ * it in claude's bracketed-paste-enabled TUI.
  */
 export function formatContextNotice(tokens: number): string {
   const k = Math.round(tokens / 1000);
-  return `<fnc-notice>context at ${k}k tokens — call request_compact at the next clean stopping point</fnc-notice>\r`;
+  return `<fnc-notice>context at ${k}k tokens — call request_compact at the next clean stopping point</fnc-notice>`;
 }
 
 export interface ContextMonitor {
@@ -108,15 +110,26 @@ export interface CreateContextMonitorArgs {
   threshold: number;
   /** Raw PTY-write sink — the same seam the slash keystone wraps. */
   write: PtyWriter;
+  /**
+   * Timer seam threaded into {@link injectSubmittedLine} for the separate CR
+   * write. Defaults (inside the primitive) to {@link setTimeout}. Tests pass
+   * a synchronous `(fn) => fn()` so the two writes land deterministically.
+   */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the CR write, threaded into {@link injectSubmittedLine}. */
+  enterDelayMs?: number;
 }
 
 /**
  * Build a context monitor with its threshold + PTY writer bound. Pure
  * state machine over `tick`; no IO, no timers — those live in
- * {@link startContextMonitor}.
+ * {@link startContextMonitor}. The notice is SUBMITTED via
+ * {@link injectSubmittedLine} (bracketed-paste body + separate CR) so it is
+ * actually dispatched in claude's bracketed-paste TUI rather than dropped
+ * into the input box.
  */
 export function createContextMonitor(args: CreateContextMonitorArgs): ContextMonitor {
-  const { threshold, write } = args;
+  const { threshold, write, schedule, enterDelayMs } = args;
   let fired = false;
 
   return {
@@ -125,7 +138,7 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
       if (tokens === null) return false;
       if (tokens < threshold) return false;
       fired = true;
-      write(formatContextNotice(tokens));
+      injectSubmittedLine(formatContextNotice(tokens), { write, schedule, enterDelayMs });
       return true;
     },
     hasFired: () => fired,
@@ -141,6 +154,26 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
  * (no project dir, no jsonl, no assistant turn, unreadable file).
  */
 export function readActiveContextTokens(launchCWD: string): number | null {
+  const newestPath = newestSessionJsonl(launchCWD);
+  if (newestPath === null) return null;
+
+  let raw: string;
+  try {
+    raw = readFileSync(newestPath, 'utf8');
+  } catch {
+    return null;
+  }
+  return computeSessionUsage(raw).context?.tokens ?? null;
+}
+
+/**
+ * Discover the most-recently-modified `*.jsonl` under
+ * `~/.claude/projects/<encoded-cwd>/`, or `null` on any miss (no project
+ * dir, no jsonl). The live session UUID isn't statically known — claude
+ * mints it at runtime — so both the context reader and the compact-accept
+ * gate locate the session file this way.
+ */
+export function newestSessionJsonl(launchCWD: string): string | null {
   const dir = join(resolveHome(), '.claude', 'projects', encodeCWDForProjects(launchCWD));
   let entries: string[];
   try {
@@ -166,15 +199,68 @@ export function readActiveContextTokens(launchCWD: string): number | null {
       // skip unreadable entry
     }
   }
-  if (newestPath === null) return null;
+  return newestPath;
+}
 
-  let raw: string;
+/** Default size reader for {@link createCompactAcceptGate}: bytes of the newest session JSONL, or 0. */
+function defaultReadJsonlSize(launchCWD: string): number {
+  const path = newestSessionJsonl(launchCWD);
+  if (path === null) return 0;
   try {
-    raw = readFileSync(newestPath, 'utf8');
+    return statSync(path).size;
   } catch {
-    return null;
+    return 0;
   }
-  return computeSessionUsage(raw).context?.tokens ?? null;
+}
+
+/** Seams for {@link createCompactAcceptGate} — all injectable for fake-clock unit tests. */
+export interface CreateCompactAcceptGateArgs {
+  /** Launch cwd — resolves the encoded `~/.claude/projects/<cwd>` dir. */
+  launchCWD: string;
+  /** Byte-size reader for the newest session JSONL. Defaults to a statSync-backed reader. */
+  readJsonlSize?: (launchCWD: string) => number;
+  /** Sleep seam. Defaults to a real `setTimeout`-backed promise. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Clock seam. Defaults to {@link Date.now}. */
+  now?: () => number;
+  /** Hard timeout (ms) — the gate ALWAYS resolves by this point. Defaults to 10000. */
+  timeoutMs?: number;
+  /** Poll interval (ms). Defaults to 200. */
+  pollMs?: number;
+}
+
+/**
+ * Build the DEFAULT accept gate for {@link createRequestCompactHandler}'s
+ * follow_up: a `() => Promise<void>` that resolves once the live session
+ * JSONL grows past a captured baseline (a proxy for "claude accepted the
+ * /compact prompt and started writing the next records"), OR once a hard
+ * timeout elapses — so it NEVER hangs.
+ *
+ * LIVE-VERIFY (the one item Tom checks live): whether JSONL byte-growth
+ * actually marks "/compact accepted" vs "/compact COMPLETED". If growth only
+ * appears after compaction finishes, the follow_up lands later than intended
+ * (but still as its own gated turn — never back-to-back). The timeout
+ * fallback bounds the worst case regardless.
+ *
+ * Growth-detection AND the timeout fallback are unit-tested with a fake clock
+ * + fake reader (see context-monitor.test.ts) — no real `~/.claude` touched.
+ */
+export function createCompactAcceptGate(args: CreateCompactAcceptGateArgs): () => Promise<void> {
+  const read = args.readJsonlSize ?? defaultReadJsonlSize;
+  const now = args.now ?? Date.now;
+  const sleep = args.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const timeoutMs = args.timeoutMs ?? 10_000;
+  const pollMs = args.pollMs ?? 200;
+
+  return async (): Promise<void> => {
+    const baseline = read(args.launchCWD);
+    const deadline = now() + timeoutMs;
+    while (now() < deadline) {
+      await sleep(pollMs);
+      if (read(args.launchCWD) > baseline) return; // accepted: session file grew
+    }
+    // Timeout fallback — never hang the follow_up.
+  };
 }
 
 function resolveHome(): string {
@@ -205,6 +291,13 @@ export interface StartContextMonitorArgs {
   readContextTokens?: (launchCWD: string) => number | null;
   /** Timer seam — defaults to global `setInterval`. */
   setIntervalFn?: typeof setInterval;
+  /**
+   * Schedule seam threaded into {@link injectSubmittedLine} for the notice's
+   * separate CR write. Defaults (inside the primitive) to {@link setTimeout}.
+   */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the notice's CR write, threaded into {@link injectSubmittedLine}. */
+  enterDelayMs?: number;
 }
 
 export interface RunningContextMonitor {
@@ -226,7 +319,12 @@ export function startContextMonitor(args: StartContextMonitorArgs): RunningConte
   const read = args.readContextTokens ?? readActiveContextTokens;
   const setIntervalImpl = args.setIntervalFn ?? setInterval;
 
-  const monitor = createContextMonitor({ threshold: args.threshold, write: args.write });
+  const monitor = createContextMonitor({
+    threshold: args.threshold,
+    write: args.write,
+    schedule: args.schedule,
+    enterDelayMs: args.enterDelayMs,
+  });
 
   let timer: ReturnType<typeof setInterval> | null = null;
   const stop = (): void => {
