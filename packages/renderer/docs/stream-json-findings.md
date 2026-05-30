@@ -57,6 +57,32 @@ Sending `/usage` or any built-in slash command as the text field works: claude e
 
 After receiving a `result` event, send another user JSON object on stdin. Same `session_id`, context retained. No `--resume` needed. Each user turn counts as a fresh `num_turns: 1` run inside the result event — counting per turn, not per session.
 
+## Slash-command interception (verified: claude 2.1.158, claude-haiku-4-5)
+
+Slash commands sent as the `text` field are intercepted locally — they do NOT forward to the model as prompt text. Verified with `/compact`.
+
+The intercepted response is a synthetic assistant event: `model: "<synthetic>"`, `input_tokens: 0`, `output_tokens: 0`, `num_turns: 0` — identical to the `/usage` response signature already noted under [Output event types](#output-event-types-claude-stdout--renderer). The `result` event follows immediately after.
+
+`compact` is present in the `init` event's `slash_commands[]`. When claude is below its compaction threshold the synthetic `assistant.content[0].text` is `"Not enough messages to compact."`.
+
+**Implication for the renderer:** `sendUserTurn("/compact …")` is sufficient to invoke compaction. No PTY keystroke injection or special out-of-band mechanism is needed.
+
+**Not yet verified:** a successful above-threshold compaction round-trip. Every test run during this spike stayed below the threshold. The invocation path is proven; compaction behavior when the threshold is met is claude's internal logic and identical to the interactive-TUI path.
+
+## Cross-mode resume (verified: claude 2.1.158)
+
+A session established over `--print`/stream-json persists to the standard on-disk store. Verified: established context in a stream-json turn, let the process exit, then resumed via `claude --resume <session_id>` (itself a `--print` invocation) — the context was recalled.
+
+Sessions are stored at `~/.claude/projects/<cwd-slug>/<session_id>.jsonl` where `cwd-slug` is the working directory path with `/` replaced by `-`. Same location and format interactive sessions use. The `session_id` from the `system/init` event is a real bridge back to the conversation.
+
+**Caveat:** the resume in this test was a `--print` resume, not a literal interactive-TUI launch. Both read the identical on-disk store, so interactive resume is low-risk, but it was not separately proven.
+
+## `system/status` events
+
+`system` events with `subtype: "status"` appear between turns in the stream. They are informational — safe to ignore. The event spec currently only enumerates `system/init`; `system/status` is an additional undocumented subtype.
+
+`system/init` repeating per turn is already documented above.
+
 ## Gotchas
 
 - `--output-format stream-json` requires `--verbose` — fails otherwise.
@@ -65,3 +91,4 @@ After receiving a `result` event, send another user JSON object on stdin. Same `
 - No partial deltas by default — add `--include-partial-messages` if you want token-level streaming.
 - Lines can be very large. Any `readline`-equivalent must use a generous max-line setting (default in Bun's stream APIs is fine; if rolling your own, allocate megabytes, not kilobytes).
 - Clean exit takes ~250ms after stdin close.
+- **CLAUDE.md in the subprocess cwd.** A `claude` subprocess spawned under a directory with a `CLAUDE.md` inherits those project instructions, which shape its behavior. Observed: during a test run where cwd was inside a repo with a restrictive `CLAUDE.md`, the model refused a contrived test prompt citing project rules. When driving stream-json for testing, run in a CLAUDE.md-free directory or expect project-instruction influence on model responses.
