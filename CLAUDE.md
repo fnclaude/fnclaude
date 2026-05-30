@@ -135,6 +135,8 @@ git stash pop
 bun test          # and pass here
 ```
 
+**Multi-worktree caveat:** `git stash` uses a single shared stack rooted in the common `.git` dir — stashes are not per-worktree. Concurrent stash/pop pairs across sibling worktrees interleave on that stack and swap changes between worktrees (observed: two agents' sanity runs swapped their implementation files; one PR's fix landed in the other's worktree). Because parallel per-PR worktrees are the default here and stash-sanity fires on every `fix:`/`feat:`, this collision is the common case, not the edge case. Safe alternative: copy your changed implementation files aside (`cp <impl-files> /tmp/`), restore the originals (`git checkout HEAD -- <impl-files>`), run `bun test` (expect FAIL), then copy the saved files back and re-run (expect PASS). Or serialize: only use `git stash` after confirming `git stash list` is empty and no sibling worktree is mid-sanity.
+
 When TDD is impractical, prefix the commit explicitly to opt out:
 
 - `docs:` — markdown / comments / inline docstrings, no behavior change
