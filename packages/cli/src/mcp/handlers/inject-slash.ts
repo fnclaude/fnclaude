@@ -9,11 +9,14 @@
  *
  * Mechanism. main.ts (§9.0) forwards user stdin into claude with
  * `term.write(chunk)` — raw-mode bytes straight onto the PTY master.
- * Injecting `/<cmd> [args]\r` through that same `term.write` makes the
- * TUI see it as a typed-and-submitted prompt line. The trailing `\r`
- * (carriage return) is the Enter keypress; that's what a real terminal
- * delivers when the user hits return, and what claude's line editor
- * reads as "submit".
+ * Injecting through that same `term.write` puts input exactly where the
+ * user's keystrokes go. But claude enables bracketed-paste mode (DEC
+ * 2004), so a single `"<line>\r"` write is lexed as a PASTE and the
+ * trailing `\r` never submits — it lands in the box as literal text.
+ * Submitting therefore takes TWO writes: the body bracketed-paste-wrapped
+ * (no CR), then a SEPARATE bare `\r` that lexes as a standalone Return
+ * keypress. See {@link injectSubmittedLine}, which every consumer (the
+ * Batch-2 tools and the context-size notice) routes through.
  *
  * Fire-and-forget. The handler returns `{ action: 'queued' }` the moment
  * the bytes are handed to the writer. There is deliberately NO output
@@ -57,26 +60,78 @@ import type { WireRequest, WireResponse } from '../wire.ts';
  */
 export type PtyWriter = (payload: string) => void;
 
+/** Bracketed-paste start sequence (DEC mode 2004). */
+const PASTE_START = '\x1b[200~';
+/** Bracketed-paste end sequence. */
+const PASTE_END = '\x1b[201~';
+/** Bare carriage return — the Return keypress claude's line editor submits on. */
+const SUBMIT_CR = '\r';
+/** Default gap (ms) between the pasted body and the separate submit CR. */
+const DEFAULT_ENTER_DELAY_MS = 10;
+
 /**
- * Format a slash command + optional args into the exact byte string the
- * TUI accepts as a submitted prompt line.
+ * Seams for {@link injectSubmittedLine}. `write` is the PTY sink; `schedule`
+ * and `enterDelayMs` exist so unit tests can run the two writes
+ * synchronously (`schedule: (fn) => fn()`) and assert their exact order
+ * without a real timer.
+ */
+export interface InjectSubmittedLineDeps {
+  /** The PTY input sink. */
+  write: PtyWriter;
+  /** Timer seam for the separate CR write. Defaults to {@link setTimeout}. */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the CR write. Defaults to {@link DEFAULT_ENTER_DELAY_MS}. */
+  enterDelayMs?: number;
+}
+
+/**
+ * Submit one line into the live claude TUI so it is actually DISPATCHED,
+ * not just dropped into the input box.
+ *
+ * Why two writes. claude enables bracketed-paste mode (DEC 2004). A single
+ * bulk `term.write("<text>\r")` is therefore lexed as a PASTE: the trailing
+ * `\r` is buffered as literal text (a newline inside the input box) and is
+ * never delivered as a Return keypress — the line lands but never submits.
+ * This mirrors claude's own internal injector, which:
+ *
+ *   1. writes the body on its own, bracketed-paste wrapped, with NO trailing
+ *      CR (`\x1b[200~` + body + `\x1b[201~`) — this also keeps a multi-line
+ *      body intact as one input rather than N submitted turns; then
+ *   2. after a short delay, writes a bare `\r` as a SEPARATE write so it
+ *      lexes as a standalone Return keypress and submits the pasted line.
+ *
+ * The two MUST be separate writes with a gap between them. Fire-and-forget:
+ * returns once the body is written; the CR is scheduled, not awaited.
+ */
+export function injectSubmittedLine(text: string, deps: InjectSubmittedLineDeps): void {
+  const schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+  const enterDelayMs = deps.enterDelayMs ?? DEFAULT_ENTER_DELAY_MS;
+
+  deps.write(`${PASTE_START}${text}${PASTE_END}`);
+  schedule(() => deps.write(SUBMIT_CR), enterDelayMs);
+}
+
+/**
+ * Format a slash command + optional args into the BODY of a submitted
+ * prompt line — no trailing CR. The separate Return keypress is supplied by
+ * {@link injectSubmittedLine}, which the consumers route through; embedding
+ * the CR here is the bug (a single `body\r` write is swallowed by claude's
+ * bracketed-paste mode).
  *
  *   - Always single leading slash, regardless of whether the caller
  *     passed `"compact"` or `"/compact"`.
  *   - Args joined by single spaces after the command.
- *   - Trailing `\r` is the Enter keypress (submit). NOT `\n` — a real
- *     terminal sends CR for the return key under raw mode.
  *
  * Examples:
- *   formatSlashCommand('compact')              → "/compact\r"
- *   formatSlashCommand('/effort', ['high'])    → "/effort high\r"
- *   formatSlashCommand('model', ['opus 4.8'])  → "/model opus 4.8\r"
+ *   formatSlashCommand('compact')              → "/compact"
+ *   formatSlashCommand('/effort', ['high'])    → "/effort high"
+ *   formatSlashCommand('model', ['opus 4.8'])  → "/model opus 4.8"
  */
 export function formatSlashCommand(command: string, args: readonly string[] = []): string {
   const bare = command.startsWith('/') ? command.slice(1) : command;
   const head = `/${bare}`;
   const tail = args.length > 0 ? ` ${args.join(' ')}` : '';
-  return `${head}${tail}\r`;
+  return `${head}${tail}`;
 }
 
 export interface InjectSlashRequest extends WireRequest {
@@ -93,6 +148,14 @@ export interface CreateInjectSlashHandlerArgs {
    * is bound late (after the terminal spawns).
    */
   write: PtyWriter;
+  /**
+   * Timer seam threaded into {@link injectSubmittedLine} for the separate
+   * CR write. Defaults (inside the primitive) to {@link setTimeout}. Tests
+   * pass a synchronous `(fn) => fn()` so the two writes land deterministically.
+   */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the CR write, threaded into {@link injectSubmittedLine}. */
+  enterDelayMs?: number;
 }
 
 /**
@@ -104,9 +167,9 @@ export interface CreateInjectSlashHandlerArgs {
  * or empty command (so we never inject a bare `/\r`). Everything else
  * (which commands are valid, arg shapes) belongs to the per-tool layer.
  *
- * On success it writes the formatted payload and returns
- * `{ action: 'queued' }`. It never blocks on, reads, or returns command
- * output.
+ * On success it SUBMITS the formatted line via {@link injectSubmittedLine}
+ * (bracketed-paste body + a separate CR) and returns `{ action: 'queued' }`.
+ * It never blocks on, reads, or returns command output.
  */
 export function createInjectSlashHandler(args: CreateInjectSlashHandlerArgs): ParentDispatchHandler {
   const { write } = args;
@@ -124,11 +187,14 @@ export function createInjectSlashHandler(args: CreateInjectSlashHandlerArgs): Pa
     const command = r.command.trim();
     const cmdArgs = normalizeArgs(r.args);
 
-    const payload = formatSlashCommand(command, cmdArgs);
-
-    // Fire-and-forget: hand the bytes to the PTY and return immediately.
-    // No output capture — the model does not get the command's output.
-    write(payload);
+    // Fire-and-forget: submit the line (formatSlashCommand returns the body
+    // only; injectSubmittedLine supplies the Return keypress) and return
+    // immediately. No output capture — the model does not get the output.
+    injectSubmittedLine(formatSlashCommand(command, cmdArgs), {
+      write,
+      schedule: args.schedule,
+      enterDelayMs: args.enterDelayMs,
+    });
 
     return { action: 'queued' };
   };

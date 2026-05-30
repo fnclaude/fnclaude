@@ -19,10 +19,13 @@
  * the keystone stays generic and only refuses an empty command.
  */
 
+import { writeFileSync } from 'node:fs';
+
 import { EFFORTS, MODELS } from '../../argv/classify.ts';
+import { createCompactAcceptGate } from '../../usage/context-monitor.ts';
 import type { ParentDispatchHandler } from '../parent-dispatch.ts';
 import type { WireRequest, WireResponse } from '../wire.ts';
-import { type PtyWriter, formatSlashCommand } from './inject-slash.ts';
+import { type PtyWriter, formatSlashCommand, injectSubmittedLine } from './inject-slash.ts';
 
 const QUEUED: WireResponse = { action: 'queued' };
 
@@ -33,39 +36,114 @@ export interface SlashToolDeps {
    * it's a spy. Synchronous, fire-and-forget.
    */
   write: PtyWriter;
+  /**
+   * Timer seam threaded into {@link injectSubmittedLine} for the separate
+   * CR write. Defaults (inside the primitive) to {@link setTimeout}. Tests
+   * pass a synchronous `(fn) => fn()` so the two writes land deterministically.
+   */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the CR write, threaded into {@link injectSubmittedLine}. */
+  enterDelayMs?: number;
+}
+
+/** Follow-up spill threshold — longer than this (chars) goes to a file. */
+const FOLLOW_UP_SPILL_LIMIT = 200;
+
+/**
+ * Compact handler deps. Extends {@link SlashToolDeps} with the follow-up
+ * spill + accept-gate seams so the follow_up submits as its OWN line, AFTER
+ * claude accepts the `/compact` prompt — never in the same synchronous burst.
+ */
+export interface RequestCompactDeps extends SlashToolDeps {
+  /**
+   * Persist a long/multi-line follow_up to a file and return its path. The
+   * handler then injects a pointer line instead of the raw body. Defaults to
+   * writing `/tmp/fnc-followup-<pid>-<ts>.md`. Tests inject a fake that
+   * records the content and returns a fixed path.
+   */
+  spillFollowUp?: (content: string) => string;
+  /**
+   * The gate awaited between submitting `/compact` and submitting the
+   * follow_up. Defaults to {@link createCompactAcceptGate} bound to
+   * `launchCWD`. If injected, `launchCWD` is ignored.
+   */
+  awaitAccepted?: () => Promise<void>;
+  /** Launch cwd — builds the DEFAULT accept-gate. Ignored if `awaitAccepted` is injected. */
+  launchCWD?: string;
+  /**
+   * Test hook: receives the detached follow_up promise so tests can await
+   * the gated work deterministically. Undefined in production =>
+   * fire-and-forget.
+   */
+  trackFollowUp?: (p: Promise<void>) => void;
+}
+
+/** Default file-spill: write the follow_up to a unique /tmp markdown file. */
+function defaultSpillFollowUp(content: string): string {
+  const path = `/tmp/fnc-followup-${process.pid}-${Date.now()}.md`;
+  writeFileSync(path, content, 'utf8');
+  return path;
+}
+
+/** A follow_up needs file-spill when it is multi-line or long. */
+function followUpNeedsFile(followUp: string): boolean {
+  return followUp.includes('\n') || followUp.length > FOLLOW_UP_SPILL_LIMIT;
+}
+
+/** Pointer line injected in place of a spilled follow_up body. */
+function followUpPointer(path: string): string {
+  return `Read the file ${path} and follow the instructions in it.`;
 }
 
 /**
  * C1 — `request_compact` (#170).
  *
- * Queues `/compact [instructions]`. When `follow_up` is provided, ALSO
- * queues it as a normal prompt submission (a second write WITHOUT a
- * leading slash) so the model auto-resumes after the compaction settles.
- * Both writes are queued in order: compact first, then follow_up.
+ * Submits `/compact [instructions]` through {@link injectSubmittedLine} so it
+ * is actually dispatched (bracketed-paste body + separate CR), not just
+ * dropped into the input box.
+ *
+ * When `follow_up` is provided it is submitted as its OWN, SEPARATE
+ * `injectSubmittedLine` call — never back-to-back with `/compact`. The
+ * handler returns `{ action: 'queued' }` IMMEDIATELY, then a detached promise:
+ *
+ *   1. awaits the accept gate (`awaitAccepted`) — by default this polls the
+ *      live session JSONL for a post-submit size change so the follow_up only
+ *      lands once claude has accepted the `/compact` prompt;
+ *   2. spills a long/multi-line follow_up to a file and injects a POINTER
+ *      line instead of the raw body, otherwise injects it inline.
+ *
+ * The follow_up submit happening as its own gated write is the "never
+ * back-to-back" guarantee: a line written in the same synchronous burst as
+ * `/compact` would be swallowed by the compact prompt rather than run as the
+ * next user turn.
  *
  * NO output capture — returns `{ action: 'queued' }` regardless.
  */
-export function createRequestCompactHandler(deps: SlashToolDeps): ParentDispatchHandler {
+export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDispatchHandler {
   const { write } = deps;
+  const injectDeps = { write, schedule: deps.schedule, enterDelayMs: deps.enterDelayMs };
+  const spill = deps.spillFollowUp ?? defaultSpillFollowUp;
+  const gate = deps.awaitAccepted ?? createCompactAcceptGate({ launchCWD: deps.launchCWD ?? '' });
+
   return async (req: WireRequest): Promise<WireResponse> => {
     const instructions = typeof req.instructions === 'string' ? req.instructions.trim() : '';
+    // KEEP the instructions arg as-is — it steers compaction.
     const args = instructions === '' ? [] : [instructions];
-    write(formatSlashCommand('compact', args));
+    injectSubmittedLine(formatSlashCommand('compact', args), injectDeps);
 
     const followUp = typeof req.follow_up === 'string' ? req.follow_up.trim() : '';
     if (followUp !== '') {
-      // A plain prompt line (no leading slash) submitted with the same
-      // CR-terminator a real keystroke carries. Queued immediately after
-      // /compact so the idle post-compaction TUI picks it up as the next
-      // user turn.
-      //
-      // TODO(#170): a line queued *during* compaction may be consumed
-      // after the compact finishes — or dropped, since compaction reloads
-      // context. If this simple queued-both version proves lossy in live
-      // use, the fallback is to detect post-compact completion (poll the
-      // session JSONL for the post-compact summary record) and only then
-      // write the follow_up. Not built here — needs live verification first.
-      write(`${followUp}\r`);
+      const p = (async (): Promise<void> => {
+        // Gate on /compact acceptance: the follow_up must NOT land in the
+        // same synchronous burst as /compact (it would be eaten by the
+        // compact prompt). Resolve once claude has accepted, then submit.
+        await gate();
+        const line = followUpNeedsFile(followUp)
+          ? followUpPointer(spill(followUp))
+          : followUp;
+        injectSubmittedLine(line, injectDeps);
+      })();
+      deps.trackFollowUp?.(p); // undefined in prod => fire-and-forget
     }
 
     return QUEUED;
@@ -96,7 +174,11 @@ export function createSetEffortHandler(deps: SlashToolDeps): ParentDispatchHandl
         error: `invalid effort ${JSON.stringify(level)}; expected one of: ${EFFORTS.join(', ')}.`,
       };
     }
-    write(formatSlashCommand('effort', [level]));
+    injectSubmittedLine(formatSlashCommand('effort', [level]), {
+      write,
+      schedule: deps.schedule,
+      enterDelayMs: deps.enterDelayMs,
+    });
     return QUEUED;
   };
 }
@@ -120,7 +202,11 @@ export function createSetModelHandler(deps: SlashToolDeps): ParentDispatchHandle
         error: `invalid model ${JSON.stringify(model)}; expected one of: ${MODELS.join(', ')}.`,
       };
     }
-    write(formatSlashCommand('model', [model]));
+    injectSubmittedLine(formatSlashCommand('model', [model]), {
+      write,
+      schedule: deps.schedule,
+      enterDelayMs: deps.enterDelayMs,
+    });
     return QUEUED;
   };
 }
@@ -143,7 +229,11 @@ export function createRunSlashCommandHandler(deps: SlashToolDeps): ParentDispatc
       return { action: 'error', error: 'fnc_run_slash_command requires a command string.' };
     }
     const args = normalizeArgs(req.args);
-    write(formatSlashCommand(command, args));
+    injectSubmittedLine(formatSlashCommand(command, args), {
+      write,
+      schedule: deps.schedule,
+      enterDelayMs: deps.enterDelayMs,
+    });
     return QUEUED;
   };
 }
