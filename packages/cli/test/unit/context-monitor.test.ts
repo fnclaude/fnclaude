@@ -1,15 +1,17 @@
 /**
  * Unit tests for the context-size monitor (#170 part 2).
  *
- * The monitor watches the live session's context size and, the FIRST time
- * it crosses a threshold, injects EXACTLY ONE plain-text notice line into
- * the PTY via the raw write seam (NOT the slash formatter), then latches
- * off for the rest of the session. These tests drive a scripted sequence
- * of token counts (below → crossing → above) through the injected seams
- * and assert: no notice below, exactly one notice at the crossing with the
- * correct `<fnc-notice>…Nk…</fnc-notice>` format and rounded N, no second
- * notice on further growth, the configurable threshold fires earlier, and
- * nothing is captured back through the writer.
+ * The monitor watches the live session's context size and, when it crosses
+ * a threshold, injects EXACTLY ONE plain-text notice line into the PTY via
+ * the raw write seam (NOT the slash formatter), then latches off so mere
+ * growth doesn't re-fire — but re-arms after a compaction drops context
+ * below the threshold. These tests drive a scripted sequence of token
+ * counts (below → crossing → above → drop → crossing) through the injected
+ * seams and assert: no notice below, exactly one notice at the crossing
+ * with the correct `<fnc-notice>…Nk…</fnc-notice>` format and rounded N, no
+ * second notice on further growth, a second notice after a drop + recross,
+ * the configurable threshold fires earlier, and nothing is captured back
+ * through the writer.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -41,7 +43,7 @@ function noticeWrites(body: string): string[] {
 describe('formatContextNotice', () => {
   test('rounds tokens to the nearest k and wraps in <fnc-notice> — BODY only, no terminator', () => {
     expect(formatContextNotice(200_000)).toBe(
-      '<fnc-notice>context at 200k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+      '<fnc-notice>context at 200k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
     );
   });
 
@@ -99,7 +101,7 @@ describe('createContextMonitor — single-notice latch', () => {
 
     expect(spy.calls).toEqual(
       noticeWrites(
-        '<fnc-notice>context at 201k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+        '<fnc-notice>context at 201k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
       ),
     );
     expect(m.hasFired()).toBe(true);
@@ -117,6 +119,32 @@ describe('createContextMonitor — single-notice latch', () => {
 
     // One notice = exactly the two writes (body + CR), no more.
     expect(spy.calls.length).toBe(2);
+  });
+
+  test('re-arms after a compaction drop and fires a SECOND time on the next crossing', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+
+    // (a) crosses → fires.
+    expect(m.tick(205_000)).toBe(true);
+    // (b) keeps growing above threshold → no re-fire on mere growth.
+    expect(m.tick(260_000)).toBe(false);
+    // (c) drops below threshold (compaction) → no notice, but re-arms.
+    expect(m.tick(50_000)).toBe(false);
+    // (d) climbs back, still below → no notice.
+    expect(m.tick(199_000)).toBe(false);
+    // (e) crosses AGAIN → fires a SECOND time.
+    expect(m.tick(205_000)).toBe(true);
+
+    // Exactly two notices = four writes (body + CR each).
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+      ),
+    ]);
   });
 
   test('null reading is a no-op (no assistant turn / unreadable JSONL)', () => {
@@ -193,14 +221,14 @@ describe('configurable threshold fires earlier', () => {
     expect(m.tick(120_000)).toBe(true);
     expect(spy.calls).toEqual(
       noticeWrites(
-        '<fnc-notice>context at 120k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+        '<fnc-notice>context at 120k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
       ),
     );
   });
 });
 
 describe('startContextMonitor — polling integration over injected seams', () => {
-  test('polls the reader on each interval, fires once at crossing, then stops polling', () => {
+  test('polls the reader on each interval and fires once at crossing', () => {
     const spy = spyWriter();
 
     // Scripted sequence of context reads, one per interval tick.
@@ -244,12 +272,13 @@ describe('startContextMonitor — polling integration over injected seams', () =
       // Exactly one notice, at the 205_000 crossing — submitted as two writes.
       expect(spy.calls).toEqual(
         noticeWrites(
-          '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+          '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
         ),
       );
       expect(running.monitor.hasFired()).toBe(true);
-      // Latched: clearInterval was invoked once the notice fired.
-      expect(cleared).toBe(true);
+      // Polling does NOT stop on fire (the latch re-arms after a drop), so
+      // clearInterval is only called by an explicit stop() — never here.
+      expect(cleared).toBe(false);
     } finally {
       globalThis.clearInterval = origClear;
     }
