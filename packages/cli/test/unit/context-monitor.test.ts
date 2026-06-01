@@ -119,6 +119,32 @@ describe('createContextMonitor — single-notice latch', () => {
     expect(spy.calls.length).toBe(2);
   });
 
+  test('re-arms after a compaction drop and fires a SECOND time on the next crossing', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+
+    // (a) crosses → fires.
+    expect(m.tick(205_000)).toBe(true);
+    // (b) keeps growing above threshold → no re-fire on mere growth.
+    expect(m.tick(260_000)).toBe(false);
+    // (c) drops below threshold (compaction) → no notice, but re-arms.
+    expect(m.tick(50_000)).toBe(false);
+    // (d) climbs back, still below → no notice.
+    expect(m.tick(199_000)).toBe(false);
+    // (e) crosses AGAIN → fires a SECOND time.
+    expect(m.tick(205_000)).toBe(true);
+
+    // Exactly two notices = four writes (body + CR each).
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>context at 205k tokens — call request_compact at the next clean stopping point</fnc-notice>',
+      ),
+    ]);
+  });
+
   test('null reading is a no-op (no assistant turn / unreadable JSONL)', () => {
     const spy = spyWriter();
     const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
@@ -200,7 +226,7 @@ describe('configurable threshold fires earlier', () => {
 });
 
 describe('startContextMonitor — polling integration over injected seams', () => {
-  test('polls the reader on each interval, fires once at crossing, then stops polling', () => {
+  test('polls the reader on each interval and fires once at crossing', () => {
     const spy = spyWriter();
 
     // Scripted sequence of context reads, one per interval tick.
@@ -248,8 +274,9 @@ describe('startContextMonitor — polling integration over injected seams', () =
         ),
       );
       expect(running.monitor.hasFired()).toBe(true);
-      // Latched: clearInterval was invoked once the notice fired.
-      expect(cleared).toBe(true);
+      // Polling does NOT stop on fire (the latch re-arms after a drop), so
+      // clearInterval is only called by an explicit stop() — never here.
+      expect(cleared).toBe(false);
     } finally {
       globalThis.clearInterval = origClear;
     }

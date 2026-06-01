@@ -29,11 +29,12 @@
  * keystone. There is NO output capture — fire-and-forget, identical to
  * the keystone's contract.
  *
- * ── Single-notice latch ──────────────────────────────────────────────
- * Once the notice fires, the monitor latches OFF for the rest of the
- * session: no second notice is ever issued, even as context keeps
- * growing. The latch is the whole point — a re-issued notice every turn
- * would be noise.
+ * ── Re-arming latch ──────────────────────────────────────────────────
+ * Once the notice fires, the monitor latches OFF so it does NOT re-issue
+ * every turn as context keeps growing — that would be noise. But the
+ * latch RE-ARMS once context drops back below the threshold (the model
+ * called request_compact and compaction landed), so the next time context
+ * crosses the threshold the notice fires again.
  *
  * ── Testability ──────────────────────────────────────────────────────
  * Both seams (`readContextTokens`, `write`) are injected, so the monitor
@@ -95,10 +96,12 @@ export function formatContextNotice(tokens: number): string {
 export interface ContextMonitor {
   /**
    * Evaluate one observed context-token count. Returns `true` iff this
-   * tick fired the notice (crossed the threshold for the first time).
-   * After a fire, the monitor is latched and all further ticks return
-   * `false` regardless of token count. A `null` reading (no assistant
-   * turn yet / unreadable JSONL) is a no-op.
+   * tick fired the notice (crossed the threshold). After a fire, the
+   * monitor is latched and further at/above readings return `false`
+   * (no re-fire on mere growth); a reading that DROPS below the threshold
+   * (a compaction) re-arms the latch so the next crossing fires again. A
+   * `null` reading (no assistant turn yet / unreadable JSONL) is a no-op
+   * and never re-arms.
    */
   tick: (tokens: number | null) => boolean;
   /** True once the notice has been fired. */
@@ -134,8 +137,16 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
 
   return {
     tick: (tokens: number | null): boolean => {
-      if (fired) return false;
+      // A null reading (no assistant turn yet / unreadable JSONL) is a
+      // no-op — it must NOT re-arm a fired latch.
       if (tokens === null) return false;
+      if (fired) {
+        // Already fired: a drop below threshold (a compaction) re-arms the
+        // latch so the next crossing fires again; staying at/above does not
+        // re-fire.
+        if (tokens < threshold) fired = false;
+        return false;
+      }
       if (tokens < threshold) return false;
       fired = true;
       injectSubmittedLine(formatContextNotice(tokens), { write, schedule, enterDelayMs });
@@ -310,9 +321,11 @@ export interface RunningContextMonitor {
 /**
  * Start the polling monitor against the live session JSONL. Polls every
  * `intervalMs`, reads the current context size via the session-usage
- * reader, and fires the one-shot notice through `write` on first crossing.
- * Once fired (or once `stop()` is called) the interval is cleared so the
- * monitor goes quiet for the rest of the session.
+ * reader, and fires the notice through `write` on each crossing. Polling
+ * does NOT stop on fire — the latch re-arms after a compaction drops
+ * context below the threshold, so the monitor keeps receiving ticks and
+ * can fire again on the next crossing. Only an explicit `stop()` clears
+ * the interval.
  */
 export function startContextMonitor(args: StartContextMonitorArgs): RunningContextMonitor {
   const intervalMs = args.intervalMs ?? 4000;
@@ -336,7 +349,7 @@ export function startContextMonitor(args: StartContextMonitorArgs): RunningConte
 
   timer = setIntervalImpl(() => {
     const tokens = read(args.launchCWD);
-    if (monitor.tick(tokens)) stop(); // latch off after firing
+    monitor.tick(tokens); // re-arming latch: keep polling so it can fire again
   }, intervalMs);
   // Don't let the poll timer keep the event loop alive on its own; the
   // live claude subprocess owns process lifetime.
