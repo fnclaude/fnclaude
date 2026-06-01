@@ -111,7 +111,7 @@ describe('request_compact (C1)', () => {
     ]);
   });
 
-  test('long follow_up spills to a file — a POINTER line is injected, not the body', async () => {
+  test('long follow_up spills to a file — an @file reference is injected, not the body', async () => {
     const spy = spyWriter();
     const long = 'x'.repeat(250);
     let spilled: string | null = null;
@@ -132,7 +132,7 @@ describe('request_compact (C1)', () => {
     expect(spy.calls).toEqual([
       '\x1b[200~/compact\x1b[201~',
       '\r',
-      '\x1b[200~Read the file /tmp/fnc-followup-FIXED.md and follow the instructions in it.\x1b[201~',
+      '\x1b[200~@/tmp/fnc-followup-FIXED.md\x1b[201~',
       '\r',
     ]);
   });
@@ -154,9 +154,7 @@ describe('request_compact (C1)', () => {
     await handler({ op: 'compact', follow_up: 'line one\nline two' });
     await tracked;
     expect(spilled).toBe('line one\nline two');
-    expect(spy.calls[2]).toBe(
-      '\x1b[200~Read the file /tmp/fnc-followup-ML.md and follow the instructions in it.\x1b[201~',
-    );
+    expect(spy.calls[2]).toBe('\x1b[200~@/tmp/fnc-followup-ML.md\x1b[201~');
   });
 
   test('empty/whitespace follow_up is ignored — only /compact is written', async () => {
