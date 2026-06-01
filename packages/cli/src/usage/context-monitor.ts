@@ -22,7 +22,7 @@
  * keystone wraps over `Bun.Terminal.write`) — NOT through
  * `formatSlashCommand`. The payload is:
  *
- *   <fnc-notice>context at Nk tokens — call request_compact at the next clean stopping point</fnc-notice>\r
+ *   <fnc-notice>context at Nk tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>\r
  *
  * where N is the current context size rounded to the nearest thousand.
  * The trailing `\r` submits it as a typed line, exactly like the slash
@@ -90,7 +90,7 @@ export function resolveContextNoticeThreshold(args: {
  */
 export function formatContextNotice(tokens: number): string {
   const k = Math.round(tokens / 1000);
-  return `<fnc-notice>context at ${k}k tokens — call request_compact at the next clean stopping point</fnc-notice>`;
+  return `<fnc-notice>context at ${k}k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>`;
 }
 
 export interface ContextMonitor {
