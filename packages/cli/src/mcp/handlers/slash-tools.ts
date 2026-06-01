@@ -90,9 +90,14 @@ function followUpNeedsFile(followUp: string): boolean {
   return followUp.includes('\n') || followUp.length > FOLLOW_UP_SPILL_LIMIT;
 }
 
-/** Pointer line injected in place of a spilled follow_up body. */
+/**
+ * Pointer line injected in place of a spilled follow_up body. Emitted as a
+ * bare `@<path>` so claude's `@`-file-reference expansion inlines the file
+ * when the follow_up submits as a normal chat message; degrades gracefully
+ * to the model reading the path if expansion doesn't fire.
+ */
 function followUpPointer(path: string): string {
-  return `Read the file ${path} and follow the instructions in it.`;
+  return `@${path}`;
 }
 
 /**
@@ -109,8 +114,8 @@ function followUpPointer(path: string): string {
  *   1. awaits the accept gate (`awaitAccepted`) — by default this polls the
  *      live session JSONL for a post-submit size change so the follow_up only
  *      lands once claude has accepted the `/compact` prompt;
- *   2. spills a long/multi-line follow_up to a file and injects a POINTER
- *      line instead of the raw body, otherwise injects it inline.
+ *   2. spills a long/multi-line follow_up to a file and injects an `@<path>`
+ *      file reference instead of the raw body, otherwise injects it inline.
  *
  * The follow_up submit happening as its own gated write is the "never
  * back-to-back" guarantee: a line written in the same synchronous burst as
