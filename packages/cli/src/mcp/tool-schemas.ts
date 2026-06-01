@@ -228,18 +228,19 @@ const COPY_TO_CLIPBOARD: McpToolSchema = {
 
 const REQUEST_COMPACT: McpToolSchema = {
   description:
-    "Compact the current conversation in place by triggering claude's /compact slash command, optionally with custom instructions. Use when the user asks to compact, or when you judge the context is getting long and want to summarize before continuing. Fire-and-forget: the command is queued into the live session and runs as if the user typed it; you do NOT receive the compaction summary back through this tool. Args: instructions (optional free-text guidance passed to /compact, e.g. 'focus on the auth refactor, drop the unrelated debugging'), follow_up (optional — a prompt to submit automatically AFTER the compaction completes, so the session resumes work without waiting for the user; provide it when you want to continue a task across the compaction boundary).",
+    "Compact the current conversation in place by triggering claude's /compact slash command, optionally with custom instructions. Use when the user asks to compact, or when you judge the context is getting long and want to summarize before continuing. DRAIN FIRST: finish responding to every queued user prompt before calling this — call it only once your queue is clear, since prompts not yet processed are lost from the compaction summary. Fire-and-forget: the command is queued into the live session and runs as if the user typed it; you do NOT receive the compaction summary back through this tool. Args: instructions (optional — /compact writes the conversation summary ITSELF, so this is SHORT, ADDITIONAL steering only, e.g. 'focus on the auth refactor, drop the unrelated debugging'; NOT a place to write or paste a summary), follow_up (optional — a prompt submitted as a normal user message AFTER the compaction completes, so the session resumes work without waiting for the user; provide it to continue a task across the compaction boundary. Being a normal message, an '@/path/to/file.md' reference works here).",
   inputSchema: {
     type: 'object',
     properties: {
       instructions: {
         type: 'string',
-        description: 'Optional free-text guidance appended to /compact.',
+        description:
+          'Optional SHORT additional steering for /compact (it writes the summary itself); not a place to write a summary.',
       },
       follow_up: {
         type: 'string',
         description:
-          'Optional prompt submitted as a normal user turn after the compaction completes, to auto-resume work.',
+          'Optional prompt submitted as a normal user message after the compaction completes, to auto-resume work. An @/path.md reference works here.',
       },
     },
   },
