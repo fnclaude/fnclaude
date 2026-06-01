@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.1...cli-v2.7.2) (2026-06-01)
+
+
+### Bug Fixes
+
+* **cli:** re-arm context-compact notice + drain-queue nudge ([#198](https://github.com/fnclaude/fnclaude/issues/198)) ([7715c16](https://github.com/fnclaude/fnclaude/commit/7715c16cdcb8eb6415fbc6bf0afe8c1face58d25))
+
 ## [2.7.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.0...cli-v2.7.1) (2026-05-30)
 
 
