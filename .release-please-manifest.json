@@ -1,5 +1,5 @@
 {
-  "packages/cli": "2.7.2",
+  "packages/cli": "2.7.3",
   "packages/fnclaude": "2.1.0",
   "packages/renderer": "3.0.0"
 }

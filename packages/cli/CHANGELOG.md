@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.3](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.2...cli-v2.7.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* **cli:** gate compact follow_up on a fixed timer instead of JSONL growth ([#202](https://github.com/fnclaude/fnclaude/issues/202)) ([dbdb094](https://github.com/fnclaude/fnclaude/commit/dbdb0943c094c067dfa7a0bb3ccf3676ad1a6ac5))
+
 ## [2.7.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.1...cli-v2.7.2) (2026-06-01)
 
 
