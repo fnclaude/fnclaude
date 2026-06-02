@@ -95,6 +95,19 @@ jobs:
           # open forever waiting for a `verify` run that never starts.
           token: ${{ secrets.AUTOMERGE_PAT }}
 
+      # Pin every checkout to the RELEASE COMMIT, not this run's triggering
+      # SHA. release-please runs on every push to main and, because main-push
+      # runs are serialized (concurrency: cancel-in-progress:false), a delayed
+      # *feature-merge* run can be the one that observes an already-merged
+      # release PR — setting releases_created=true while its own checkout is
+      # the feature commit (stale package.json). Publishing from that tree
+      # ships the wrong/old version (observed 2026-06-02: a feature-merge run
+      # tried to republish the previous version, npm rejected it, and the real
+      # release was skipped). The per-path `<path>--sha` outputs all point at
+      # the release PR's merge commit; pin to whichever package released so
+      # build + publish always operate on the bumped tree, regardless of which
+      # run wins the race.
+      #
       # actions/checkout@v4 intermittently fails with
       # `fatal: could not read Username for 'https://github.com'`. Three-attempt
       # retry absorbs the flake without needing a manual rerun; final attempt
@@ -103,12 +116,18 @@ jobs:
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         id: checkout-1
         continue-on-error: true
+        with:
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
       - uses: actions/checkout@v4
         if: ${{ steps.release.outputs.releases_created == 'true' && steps.checkout-1.outcome == 'failure' }}
         id: checkout-2
         continue-on-error: true
+        with:
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
       - uses: actions/checkout@v4
         if: ${{ steps.release.outputs.releases_created == 'true' && steps.checkout-1.outcome == 'failure' && steps.checkout-2.outcome == 'failure' }}
+        with:
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
 
       - uses: actions/setup-node@v4
         if: ${{ steps.release.outputs.releases_created == 'true' }}
