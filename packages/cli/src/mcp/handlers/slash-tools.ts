@@ -22,7 +22,7 @@
 import { writeFileSync } from 'node:fs';
 
 import { EFFORTS, MODELS } from '../../argv/classify.ts';
-import { createCompactAcceptGate } from '../../usage/context-monitor.ts';
+import { createCompactFollowUpGate } from '../../usage/context-monitor.ts';
 import type { ParentDispatchHandler } from '../parent-dispatch.ts';
 import type { WireRequest, WireResponse } from '../wire.ts';
 import { type PtyWriter, formatSlashCommand, injectSubmittedLine } from './inject-slash.ts';
@@ -51,8 +51,8 @@ const FOLLOW_UP_SPILL_LIMIT = 200;
 
 /**
  * Compact handler deps. Extends {@link SlashToolDeps} with the follow-up
- * spill + accept-gate seams so the follow_up submits as its OWN line, AFTER
- * claude accepts the `/compact` prompt — never in the same synchronous burst.
+ * spill + follow-up-gate seams so the follow_up submits as its OWN line,
+ * AFTER a delay — never in the same synchronous burst as `/compact`.
  */
 export interface RequestCompactDeps extends SlashToolDeps {
   /**
@@ -64,12 +64,12 @@ export interface RequestCompactDeps extends SlashToolDeps {
   spillFollowUp?: (content: string) => string;
   /**
    * The gate awaited between submitting `/compact` and submitting the
-   * follow_up. Defaults to {@link createCompactAcceptGate} bound to
-   * `launchCWD`. If injected, `launchCWD` is ignored.
+   * follow_up. Defaults to {@link createCompactFollowUpGate} — a fixed-delay
+   * timer (10s) that keeps the follow_up out of the same burst as `/compact`
+   * and lands it well after compaction is underway. Tests inject a controllable
+   * gate to assert the ordering deterministically.
    */
-  awaitAccepted?: () => Promise<void>;
-  /** Launch cwd — builds the DEFAULT accept-gate. Ignored if `awaitAccepted` is injected. */
-  launchCWD?: string;
+  followUpGate?: () => Promise<void>;
   /**
    * Test hook: receives the detached follow_up promise so tests can await
    * the gated work deterministically. Undefined in production =>
@@ -111,9 +111,12 @@ function followUpPointer(path: string): string {
  * `injectSubmittedLine` call — never back-to-back with `/compact`. The
  * handler returns `{ action: 'queued' }` IMMEDIATELY, then a detached promise:
  *
- *   1. awaits the accept gate (`awaitAccepted`) — by default this polls the
- *      live session JSONL for a post-submit size change so the follow_up only
- *      lands once claude has accepted the `/compact` prompt;
+ *   1. awaits the follow-up gate (`followUpGate`) — by default a fixed 10s
+ *      timer ({@link createCompactFollowUpGate}) that holds the follow_up
+ *      until compaction is well underway. (An earlier design polled the
+ *      session JSONL for byte-growth, but the first post-submit write is the
+ *      /compact echo itself, so the gate tripped instantly and the follow_up
+ *      landed too soon — the fixed timer avoids that false positive.)
  *   2. spills a long/multi-line follow_up to a file and injects an `@<path>`
  *      file reference instead of the raw body, otherwise injects it inline.
  *
@@ -128,7 +131,7 @@ export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDis
   const { write } = deps;
   const injectDeps = { write, schedule: deps.schedule, enterDelayMs: deps.enterDelayMs };
   const spill = deps.spillFollowUp ?? defaultSpillFollowUp;
-  const gate = deps.awaitAccepted ?? createCompactAcceptGate({ launchCWD: deps.launchCWD ?? '' });
+  const gate = deps.followUpGate ?? createCompactFollowUpGate();
 
   return async (req: WireRequest): Promise<WireResponse> => {
     const instructions = typeof req.instructions === 'string' ? req.instructions.trim() : '';
@@ -139,9 +142,10 @@ export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDis
     const followUp = typeof req.follow_up === 'string' ? req.follow_up.trim() : '';
     if (followUp !== '') {
       const p = (async (): Promise<void> => {
-        // Gate on /compact acceptance: the follow_up must NOT land in the
-        // same synchronous burst as /compact (it would be eaten by the
-        // compact prompt). Resolve once claude has accepted, then submit.
+        // Gate the follow_up: it must NOT land in the same synchronous burst
+        // as /compact (it would be eaten by the compact prompt). The default
+        // gate waits a fixed delay so the follow_up lands once compaction is
+        // underway, then submits.
         await gate();
         const line = followUpNeedsFile(followUp)
           ? followUpPointer(spill(followUp))

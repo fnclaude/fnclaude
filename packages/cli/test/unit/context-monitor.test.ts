@@ -18,9 +18,10 @@ import { describe, expect, test } from 'bun:test';
 
 import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
 import {
+  COMPACT_FOLLOWUP_DELAY_MS,
   CONTEXT_NOTICE_THRESHOLD_ENV,
   DEFAULT_CONTEXT_NOTICE_THRESHOLD,
-  createCompactAcceptGate,
+  createCompactFollowUpGate,
   createContextMonitor,
   formatContextNotice,
   resolveContextNoticeThreshold,
@@ -285,74 +286,70 @@ describe('startContextMonitor — polling integration over injected seams', () =
   });
 });
 
-describe('createCompactAcceptGate — JSONL-growth signal with timeout fallback', () => {
-  /** Fake monotonic clock + a sleep that advances it; no real timers. */
-  function fakeClock(): { now: () => number; sleep: (ms: number) => Promise<void> } {
-    let t = 0;
+describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)', () => {
+  /** A fake sleep that records its argument and resolves on the next microtask. */
+  function fakeSleep(): { sleep: (ms: number) => Promise<void>; calls: number[] } {
+    const calls: number[] = [];
     return {
-      now: () => t,
+      calls,
       sleep: (ms: number) => {
-        t += ms;
+        calls.push(ms);
         return Promise.resolve();
       },
     };
   }
 
-  test('resolves as soon as the session JSONL grows past the baseline', async () => {
-    const clock = fakeClock();
-    // Baseline read is 100; it grows to 150 on the second poll.
-    const sizes = [100, 100, 150, 999];
-    let i = 0;
-    const reads: number[] = [];
-    const gate = createCompactAcceptGate({
-      launchCWD: '/tmp/x',
-      now: clock.now,
-      sleep: clock.sleep,
-      pollMs: 200,
-      timeoutMs: 10_000,
-      readJsonlSize: () => {
-        const v = sizes[i] ?? 999;
-        i += 1;
-        reads.push(v);
-        return v;
+  test('does NOT resolve until sleep(delayMs) has been awaited', async () => {
+    let release!: () => void;
+    let slept: number | null = null;
+    const gate = createCompactFollowUpGate({
+      sleep: (ms: number) => {
+        slept = ms;
+        return new Promise<void>((res) => (release = res));
       },
     });
 
-    await gate();
-    // Reads: baseline(100), poll1(100 — no growth), poll2(150 — growth → resolve).
-    expect(reads.slice(0, 3)).toEqual([100, 100, 150]);
-    // Resolved on growth, well before the 10s timeout.
-    expect(clock.now()).toBeLessThan(10_000);
-  });
-
-  test('resolves on timeout when the size never grows (no hang)', async () => {
-    const clock = fakeClock();
-    const gate = createCompactAcceptGate({
-      launchCWD: '/tmp/x',
-      now: clock.now,
-      sleep: clock.sleep,
-      pollMs: 200,
-      timeoutMs: 1000,
-      readJsonlSize: () => 100, // never grows
+    let resolved = false;
+    const p = gate().then(() => {
+      resolved = true;
     });
 
-    await gate(); // must resolve, not hang
-    // The fake clock advanced to (or past) the deadline via the polling sleeps.
-    expect(clock.now()).toBeGreaterThanOrEqual(1000);
+    // Sleep was started but not yet released: the gate must still be pending.
+    await Promise.resolve();
+    expect(slept).toBe(COMPACT_FOLLOWUP_DELAY_MS);
+    expect(resolved).toBe(false);
+
+    // Release the sleep; only now may the gate resolve.
+    release();
+    await p;
+    expect(resolved).toBe(true);
   });
 
-  test('growth strictly above baseline is required — equal size keeps polling to timeout', async () => {
-    const clock = fakeClock();
-    const gate = createCompactAcceptGate({
-      launchCWD: '/tmp/x',
-      now: clock.now,
-      sleep: clock.sleep,
-      pollMs: 500,
-      timeoutMs: 1000,
-      readJsonlSize: () => 42, // baseline == every poll; never strictly grows
-    });
-
+  test('uses COMPACT_FOLLOWUP_DELAY_MS by default', async () => {
+    const fake = fakeSleep();
+    const gate = createCompactFollowUpGate({ sleep: fake.sleep });
     await gate();
-    expect(clock.now()).toBeGreaterThanOrEqual(1000);
+    expect(fake.calls).toEqual([COMPACT_FOLLOWUP_DELAY_MS]);
+  });
+
+  test('honors a custom delayMs', async () => {
+    const fake = fakeSleep();
+    const gate = createCompactFollowUpGate({ sleep: fake.sleep, delayMs: 1234 });
+    await gate();
+    expect(fake.calls).toEqual([1234]);
+  });
+
+  test('does NOT read the JSONL at all (no growth dependency)', async () => {
+    const fake = fakeSleep();
+    // No readJsonlSize / launchCWD seam exists anymore: the gate is a pure
+    // timer. If it tried to touch disk it would need a cwd; it does not.
+    const gate = createCompactFollowUpGate({ sleep: fake.sleep });
+    await gate();
+    // Exactly one sleep, no polling loop.
+    expect(fake.calls.length).toBe(1);
+  });
+
+  test('default delay constant is 10s', () => {
+    expect(COMPACT_FOLLOWUP_DELAY_MS).toBe(10_000);
   });
 });
