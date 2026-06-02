@@ -181,8 +181,8 @@ export function readActiveContextTokens(launchCWD: string): number | null {
  * Discover the most-recently-modified `*.jsonl` under
  * `~/.claude/projects/<encoded-cwd>/`, or `null` on any miss (no project
  * dir, no jsonl). The live session UUID isn't statically known — claude
- * mints it at runtime — so both the context reader and the compact-accept
- * gate locate the session file this way.
+ * mints it at runtime — so the context reader locates the session file
+ * this way.
  */
 export function newestSessionJsonl(launchCWD: string): string | null {
   const dir = join(resolveHome(), '.claude', 'projects', encodeCWDForProjects(launchCWD));
@@ -213,64 +213,47 @@ export function newestSessionJsonl(launchCWD: string): string | null {
   return newestPath;
 }
 
-/** Default size reader for {@link createCompactAcceptGate}: bytes of the newest session JSONL, or 0. */
-function defaultReadJsonlSize(launchCWD: string): number {
-  const path = newestSessionJsonl(launchCWD);
-  if (path === null) return 0;
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
-}
+/** Default delay (ms) before a compact follow_up submits. See {@link createCompactFollowUpGate}. */
+export const COMPACT_FOLLOWUP_DELAY_MS = 10_000;
 
-/** Seams for {@link createCompactAcceptGate} — all injectable for fake-clock unit tests. */
-export interface CreateCompactAcceptGateArgs {
-  /** Launch cwd — resolves the encoded `~/.claude/projects/<cwd>` dir. */
-  launchCWD: string;
-  /** Byte-size reader for the newest session JSONL. Defaults to a statSync-backed reader. */
-  readJsonlSize?: (launchCWD: string) => number;
-  /** Sleep seam. Defaults to a real `setTimeout`-backed promise. */
+/** Seams for {@link createCompactFollowUpGate} — injectable for fake-clock unit tests. */
+export interface CreateCompactFollowUpGateArgs {
+  /** Delay before the follow-up submits. Defaults to {@link COMPACT_FOLLOWUP_DELAY_MS}. */
+  delayMs?: number;
+  /** Sleep seam. Defaults to a real `setTimeout`-backed promise. Tests inject a fake. */
   sleep?: (ms: number) => Promise<void>;
-  /** Clock seam. Defaults to {@link Date.now}. */
-  now?: () => number;
-  /** Hard timeout (ms) — the gate ALWAYS resolves by this point. Defaults to 10000. */
-  timeoutMs?: number;
-  /** Poll interval (ms). Defaults to 200. */
-  pollMs?: number;
 }
 
 /**
- * Build the DEFAULT accept gate for {@link createRequestCompactHandler}'s
- * follow_up: a `() => Promise<void>` that resolves once the live session
- * JSONL grows past a captured baseline (a proxy for "claude accepted the
- * /compact prompt and started writing the next records"), OR once a hard
- * timeout elapses — so it NEVER hangs.
+ * Build the DEFAULT gate for {@link createRequestCompactHandler}'s follow_up:
+ * a `() => Promise<void>` that resolves after a FIXED DELAY.
  *
- * LIVE-VERIFY (the one item Tom checks live): whether JSONL byte-growth
- * actually marks "/compact accepted" vs "/compact COMPLETED". If growth only
- * appears after compaction finishes, the follow_up lands later than intended
- * (but still as its own gated turn — never back-to-back). The timeout
- * fallback bounds the worst case regardless.
+ * ── Why a fixed timer, not JSONL-growth detection ────────────────────────
+ * The previous gate captured the session JSONL's byte-size the instant
+ * `/compact` was injected, then polled for the file to grow past that
+ * baseline — treating growth as "claude accepted the /compact prompt." But
+ * the very next JSONL write IS the `/compact` command being recorded itself,
+ * so the gate tripped within a few hundred ms and the follow_up fired BEFORE
+ * compaction was actually underway. The growth signal measured the
+ * /compact-echo, not the start of compaction — a false positive that landed
+ * the follow_up "occasionally too soon."
  *
- * Growth-detection AND the timeout fallback are unit-tested with a fake clock
- * + fake reader (see context-monitor.test.ts) — no real `~/.claude` touched.
+ * Compaction reliably takes a while. Landing the follow_up LATE is harmless
+ * (the TUI queues it); landing it EARLY is the bug. So instead of trying to
+ * detect an unobservable "accepted" edge, we just wait a fixed window long
+ * enough that compaction is comfortably in progress. No disk reads, no poll
+ * loop, no false positives.
+ *
+ * The delay is unit-tested with a fake `sleep` (see context-monitor.test.ts)
+ * — no real timers, no `~/.claude` touched.
  */
-export function createCompactAcceptGate(args: CreateCompactAcceptGateArgs): () => Promise<void> {
-  const read = args.readJsonlSize ?? defaultReadJsonlSize;
-  const now = args.now ?? Date.now;
+export function createCompactFollowUpGate(
+  args: CreateCompactFollowUpGateArgs = {},
+): () => Promise<void> {
+  const delayMs = args.delayMs ?? COMPACT_FOLLOWUP_DELAY_MS;
   const sleep = args.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const timeoutMs = args.timeoutMs ?? 10_000;
-  const pollMs = args.pollMs ?? 200;
-
   return async (): Promise<void> => {
-    const baseline = read(args.launchCWD);
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      await sleep(pollMs);
-      if (read(args.launchCWD) > baseline) return; // accepted: session file grew
-    }
-    // Timeout fallback — never hang the follow_up.
+    await sleep(delayMs);
   };
 }
 

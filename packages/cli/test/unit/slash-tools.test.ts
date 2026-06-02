@@ -60,7 +60,7 @@ describe('request_compact (C1)', () => {
     const handler = createRequestCompactHandler({
       write: spy.write,
       schedule: syncSchedule,
-      awaitAccepted: gate,
+      followUpGate: gate,
       trackFollowUp: (p) => (tracked = p),
     });
     const r = await handler({
@@ -93,7 +93,7 @@ describe('request_compact (C1)', () => {
     const handler = createRequestCompactHandler({
       write: spy.write,
       schedule: syncSchedule,
-      awaitAccepted: async () => {},
+      followUpGate: async () => {},
       spillFollowUp: (c) => {
         spilled = c;
         return '/tmp/should-not-be-used.md';
@@ -119,7 +119,7 @@ describe('request_compact (C1)', () => {
     const handler = createRequestCompactHandler({
       write: spy.write,
       schedule: syncSchedule,
-      awaitAccepted: async () => {},
+      followUpGate: async () => {},
       spillFollowUp: (c) => {
         spilled = c;
         return '/tmp/fnc-followup-FIXED.md';
@@ -144,7 +144,7 @@ describe('request_compact (C1)', () => {
     const handler = createRequestCompactHandler({
       write: spy.write,
       schedule: syncSchedule,
-      awaitAccepted: async () => {},
+      followUpGate: async () => {},
       spillFollowUp: (c) => {
         spilled = c;
         return '/tmp/fnc-followup-ML.md';
@@ -162,7 +162,7 @@ describe('request_compact (C1)', () => {
     const handler = createRequestCompactHandler({
       write: spy.write,
       schedule: syncSchedule,
-      awaitAccepted: async () => {},
+      followUpGate: async () => {},
     });
     await handler({ op: 'compact', follow_up: '   ' });
     expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
