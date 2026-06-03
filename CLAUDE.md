@@ -77,6 +77,18 @@ FIRST action is to land a committed test that reproduces it** — not a
 shell command you ran once, not a theory, not a fix proposal. A
 regression assertion that fails in CI for the right reason.
 
+**Step zero — verify the live binary is the code you think it is.** A
+bug report from a live `fnc` invocation describes the *installed* entry
+point, which is not necessarily the source you're about to write a test
+against. Before writing the repro, resolve what actually ran:
+`command -v fnc`, `readlink -f` the result, check whether it imports
+`src/` directly or a built/published artifact, and confirm the backing
+checkout's branch, commit, and cleanliness. (On Tom's machine,
+`~/.local/bin/fnc` symlinks into this repo's main checkout and the shim
+ends in `await import('../src/main.ts')` — the main checkout's
+working-tree state IS the live behavior.) A repro test written against
+code the user isn't running reproduces nothing.
+
 **Do not read source files, form diagnoses, or theorize about root cause
 before that test exists and fails for the right reason.** The failing
 committed test is the gate that unlocks investigation. No test → no
