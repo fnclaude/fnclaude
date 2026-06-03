@@ -65,7 +65,7 @@ import { loadHostAliases } from './repo/host-aliases.ts';
 import { findOwner, formatOwnerLookupError } from './repo/owner-lookup.ts';
 import { loadRepoSettings } from './repo/repo-settings.ts';
 import { resolveInput } from './repo/resolve-input.ts';
-import { resolveContextNoticeThreshold, startContextMonitor } from './usage/context-monitor.ts';
+import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor.ts';
 import { createWarningBuffer } from './warnings/buffer.ts';
 import { shouldInjectTmux } from './worktree/auto-tmux.ts';
 import { listWorktrees } from './worktree/git-list.ts';
@@ -632,17 +632,24 @@ try {
       term.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
     });
 
-    // §9.0 / #170 part 2: context-size monitor. Polls the live session
-    // JSONL's latest-turn context size and, the FIRST time it crosses the
-    // threshold, injects ONE plain-text notice line into the PTY via the
-    // same raw `term.write` seam user keystrokes go through — suggesting
-    // the model call request_compact at a clean stopping point. Latches
-    // off after firing. Threshold defaults to 200k, overridable via
-    // [context] notice_threshold in config.toml or the
-    // FNC_CONTEXT_NOTICE_THRESHOLD env var.
+    // §9.0 / #170 part 2: tiered context-size monitor. Polls the live
+    // session JSONL's latest-turn context size and, each time it crosses a
+    // new rung of the escalation ladder (consider → plan → now → urgent),
+    // injects ONE plain-text notice line into the PTY via the same raw
+    // `term.write` seam user keystrokes go through — suggesting the model
+    // call request_compact. A watermark suppresses re-fires on mere growth
+    // and re-arms after a compaction drop. The ladder defaults to
+    // 150k/200k/250k + repeat-50k-urgent, overridable via
+    // [[context.notice_tiers]] / [context.notice_repeat] in config.toml,
+    // the legacy [context] notice_threshold, or the
+    // FNC_CONTEXT_NOTICE_THRESHOLD env var (precedence in
+    // resolveContextNoticeLadder).
     contextMonitorStop = startContextMonitor({
       launchCWD: cwd,
-      threshold: resolveContextNoticeThreshold({ configThreshold: config.contextNoticeThreshold }),
+      ladder: resolveContextNoticeLadder({
+        configLadder: config.contextNoticeLadder,
+        configThreshold: config.contextNoticeThreshold,
+      }),
       write: (payload) => {
         term.write(payload);
       },
