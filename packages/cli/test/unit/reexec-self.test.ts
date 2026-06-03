@@ -25,6 +25,12 @@ describe('reexecSelf — clear screen before relaunch', () => {
       clearScreen: (seq: string) => {
         events.push(`clear:${seq}`);
       },
+      // Force the spawn fallback so the test never actually execve's the
+      // runner. `false` = "execve unavailable" → reexecSelf spawns instead.
+      exec: () => {
+        events.push('exec-unavailable');
+        return false;
+      },
       spawn: () => {
         events.push('spawn');
         return {
@@ -47,6 +53,53 @@ describe('reexecSelf — clear screen before relaunch', () => {
   });
 });
 
+describe('reexecSelf — #205 symptom 1: prefers execve, no spawn fallback', () => {
+  // The stacking bug came from spawn-and-wait: the parent stayed alive as an
+  // ancestor of every relaunch. reexecSelf must attempt a true execve FIRST
+  // and, when it succeeds (image replaced — never returns in production),
+  // must NOT also spawn a child.
+  test('execve available → spawn fallback is never reached', async () => {
+    const events: string[] = [];
+    // A real execvp never returns; model the success case by recording the
+    // call and then short-circuiting via the exit seam (execImage returning
+    // anything other than false signals "replaced").
+    await reexecSelf({
+      argv: ['/dest', '--resume', 'abc'],
+      clearScreen: () => {},
+      exec: (argv) => {
+        events.push(`exec:${argv.join(' ')}`);
+        // Truthy-non-false return = "image replaced"; reexecSelf must not
+        // fall through to spawn. (Real execvp never returns at all.)
+        return true as unknown as false;
+      },
+      spawn: () => {
+        events.push('spawn');
+        return { exited: Promise.resolve(0) } as Pick<Bun.Subprocess, 'exited'>;
+      },
+      exit: () => undefined as never,
+    });
+
+    expect(events.some((e) => e.startsWith('exec:'))).toBe(true);
+    expect(events).not.toContain('spawn');
+  });
+
+  test('execve unavailable → falls back to spawn-and-wait', async () => {
+    const events: string[] = [];
+    await reexecSelf({
+      argv: ['/dest', '--resume', 'abc'],
+      clearScreen: () => {},
+      exec: () => false, // execve not available on this platform
+      spawn: () => {
+        events.push('spawn');
+        return { exited: Promise.resolve(0) } as Pick<Bun.Subprocess, 'exited'>;
+      },
+      exit: () => undefined as never,
+    });
+
+    expect(events).toContain('spawn');
+  });
+});
+
 describe('reexecSelf — relaunch argv overrides inherited FNC_ARGS_JSON', () => {
   // Regression for the `fnc resume` picker loop (#55). The relaunch child is
   // spawned with the parent's env, which still carries the FNC_ARGS_JSON the
@@ -63,6 +116,7 @@ describe('reexecSelf — relaunch argv overrides inherited FNC_ARGS_JSON', () =>
       await reexecSelf({
         argv: ['/home/tom/src/proj', '--resume', 'abc-123'],
         clearScreen: () => {},
+        exec: () => false, // force the spawn fallback for the env assertion
         spawn: (_argv, env) => {
           capturedEnv = env;
           return { exited: Promise.resolve(0) } as Pick<Bun.Subprocess, 'exited'>;

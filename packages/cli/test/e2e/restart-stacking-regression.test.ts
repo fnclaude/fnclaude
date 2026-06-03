@@ -38,10 +38,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
 } from 'node:fs';
-import { readdirSync, readlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -72,10 +72,17 @@ interface Invocation {
 }
 
 /**
- * Count live processes whose /proc/<pid>/cmdline mentions the fnc bin AND
- * (still on a `--resume`-bearing relaunch) the session id. This is the
- * direct analog of the issue's `ps` listing: how many fnc generations are
- * alive at once.
+ * Count live fnc *launcher* processes resuming this session. A real fnc is
+ * invoked as `<bun> <BIN> <cwd> --resume <sid> …`, so BIN appears as an
+ * EARLY argv token. We must NOT match on BIN appearing anywhere in the
+ * cmdline: the fake-claude child carries `--mcp-config {…"args":["<BIN>",
+ * "mcp"]…}` (the self-MCP injection embeds the fnc bin path), which would
+ * otherwise be miscounted as a second fnc. Gate on BIN being one of the
+ * leading argv tokens (the actual script path bun is running) AND the
+ * session id being present.
+ *
+ * This is the direct analog of the issue's `ps` listing: how many fnc
+ * launcher generations are alive at once.
  */
 function countLiveFncForSession(sessionId: string): number {
   let count = 0;
@@ -87,11 +94,13 @@ function countLiveFncForSession(sessionId: string): number {
     } catch {
       continue;
     }
-    const parts = cmdline.split('\0');
-    const joined = parts.join(' ');
-    if (joined.includes(BIN) && joined.includes(sessionId)) {
-      count++;
-    }
+    const parts = cmdline.split('\0').filter((p) => p !== '');
+    // The launcher is `bun <BIN> …`: BIN is argv[1] (or argv[0] under a
+    // node-shim spelling). Only the first two tokens count as "this is the
+    // fnc script being run", excluding BIN buried inside --mcp-config JSON.
+    const runsBin = parts.slice(0, 2).includes(BIN);
+    const hasSession = parts.includes(sessionId);
+    if (runsBin && hasSession) count++;
   }
   return count;
 }
@@ -174,7 +183,10 @@ describe.skipIf(SKIP)('#205 — restart stacking + --resume duplication (real-sp
     await sleep(1500);
 
     // Symptom 1: exactly ONE live fnc carrying this session id. Under the
-    // bug there are 2+ (stacked ancestors all on --resume <SID>).
+    // bug the spawn-and-wait relaunch leaves the resuming generations
+    // stacked (gen-1 + gen-2 both alive on --resume <SID>, so 2+); the
+    // execve fix replaces the image in place, leaving exactly one. (gen-0's
+    // initial launch carries no session id, so it isn't counted here.)
     const live = countLiveFncForSession(SID);
     expect(live).toBe(1);
 

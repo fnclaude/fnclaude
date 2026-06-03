@@ -6,6 +6,18 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-06-03 — True execve (libc via bun:ffi) for the relaunch path
+
+**Decision:** The handoff / cross-cwd relaunch (`reexecSelf` in `src/handoff/awaiter.ts`) replaces the running fnc process image with a real `execve(2)`, called through `bun:ffi` against libc (`src/handoff/exec-image.ts`). On platforms where the libc binding can't be loaded (Windows, or any `dlopen` failure) it falls back to the previous `Bun.spawn(child) + await child.exited + process.exit` shim. We use `execve` (explicit `envp`), not `execvp`, because Bun's `process.env` writes do not propagate to the libc `environ`, so the relaunched image would otherwise read a stale `FNC_ARGS_JSON` and re-run the original argv.
+
+**Context:** The 2026-05-27 decision recorded that "Bun has no execve binding" and chose spawn-and-wait as the closest analog. That's true for a *short-lived* relaunch, but the in-session `fnc_restart` relaunches a *long-running interactive* claude session that never returns on its own. With spawn-and-wait the parent fnc blocks on `child.exited` indefinitely, so every restart leaves the previous generation alive as an idle ancestor — the process tree grows one generation per restart (issue #205, observed live with three stacked fnc processes on the same session).
+
+**Why this:** `syscall.Exec` is what the Go canonical does, and `execve` is the faithful port — it replaces the image in place, so a restart leaves exactly ONE fnc per session no matter how many times the session self-restarts. `bun:ffi`'s `dlopen` makes libc reachable without a native addon or build step. The spawn fallback keeps Windows (no AF_UNIX MCP socket there anyway, so the relaunch path is cold) and any future FFI-less platform functional, just with the old stacking behaviour. This supersedes the "execve not available" framing of the 2026-05-27 entry for the relaunch path; the plain `Bun.spawn` stdio-inherit launch of claude itself is unchanged.
+
+**Revisit when:** Bun ships a native process-image-replacement primitive (then drop the FFI shim), or the relaunch needs to run on a platform whose libc symbol/name differs from the `libc.so.6` / `libc.dylib` candidates in `exec-image.ts`.
+
+---
+
 ## 2026-05-30 — File-only structured logging (always-on JSONL under the state dir)
 
 **Decision:** The launcher writes a structured per-launch JSONL log to a file under the platform STATE dir (`$XDG_STATE_HOME/fnclaude/logs` on Linux, `~/Library/Logs/fnclaude` on macOS, `%LOCALAPPDATA%\fnclaude\logs` on Windows), one file per process (`fnclaude-<epoch-ms>-<pid>.jsonl`). Logging is **always on** at level `INFO` by default, overridable via the `FNC_LOG` env var (`debug`/`info`/`warn`/`error`, or `silent`/`off`/`none` to disable). Old logs are pruned to the most-recent 50 files on each launch. The whole subsystem is best-effort and **never throws** — any fs failure (missing dir, permission error, full disk) degrades silently to a no-op logger. New modules live under `packages/cli/src/log/`; `main.ts` builds the logger once after the launch cwd is resolved and emits boot / ensure-cwd / spawn / exit / relaunch events.
