@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { parseCrossCwdHint } from '../../src/launch/cross-cwd-parse.ts';
 
@@ -210,12 +212,11 @@ describe('parseCrossCwdHint', () => {
     expect(parseCrossCwdHint(text)).toBeNull();
   });
 
-  test('realistic claude output fixture', () => {
-    // The "To resume, run:" / cd / --resume sequence is what survives the
-    // TUI render — design.md §4 calls out that the surrounding "different
-    // directory" prose has cursor-right escapes between words, but the
-    // hint line itself is plain ASCII. Mirrors what shows up in the ring
-    // buffer's tail after claude exits.
+  test('realistic claude output fixture (plain-text form, older claude)', () => {
+    // Plain-text "To resume, run:" / cd / --resume sequence. Older claude
+    // versions emit the hint line with literal spaces; current 2.1.x emits
+    // CHA escapes between the words (see the #210 cases below). Both must
+    // parse — keep this plain-text coverage green.
     const text = [
       'This conversation is from a different directory.',
       '',
@@ -228,6 +229,47 @@ describe('parseCrossCwdHint', () => {
     expect(r).toEqual({
       cwd: '/home/tom/src/myproject',
       uuid: '9f8e7d6c-5b4a-4321-8765-abcdef012345',
+    });
+  });
+
+  // Issue #210. claude 2.1.161 renders the cross-project dialog with Ink,
+  // which positions each word using a CHA escape (`ESC [ <n> G`) IN PLACE OF
+  // the inter-word space, with `\r\r\n` line endings. So the raw ring-buffer
+  // bytes contain no literal space between `cd` and the path, nor between
+  // the path and `&&` — the older `realistic claude output fixture` above
+  // assumed plain ASCII and is wrong for this version. parseCrossCwdHint
+  // must strip the escapes (mapping them to a word boundary) before HINT_RE
+  // runs, or the hint never parses and fnc exits without relaunching.
+  const RAW_FIXTURE = readFileSync(
+    join(import.meta.dir, '..', 'fixtures', 'claude-crosscwd-2.1.161.raw'),
+  );
+
+  test('#210: real 2.1.161 picker bytes (Uint8Array → decode) extract dest+uuid', () => {
+    // The EXACT 12041 bytes of a real picker session captured against
+    // claude 2.1.161 (claude --resume → Ctrl-A all-projects → pick a
+    // cross-dir session → claude exits), decoded the way the ring buffer
+    // decodes its snapshot.
+    const text = new TextDecoder().decode(RAW_FIXTURE);
+    const r = parseCrossCwdHint(text);
+    expect(r).toEqual({
+      cwd: '/home/tom/.config/fnclaude/noop',
+      uuid: '1c494eae-b982-44dd-b40c-f4b1c86b6acc',
+    });
+  });
+
+  test('#210: hand-written CHA-escaped hint (general, not tied to capture width)', () => {
+    // Same CHA-escaped shape with DIFFERENT column numbers than the 220-col
+    // capture — guards against a fix that matches the capture's specific
+    // escape positions rather than normalizing escapes generally.
+    const uuid = 'abcdef01-2345-4678-89ab-cdef01234567';
+    const text =
+      'To\x1b[9Gresume,\x1b[40Grun:\r\r\n' +
+      '\x1b[3Gcd\x1b[7G/home/tom/.config/fnclaude/noop\x1b[99G&&\x1b[120Gclaude\x1b[200G--resume\x1b[5G' +
+      uuid +
+      '\r\r\n';
+    expect(parseCrossCwdHint(text)).toEqual({
+      cwd: '/home/tom/.config/fnclaude/noop',
+      uuid,
     });
   });
 });
