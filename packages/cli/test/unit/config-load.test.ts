@@ -102,6 +102,162 @@ describe('loadConfig — auto.handoff', () => {
   });
 });
 
+describe('loadConfig — [context] notice_threshold (legacy)', () => {
+  test('positive number → contextNoticeThreshold', async () => {
+    writeFileSync(configPath, '[context]\nnotice_threshold = 120000\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeThreshold).toBe(120000);
+  });
+
+  test('non-positive → undefined (defensive)', async () => {
+    writeFileSync(configPath, '[context]\nnotice_threshold = 0\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeThreshold).toBeUndefined();
+  });
+
+  test('missing → undefined', async () => {
+    writeFileSync(configPath, '[auto]\ntmux = "never"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeThreshold).toBeUndefined();
+  });
+});
+
+describe('loadConfig — [[context.notice_tiers]] + [context.notice_repeat]', () => {
+  test('valid tiers parsed, sorted ascending by `at`', async () => {
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 250000',
+        'level = "now"',
+        '',
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "consider"',
+        '',
+        '[[context.notice_tiers]]',
+        'at = 200000',
+        'level = "plan"',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({
+      tiers: [
+        { at: 150000, level: 'consider' },
+        { at: 200000, level: 'plan' },
+        { at: 250000, level: 'now' },
+      ],
+    });
+  });
+
+  test('notice_repeat parsed alongside tiers', async () => {
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "consider"',
+        '',
+        '[context.notice_repeat]',
+        'every = 50000',
+        'level = "urgent"',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({
+      tiers: [{ at: 150000, level: 'consider' }],
+      repeat: { every: 50000, level: 'urgent' },
+    });
+  });
+
+  test('invalid entries are dropped (bad level, non-positive at)', async () => {
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "bogus"',
+        '',
+        '[[context.notice_tiers]]',
+        'at = 0',
+        'level = "plan"',
+        '',
+        '[[context.notice_tiers]]',
+        'at = 200000',
+        'level = "plan"',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({ tiers: [{ at: 200000, level: 'plan' }] });
+  });
+
+  test('duplicate `at` collapses to one tier', async () => {
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 200000',
+        'level = "plan"',
+        '',
+        '[[context.notice_tiers]]',
+        'at = 200000',
+        'level = "now"',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder?.tiers.length).toBe(1);
+    expect(c.contextNoticeLadder?.tiers[0]?.at).toBe(200000);
+  });
+
+  test('explicitly empty tiers array with no repeat → disabled ladder', async () => {
+    // An empty array is represented in TOML by declaring no [[...]] rows but
+    // an inline empty array under [context]; bun's TOML supports inline.
+    writeFileSync(configPath, '[context]\nnotice_tiers = []\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({ tiers: [] });
+  });
+
+  test('repeat with no tiers → ladder with empty tiers + repeat', async () => {
+    writeFileSync(
+      configPath,
+      ['[context.notice_repeat]', 'every = 100000', 'level = "urgent"', ''].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({
+      tiers: [],
+      repeat: { every: 100000, level: 'urgent' },
+    });
+  });
+
+  test('invalid repeat dropped, tiers kept', async () => {
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "consider"',
+        '',
+        '[context.notice_repeat]',
+        'every = -5',
+        'level = "urgent"',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toEqual({ tiers: [{ at: 150000, level: 'consider' }] });
+  });
+
+  test('no tier config at all → contextNoticeLadder undefined', async () => {
+    writeFileSync(configPath, '[auto]\ntmux = "never"\n');
+    const c = await loadConfig({ path: configPath });
+    expect(c.contextNoticeLadder).toBeUndefined();
+  });
+});
+
 describe('loadConfig — [exec.env] table', () => {
   test('[exec.env] with string values → execEnv map', async () => {
     writeFileSync(

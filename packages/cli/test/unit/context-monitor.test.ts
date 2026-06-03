@@ -1,17 +1,19 @@
 /**
- * Unit tests for the context-size monitor (#170 part 2).
+ * Unit tests for the tiered context-size monitor (#170 part 2).
  *
- * The monitor watches the live session's context size and, when it crosses
- * a threshold, injects EXACTLY ONE plain-text notice line into the PTY via
- * the raw write seam (NOT the slash formatter), then latches off so mere
- * growth doesn't re-fire — but re-arms after a compaction drops context
- * below the threshold. These tests drive a scripted sequence of token
- * counts (below → crossing → above → drop → crossing) through the injected
- * seams and assert: no notice below, exactly one notice at the crossing
- * with the correct `<fnc-notice>…Nk…</fnc-notice>` format and rounded N, no
- * second notice on further growth, a second notice after a drop + recross,
- * the configurable threshold fires earlier, and nothing is captured back
- * through the writer.
+ * The monitor watches the live session's context size against an
+ * escalation LADDER of tiers (consider → plan → now → urgent) plus an
+ * optional repeating tier, and injects EXACTLY ONE plain-text notice line
+ * into the PTY at the highest crossed tier via the bracketed-paste submit
+ * seam (NOT the slash formatter). A watermark tracks the highest tier
+ * already noticed so mere growth doesn't re-fire; a drop (a compaction)
+ * lowers the watermark to re-arm. These tests drive scripted token
+ * sequences through the injected seams and assert: nothing below the first
+ * tier, one notice at the highest crossed tier (a jump fires the top level
+ * only, never the intermediate ones), the per-level body texts, the
+ * repeat-tier arithmetic past the last finite tier, the watermark re-arm
+ * after a drop, the null no-op, the legacy env/config single-tier mapping,
+ * and that nothing flows back through the writer.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -20,11 +22,12 @@ import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/injec
 import {
   COMPACT_FOLLOWUP_DELAY_MS,
   CONTEXT_NOTICE_THRESHOLD_ENV,
-  DEFAULT_CONTEXT_NOTICE_THRESHOLD,
+  DEFAULT_NOTICE_LADDER,
+  type NoticeLevel,
   createCompactFollowUpGate,
   createContextMonitor,
   formatContextNotice,
-  resolveContextNoticeThreshold,
+  resolveContextNoticeLadder,
   startContextMonitor,
 } from '../../src/usage/context-monitor.ts';
 
@@ -41,211 +44,392 @@ function noticeWrites(body: string): string[] {
   return [`\x1b[200~${body}\x1b[201~`, '\r'];
 }
 
-describe('formatContextNotice', () => {
-  test('rounds tokens to the nearest k and wraps in <fnc-notice> — BODY only, no terminator', () => {
-    expect(formatContextNotice(200_000)).toBe(
-      '<fnc-notice>context at 200k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+/** The default ladder used in most tests: 150k/200k/250k + repeat 50k urgent. */
+const defaultLadder = DEFAULT_NOTICE_LADDER;
+
+describe('formatContextNotice — per-level bodies', () => {
+  test('consider body, tokens rounded to nearest k', () => {
+    expect(formatContextNotice('consider', 150_000)).toBe(
+      '<fnc-notice>[consider] context at 150k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
+    );
+  });
+
+  test('plan body', () => {
+    expect(formatContextNotice('plan', 200_000)).toBe(
+      '<fnc-notice>[plan] context at 200k tokens — plan your compact point now; work toward it, finish any queued prompts, then call request_compact.</fnc-notice>',
+    );
+  });
+
+  test('now body', () => {
+    expect(formatContextNotice('now', 250_000)).toBe(
+      '<fnc-notice>[now] context at 250k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+    );
+  });
+
+  test('urgent body', () => {
+    expect(formatContextNotice('urgent', 300_000)).toBe(
+      '<fnc-notice>[urgent] context at 300k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
     );
   });
 
   test('rounds to nearest thousand (204_600 → 205k)', () => {
-    expect(formatContextNotice(204_600)).toContain('context at 205k tokens');
+    expect(formatContextNotice('plan', 204_600)).toContain('context at 205k tokens');
   });
 
   test('rounds down (201_400 → 201k)', () => {
-    expect(formatContextNotice(201_400)).toContain('context at 201k tokens');
+    expect(formatContextNotice('plan', 201_400)).toContain('context at 201k tokens');
   });
 
-  test('body carries NO terminator — submit comes from the separate CR write', () => {
-    // The notice body must contain neither a CR nor an LF; injectSubmittedLine
-    // supplies the Return keypress as a SEPARATE bare-CR write.
-    const body = formatContextNotice(200_000);
+  test('body carries NO terminator', () => {
+    const body = formatContextNotice('now', 250_000);
     expect(body.includes('\r')).toBe(false);
     expect(body.includes('\n')).toBe(false);
-
-    // The monitor submits it via the two-write contract: body, then CR.
-    const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
-    m.tick(200_000);
-    expect(spy.calls).toEqual([`\x1b[200~${body}\x1b[201~`, '\r']);
   });
 
-  test('is NOT a slash command — never matches the slash formatter', () => {
-    const notice = formatContextNotice(200_000);
+  test('is NOT a slash command', () => {
+    const notice = formatContextNotice('plan', 200_000);
     expect(notice.startsWith('/')).toBe(false);
-    // And it is distinct from anything formatSlashCommand would produce.
     expect(notice).not.toBe(formatSlashCommand('compact'));
   });
 });
 
-describe('createContextMonitor — single-notice latch', () => {
-  test('NO notice while below threshold', () => {
+describe('createContextMonitor — tiered ladder + watermark', () => {
+  test('NO notice while below the first tier', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write });
+    const m = createContextMonitor({ ladder: defaultLadder, write: spy.write });
 
     expect(m.tick(50_000)).toBe(false);
-    expect(m.tick(150_000)).toBe(false);
-    expect(m.tick(199_999)).toBe(false);
+    expect(m.tick(149_999)).toBe(false);
     expect(spy.calls).toEqual([]);
-    expect(m.hasFired()).toBe(false);
   });
 
-  test('EXACTLY ONE notice fires at the crossing with correct rounded N', () => {
+  test('crossing the first tier fires exactly the consider notice', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
 
-    // Below → below → crossing.
-    expect(m.tick(50_000)).toBe(false);
-    expect(m.tick(199_000)).toBe(false);
-    const fired = m.tick(201_400); // crosses; rounds to 201k
-    expect(fired).toBe(true);
-
+    expect(m.tick(149_000)).toBe(false);
+    expect(m.tick(150_500)).toBe(true); // rounds to 151k
     expect(spy.calls).toEqual(
       noticeWrites(
-        '<fnc-notice>context at 201k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+        '<fnc-notice>[consider] context at 151k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
       ),
     );
-    expect(m.hasFired()).toBe(true);
   });
 
-  test('NO second notice on further growth (latched off)', () => {
+  test('a jump past several tiers fires only the HIGHEST crossed level', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
 
-    expect(m.tick(205_000)).toBe(true);
-    // Keep growing — must stay silent.
-    expect(m.tick(260_000)).toBe(false);
-    expect(m.tick(300_000)).toBe(false);
-    expect(m.tick(999_000)).toBe(false);
-
-    // One notice = exactly the two writes (body + CR), no more.
-    expect(spy.calls.length).toBe(2);
+    // 100k → 260k crosses consider+plan+now; only `now` fires, once.
+    expect(m.tick(100_000)).toBe(false);
+    expect(m.tick(260_000)).toBe(true);
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>[now] context at 260k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+    );
   });
 
-  test('re-arms after a compaction drop and fires a SECOND time on the next crossing', () => {
+  test('climbing tier-by-tier fires each level in turn (one per crossing)', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
 
-    // (a) crosses → fires.
-    expect(m.tick(205_000)).toBe(true);
-    // (b) keeps growing above threshold → no re-fire on mere growth.
-    expect(m.tick(260_000)).toBe(false);
-    // (c) drops below threshold (compaction) → no notice, but re-arms.
-    expect(m.tick(50_000)).toBe(false);
-    // (d) climbs back, still below → no notice.
-    expect(m.tick(199_000)).toBe(false);
-    // (e) crosses AGAIN → fires a SECOND time.
-    expect(m.tick(205_000)).toBe(true);
-
-    // Exactly two notices = four writes (body + CR each).
+    expect(m.tick(160_000)).toBe(true); // consider
+    expect(m.tick(210_000)).toBe(true); // plan
+    expect(m.tick(255_000)).toBe(true); // now
     expect(spy.calls).toEqual([
       ...noticeWrites(
-        '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+        '<fnc-notice>[consider] context at 160k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
       ),
       ...noticeWrites(
-        '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+        '<fnc-notice>[plan] context at 210k tokens — plan your compact point now; work toward it, finish any queued prompts, then call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 255k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
       ),
     ]);
   });
 
-  test('null reading is a no-op (no assistant turn / unreadable JSONL)', () => {
+  test('NO second notice on growth within the same tier band', () => {
     const spy = spyWriter();
-    const m = createContextMonitor({ threshold: 200_000, write: spy.write, schedule: syncSchedule });
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
 
+    expect(m.tick(160_000)).toBe(true); // consider
+    expect(m.tick(170_000)).toBe(false); // still below plan tier
+    expect(m.tick(199_000)).toBe(false);
+    expect(spy.calls.length).toBe(2); // one notice = two writes
+  });
+
+  test('repeat tier fires urgent at each multiple past the last finite tier', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    // Climb to `now` (250k), then cross repeat points 300k and 350k.
+    expect(m.tick(255_000)).toBe(true); // now
+    expect(m.tick(305_000)).toBe(true); // first repeat → urgent (300k point)
+    expect(m.tick(330_000)).toBe(false); // between repeat points, no fire
+    expect(m.tick(360_000)).toBe(true); // second repeat → urgent (350k point)
+
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 255k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[urgent] context at 305k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[urgent] context at 360k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
+      ),
+    ]);
+  });
+
+  test('a jump past two repeat points fires urgent only once', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    expect(m.tick(255_000)).toBe(true); // now
+    // 255k → 360k jumps both 300k and 350k repeat points; one urgent fires.
+    expect(m.tick(360_000)).toBe(true);
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 255k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[urgent] context at 360k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
+      ),
+    ]);
+  });
+
+  test('watermark re-arms after a compaction drop, re-fires on the next crossing', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    // (a) climb to `now`.
+    expect(m.tick(260_000)).toBe(true); // now
+    // (b) more growth, same band → silent.
+    expect(m.tick(280_000)).toBe(false);
+    // (c) compaction drops below all tiers → no notice, watermark resets.
+    expect(m.tick(40_000)).toBe(false);
+    // (d) climb back, still below first tier → silent.
+    expect(m.tick(149_000)).toBe(false);
+    // (e) cross the first tier AGAIN → consider fires.
+    expect(m.tick(150_000)).toBe(true);
+
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 260k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[consider] context at 150k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
+      ),
+    ]);
+  });
+
+  test('partial drop lowers the watermark only to the new highest tier', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    // climb to `now` (250k watermark).
+    expect(m.tick(260_000)).toBe(true);
+    // drop to between plan and now (e.g. 210k): watermark lowers to plan.
+    expect(m.tick(210_000)).toBe(false);
+    // climb back across `now` → now fires again.
+    expect(m.tick(260_000)).toBe(true);
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 260k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[now] context at 260k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+    ]);
+  });
+
+  test('first tick of a fat resumed session fires the single highest applicable level', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    // Resume straight into 270k: one `now`, not consider+plan+now.
+    expect(m.tick(270_000)).toBe(true);
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>[now] context at 270k tokens — find a stopping point as soon as possible, clear queued prompts, and call request_compact.</fnc-notice>',
+      ),
+    );
+  });
+
+  test('null reading is a no-op and does NOT move the watermark', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    expect(m.tick(260_000)).toBe(true); // now, watermark = 250k
+    expect(m.tick(null)).toBe(false); // no-op, no re-arm
+    expect(m.tick(null)).toBe(false);
+    expect(m.tick(280_000)).toBe(false); // still latched at now band
+    expect(spy.calls.length).toBe(2);
+  });
+
+  test('null before any crossing is a no-op', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({ ladder: defaultLadder, write: spy.write });
     expect(m.tick(null)).toBe(false);
     expect(m.tick(null)).toBe(false);
     expect(spy.calls).toEqual([]);
-    expect(m.hasFired()).toBe(false);
   });
 
   test('writer side effects are not captured back into the monitor', () => {
-    // A writer that "emits output" the model must never receive. The
-    // monitor must ignore everything beyond handing bytes to the writer:
-    // tick returns a plain boolean, nothing resembling captured output.
     const observed: string[] = [];
     const m = createContextMonitor({
-      threshold: 200_000,
+      ladder: defaultLadder,
       schedule: syncSchedule,
       write: (p) => {
         observed.push(p);
-        // simulate the TUI emitting a result that must NOT flow back
       },
     });
 
-    const result = m.tick(210_000);
+    const result = m.tick(260_000);
     expect(result).toBe(true);
-    // Two writes: bracketed-paste body, then the separate CR.
     expect(observed.length).toBe(2);
     expect(observed[0]).toContain('<fnc-notice>');
     expect(observed[1]).toBe('\r');
   });
-});
 
-describe('resolveContextNoticeThreshold — default + configurable', () => {
-  test('no config, no env → built-in default', () => {
-    expect(resolveContextNoticeThreshold({ configThreshold: undefined, env: {} })).toBe(
-      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
-    );
-  });
-
-  test('config value wins over default', () => {
-    expect(resolveContextNoticeThreshold({ configThreshold: 120_000, env: {} })).toBe(120_000);
-  });
-
-  test('env override wins over config', () => {
-    expect(
-      resolveContextNoticeThreshold({
-        configThreshold: 120_000,
-        env: { [CONTEXT_NOTICE_THRESHOLD_ENV]: '80000' },
-      }),
-    ).toBe(80_000);
-  });
-
-  test('non-positive / non-numeric config degrades to default', () => {
-    expect(resolveContextNoticeThreshold({ configThreshold: 0, env: {} })).toBe(
-      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
-    );
-    expect(resolveContextNoticeThreshold({ configThreshold: Number.NaN, env: {} })).toBe(
-      DEFAULT_CONTEXT_NOTICE_THRESHOLD,
-    );
-  });
-});
-
-describe('configurable threshold fires earlier', () => {
-  test('a lower configured threshold fires at a smaller context size', () => {
+  test('empty ladder (no tiers, no repeat) never fires', () => {
     const spy = spyWriter();
-    const threshold = resolveContextNoticeThreshold({ configThreshold: 100_000, env: {} });
-    const m = createContextMonitor({ threshold, write: spy.write, schedule: syncSchedule });
+    const m = createContextMonitor({
+      ladder: { tiers: [] },
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+    expect(m.tick(500_000)).toBe(false);
+    expect(m.tick(1_000_000)).toBe(false);
+    expect(spy.calls).toEqual([]);
+  });
 
-    // 120k would NOT cross the 200k default, but crosses the 100k config.
-    expect(m.tick(90_000)).toBe(false);
-    expect(m.tick(120_000)).toBe(true);
-    expect(spy.calls).toEqual(
-      noticeWrites(
-        '<fnc-notice>context at 120k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+  test('repeat with no finite tiers uses n*every as repeat points', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: { tiers: [], repeat: { every: 100_000, level: 'urgent' } },
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+    expect(m.tick(50_000)).toBe(false); // below 100k
+    expect(m.tick(120_000)).toBe(true); // crosses 100k repeat point
+    expect(m.tick(150_000)).toBe(false); // between points
+    expect(m.tick(210_000)).toBe(true); // crosses 200k repeat point
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[urgent] context at 120k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
       ),
-    );
+      ...noticeWrites(
+        '<fnc-notice>[urgent] context at 210k tokens — compaction is overdue; do not start new work, finish queued prompts only, and call request_compact immediately.</fnc-notice>',
+      ),
+    ]);
+  });
+});
+
+describe('resolveContextNoticeLadder — precedence + legacy', () => {
+  test('no config, no env → built-in default ladder', () => {
+    const ladder = resolveContextNoticeLadder({
+      configLadder: undefined,
+      configThreshold: undefined,
+      env: {},
+    });
+    expect(ladder).toEqual(DEFAULT_NOTICE_LADDER);
+  });
+
+  test('legacy config notice_threshold → single-tier `now` ladder, no repeat', () => {
+    const ladder = resolveContextNoticeLadder({
+      configLadder: undefined,
+      configThreshold: 120_000,
+      env: {},
+    });
+    expect(ladder).toEqual({ tiers: [{ at: 120_000, level: 'now' }] });
+  });
+
+  test('env override beats both config ladder and legacy threshold', () => {
+    const ladder = resolveContextNoticeLadder({
+      configLadder: { tiers: [{ at: 10_000, level: 'consider' }] },
+      configThreshold: 120_000,
+      env: { [CONTEXT_NOTICE_THRESHOLD_ENV]: '80000' },
+    });
+    expect(ladder).toEqual({ tiers: [{ at: 80_000, level: 'now' }] });
+  });
+
+  test('config ladder beats legacy threshold when both present', () => {
+    const cfg = { tiers: [{ at: 90_000, level: 'consider' as NoticeLevel }] };
+    const ladder = resolveContextNoticeLadder({
+      configLadder: cfg,
+      configThreshold: 120_000,
+      env: {},
+    });
+    expect(ladder).toEqual(cfg);
+  });
+
+  test('non-positive / non-numeric env degrades to next precedence', () => {
+    const ladder = resolveContextNoticeLadder({
+      configLadder: undefined,
+      configThreshold: undefined,
+      env: { [CONTEXT_NOTICE_THRESHOLD_ENV]: 'nope' },
+    });
+    expect(ladder).toEqual(DEFAULT_NOTICE_LADDER);
   });
 });
 
 describe('startContextMonitor — polling integration over injected seams', () => {
-  test('polls the reader on each interval and fires once at crossing', () => {
+  test('polls the reader on each interval and fires the tier on crossing', () => {
     const spy = spyWriter();
 
-    // Scripted sequence of context reads, one per interval tick.
-    const sequence: Array<number | null> = [null, 50_000, 199_000, 205_000, 260_000, 300_000];
+    const sequence: Array<number | null> = [null, 50_000, 149_000, 160_000, 170_000, 199_000];
     let idx = 0;
 
-    // Fake setInterval that hands us the callback; we drive ticks manually.
     let cb: (() => void) | null = null;
     let cleared = false;
     const fakeSetInterval = ((fn: () => void) => {
       cb = fn;
-      // Return an object with unref so the production unref() branch is safe.
       return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
     }) as unknown as typeof setInterval;
 
-    // clearInterval is global; monitor calls it on the returned handle.
     const origClear = globalThis.clearInterval;
     globalThis.clearInterval = (() => {
       cleared = true;
@@ -254,7 +438,7 @@ describe('startContextMonitor — polling integration over injected seams', () =
     try {
       const running = startContextMonitor({
         launchCWD: '/tmp/x',
-        threshold: 200_000,
+        ladder: defaultLadder,
         write: spy.write,
         intervalMs: 10,
         schedule: syncSchedule,
@@ -267,18 +451,14 @@ describe('startContextMonitor — polling integration over injected seams', () =
       });
 
       expect(cb).not.toBeNull();
-      // Drive the poll callback once per scripted read.
       for (let i = 0; i < sequence.length; i += 1) cb?.();
 
-      // Exactly one notice, at the 205_000 crossing — submitted as two writes.
+      // Exactly one notice, at the 160k consider crossing.
       expect(spy.calls).toEqual(
         noticeWrites(
-          '<fnc-notice>context at 205k tokens — at the next clean stopping point, finish any queued prompts, then call request_compact</fnc-notice>',
+          '<fnc-notice>[consider] context at 160k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
         ),
       );
-      expect(running.monitor.hasFired()).toBe(true);
-      // Polling does NOT stop on fire (the latch re-arms after a drop), so
-      // clearInterval is only called by an explicit stop() — never here.
       expect(cleared).toBe(false);
     } finally {
       globalThis.clearInterval = origClear;
@@ -287,7 +467,6 @@ describe('startContextMonitor — polling integration over injected seams', () =
 });
 
 describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)', () => {
-  /** A fake sleep that records its argument and resolves on the next microtask. */
   function fakeSleep(): { sleep: (ms: number) => Promise<void>; calls: number[] } {
     const calls: number[] = [];
     return {
@@ -314,12 +493,10 @@ describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)
       resolved = true;
     });
 
-    // Sleep was started but not yet released: the gate must still be pending.
     await Promise.resolve();
     expect(slept).toBe(COMPACT_FOLLOWUP_DELAY_MS);
     expect(resolved).toBe(false);
 
-    // Release the sleep; only now may the gate resolve.
     release();
     await p;
     expect(resolved).toBe(true);
@@ -337,16 +514,6 @@ describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)
     const gate = createCompactFollowUpGate({ sleep: fake.sleep, delayMs: 1234 });
     await gate();
     expect(fake.calls).toEqual([1234]);
-  });
-
-  test('does NOT read the JSONL at all (no growth dependency)', async () => {
-    const fake = fakeSleep();
-    // No readJsonlSize / launchCWD seam exists anymore: the gate is a pure
-    // timer. If it tried to touch disk it would need a cwd; it does not.
-    const gate = createCompactFollowUpGate({ sleep: fake.sleep });
-    await gate();
-    // Exactly one sleep, no polling loop.
-    expect(fake.calls.length).toBe(1);
   });
 
   test('default delay constant is 10s', () => {
