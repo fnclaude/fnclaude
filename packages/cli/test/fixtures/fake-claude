@@ -32,11 +32,26 @@
  *   FAKE_CLAUDE_EXIT=<n>
  *     Exit with code <n> (after logging + any hint emission).
  *
+ *   FAKE_CLAUDE_RESTART=<count-file>:<session-id>
+ *     Drive the in-session `fnc_restart` relaunch path (#205). On each
+ *     invocation, read the integer in <count-file> (default 0). While it's
+ *     below FAKE_CLAUDE_RESTART_MAX (default 2), increment + persist it,
+ *     dial $FNC_SOCKET, send a raw `{op:"restart", session_id:<sid>}` wire
+ *     line, then sleep indefinitely — the parent fnc SIGTERMs us as part of
+ *     the kill-and-exec handoff, so we never return. Once the count reaches
+ *     MAX we DON'T restart again, but we still sleep indefinitely rather
+ *     than exit — a real interactive claude session stays alive, which is
+ *     exactly the condition under which a spawn-and-wait relaunch leaves the
+ *     ancestor fnc generations alive (#205 symptom 1). The test probes the
+ *     live process tree, then reaps the whole group. Mirrors a real session
+ *     that self-restarts via the fnc_restart MCP tool.
+ *
  *   default
  *     Log the invocation and exit 0.
  */
 
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
 
 const argv = process.argv.slice(2);
 
@@ -50,8 +65,11 @@ if (logPath !== undefined && logPath !== '') {
     FNC_ARGS_JSON: process.env.FNC_ARGS_JSON,
     FAKE_CLAUDE_EMIT_HINT: process.env.FAKE_CLAUDE_EMIT_HINT,
     FAKE_CLAUDE_EXIT: process.env.FAKE_CLAUDE_EXIT,
+    FAKE_CLAUDE_RESTART: process.env.FAKE_CLAUDE_RESTART,
   };
   const record = {
+    pid: process.pid,
+    ppid: process.ppid,
     argv,
     cwd: process.cwd(),
     env: envSubset,
@@ -94,10 +112,50 @@ if (emitHint !== undefined && emitHint !== '' && !resolvedResume) {
   }
 }
 
-const exitRaw = process.env.FAKE_CLAUDE_EXIT;
-if (exitRaw !== undefined && exitRaw !== '') {
-  const code = Number.parseInt(exitRaw, 10);
-  process.exit(Number.isNaN(code) ? 0 : code);
-}
+// #205 — drive the in-session fnc_restart relaunch chain.
+const restartSpec = process.env.FAKE_CLAUDE_RESTART;
+if (restartSpec !== undefined && restartSpec !== '') {
+  const sep = restartSpec.indexOf(':');
+  const countFile = sep >= 0 ? restartSpec.slice(0, sep) : restartSpec;
+  const sessionId = sep >= 0 ? restartSpec.slice(sep + 1) : '';
+  const maxRaw = process.env.FAKE_CLAUDE_RESTART_MAX;
+  const max = maxRaw !== undefined && maxRaw !== '' ? Number.parseInt(maxRaw, 10) : 2;
 
-process.exit(0);
+  let count = 0;
+  try {
+    count = Number.parseInt(readFileSync(countFile, 'utf8').trim(), 10);
+    if (Number.isNaN(count)) count = 0;
+  } catch {
+    count = 0;
+  }
+
+  const socket = process.env.FNC_SOCKET;
+  if (count < max && socket !== undefined && socket !== '') {
+    writeFileSync(countFile, String(count + 1));
+    const conn = connect(socket, () => {
+      conn.write(`${JSON.stringify({ op: 'restart', session_id: sessionId })}\n`);
+    });
+    conn.on('error', () => {
+      // If the dial fails, fall through to a plain exit so the test fails
+      // loudly on a missing socket rather than hanging.
+      process.exit(3);
+    });
+    // The parent SIGTERMs us as part of kill-and-exec; block until then so
+    // the relaunch path owns our death. Never resolve on our own.
+    setInterval(() => {}, 1 << 30);
+  } else {
+    // Cap reached (or no socket): DON'T restart again, but stay alive like a
+    // real interactive claude. This is the condition under which a
+    // spawn-and-wait relaunch keeps every ancestor fnc generation alive
+    // (#205 symptom 1). The test probes the live tree, then reaps the group.
+    setInterval(() => {}, 1 << 30);
+  }
+} else {
+  const exitRaw = process.env.FAKE_CLAUDE_EXIT;
+  if (exitRaw !== undefined && exitRaw !== '') {
+    const code = Number.parseInt(exitRaw, 10);
+    process.exit(Number.isNaN(code) ? 0 : code);
+  }
+
+  process.exit(0);
+}

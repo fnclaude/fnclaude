@@ -135,6 +135,83 @@ describe('createRestartHandler — preserveArgs + argv build', () => {
   });
 });
 
+describe('createRestartHandler — #205 symptom 2: --resume not duplicated', () => {
+  // Each in-session fnc_restart rebuilds the argv from the running
+  // process's origArgs (FNC_ARGS_JSON, stamped by the previous relaunch).
+  // After the first restart the origArgs already carry `--resume <sid>`;
+  // the handler must NOT preserve that stale flag and then prepend a fresh
+  // one — that accumulates one extra `--resume` per generation (#205).
+  test('origArgs already carrying --resume <sid> → exactly one --resume out', async () => {
+    const trigger = createHandoffTrigger();
+    const oldSid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    // This is what generation-2's origArgs look like: the gen-1 relaunch
+    // stamped `[cwd, '--resume', <oldSid>, ...flags]` into FNC_ARGS_JSON.
+    const origArgs = ['/launch/cwd', '--resume', oldSid, '--ide', '--effort', 'high'];
+    const handler = createRestartHandler({
+      origArgs,
+      launchCWD: '/launch/cwd',
+      trigger,
+    });
+    await handler({ op: 'restart', session_id: VALID_SID });
+    const got = trigger.getStashedArgv()!;
+    const resumeCount = got.filter((t) => t === '--resume').length;
+    expect(resumeCount).toBe(1);
+    // The single --resume carries the CURRENT session id, not the stale one.
+    expect(got[got.indexOf('--resume') + 1]).toBe(VALID_SID);
+    expect(got).not.toContain(oldSid);
+  });
+
+  test('origArgs with --resume=<sid> equals-form → exactly one --resume out', async () => {
+    const trigger = createHandoffTrigger();
+    const oldSid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const origArgs = ['/launch/cwd', `--resume=${oldSid}`, '--ide'];
+    const handler = createRestartHandler({
+      origArgs,
+      launchCWD: '/launch/cwd',
+      trigger,
+    });
+    await handler({ op: 'restart', session_id: VALID_SID });
+    const got = trigger.getStashedArgv()!;
+    const resumeCount =
+      got.filter((t) => t === '--resume').length +
+      got.filter((t) => t.startsWith('--resume=')).length;
+    expect(resumeCount).toBe(1);
+    expect(got).not.toContain(`--resume=${oldSid}`);
+    expect(got[got.indexOf('--resume') + 1]).toBe(VALID_SID);
+  });
+
+  test('two consecutive restart generations stay at one --resume', async () => {
+    // Simulate the generation chain: gen-1 origArgs → gen-1 stashed argv
+    // becomes gen-2's origArgs → gen-2 stashed argv. Without the fix the
+    // count climbs 1 → 2 across generations.
+    const sid1 = '11111111-1111-1111-1111-111111111111';
+    const sid2 = '22222222-2222-2222-2222-222222222222';
+
+    const t1 = createHandoffTrigger();
+    const h1 = createRestartHandler({
+      origArgs: ['/launch/cwd', '--ide'],
+      launchCWD: '/launch/cwd',
+      trigger: t1,
+    });
+    await h1({ op: 'restart', session_id: sid1 });
+    const gen1 = t1.getStashedArgv()!;
+    expect(gen1.filter((t) => t === '--resume').length).toBe(1);
+
+    const t2 = createHandoffTrigger();
+    const h2 = createRestartHandler({
+      // gen-2 sees gen-1's relaunch argv as its origArgs.
+      origArgs: gen1,
+      launchCWD: '/launch/cwd',
+      trigger: t2,
+    });
+    await h2({ op: 'restart', session_id: sid2 });
+    const gen2 = t2.getStashedArgv()!;
+    expect(gen2.filter((t) => t === '--resume').length).toBe(1);
+    expect(gen2[gen2.indexOf('--resume') + 1]).toBe(sid2);
+    expect(gen2).not.toContain(sid1);
+  });
+});
+
 describe('createRestartHandler — overrides', () => {
   test('model override strips bare-magic AND appends --model', async () => {
     const trigger = createHandoffTrigger();
