@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.3...cli-v2.8.0) (2026-06-03)
+
+
+### Features
+
+* **cli:** tiered context-compact notices ([#207](https://github.com/fnclaude/fnclaude/issues/207)) ([acf5e09](https://github.com/fnclaude/fnclaude/commit/acf5e097011d9c28bca44ed38ad17c99f281f541))
+
 ## [2.7.3](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.2...cli-v2.7.3) (2026-06-02)
 
 
