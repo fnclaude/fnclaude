@@ -16,6 +16,7 @@ import { parseArgs } from './argv/parse.ts';
 import { expandShortFlags } from './argv/short-flags.ts';
 import { loadConfig } from './config/load.ts';
 import { initLogging } from './log/init.ts';
+import { bootFields } from './log/boot.ts';
 import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter.ts';
 import { decidePostExitTeardown } from './handoff/post-exit-teardown.ts';
 import { handoffTrigger } from './handoff/trigger.ts';
@@ -543,7 +544,7 @@ const { logger } = initLogging({
   platform: process.platform,
   home: HOME,
 });
-logger.info('boot', { argv: process.argv.slice(2), cwd, ppid: process.ppid });
+logger.info('boot', bootFields(argv, cwd, process.ppid));
 
 // Fabricate the cwd tree if missing — Bun.spawn would otherwise return ENOENT
 // blaming the claude binary. The cleanup() unlinks any fabricated dirs right
