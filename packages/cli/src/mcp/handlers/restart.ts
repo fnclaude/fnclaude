@@ -39,7 +39,38 @@ import type { WireRequest, WireResponse } from '../wire.ts';
 const SESSION_ID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-const EMPTY_DENY: ReadonlySet<string> = new Set<string>();
+/**
+ * Flags stripped from the preserved restart argv. Restart re-supplies the
+ * session reference itself (`--resume <session_id>` spliced after the cwd),
+ * so any session-reference flag already present in origArgs MUST be dropped
+ * — otherwise the stale flag is preserved AND a fresh one is prepended,
+ * accumulating one extra `--resume` per generation (#205). Unlike a project
+ * transfer, restart keeps everything else (worktree, name, add-dir, etc.) —
+ * the denylist is scoped to just the session-reference flags.
+ */
+const RESTART_DENY_FLAGS: ReadonlySet<string> = new Set([
+  '-r',
+  '--resume',
+  '-c',
+  '--continue',
+  '-F',
+  '--fork-session',
+]);
+
+/**
+ * Subset of `RESTART_DENY_FLAGS` that may appear in bare (no-value) form —
+ * a bare `--resume` (the picker) carries no session id. For these,
+ * `preserveArgs` only consumes the following token when it isn't itself a
+ * flag, so a bare occurrence doesn't swallow the next real flag.
+ */
+const RESTART_DENY_BARE_OK: ReadonlySet<string> = new Set([
+  '-r',
+  '--resume',
+  '-c',
+  '--continue',
+  '-F',
+  '--fork-session',
+]);
 
 /**
  * Reader for the live permission-mode value claude persists in the
@@ -86,8 +117,11 @@ export function createRestartHandler(args: CreateRestartHandlerArgs): ParentDisp
       };
     }
 
-    // Preserve user flags (no denylist for restart — everything carries).
-    const preserved = preserveArgs(origArgs, EMPTY_DENY, EMPTY_DENY);
+    // Preserve user flags, stripping any stale session-reference flag
+    // (--resume / --continue / --fork-session) so the fresh `--resume
+    // <session_id>` spliced below is the ONLY one — otherwise it accumulates
+    // one extra copy per restart generation (#205).
+    const preserved = preserveArgs(origArgs, RESTART_DENY_FLAGS, RESTART_DENY_BARE_OK);
 
     // Apply MCP-supplied overrides. Wire snake_case → OverrideRequest camelCase.
     const overrides = wireToOverrideRequest(req);
