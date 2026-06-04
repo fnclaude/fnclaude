@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.0...cli-v2.8.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **cli:** parse cross-cwd resume hint through Ink CHA escapes ([#212](https://github.com/fnclaude/fnclaude/issues/212)) ([021f405](https://github.com/fnclaude/fnclaude/commit/021f405132e0da53a171d27902eab3b46dcef439))
+* **cli:** stop fnc_restart stacking processes + duplicating --resume ([#213](https://github.com/fnclaude/fnclaude/issues/213)) ([9c4c64b](https://github.com/fnclaude/fnclaude/commit/9c4c64bd2edbe73116a91899ceba91d9e01925ae))
+
 ## [2.8.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.7.3...cli-v2.8.0) (2026-06-03)
 
 
