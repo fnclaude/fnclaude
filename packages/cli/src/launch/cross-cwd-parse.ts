@@ -96,7 +96,43 @@ function isSafeDestImpl(dest: string, quoted: boolean): boolean {
   return true;
 }
 
-export function parseCrossCwdHint(text: string): CrossCwdHint | null {
+/**
+ * Strip the ANSI control sequences Ink emits when it renders the
+ * cross-project resume dialog, normalizing the byte stream to the plain
+ * text HINT_RE expects.
+ *
+ * claude 2.1.x (issue #210) lays the dialog out with Ink, which positions
+ * each word by emitting a CHA escape (`ESC [ <n> G`, cursor-horizontal-
+ * absolute) *in place of* the inter-word space — so the raw ring-buffer
+ * bytes read `To<ESC>[4Gresume,` / `cd<ESC>[5G/home/...<ESC>[37G&&`, with
+ * NO literal spaces between the tokens HINT_RE needs to see separated.
+ * Color SGR escapes (`ESC[38;5;246m`) appear too, and line endings are
+ * `\r\r\n`.
+ *
+ * Normalization is deliberately width-agnostic — the CHA column numbers are
+ * terminal-width-dependent, so we must NOT match them literally:
+ *   1. Replace every CSI escape (`ESC [ … <final 0x40-0x7E>`) with a single
+ *      space. A CHA between two words becomes the boundary HINT_RE needs; a
+ *      cosmetic SGR becomes a harmless space.
+ *   2. Map remaining C0 controls + stray ESC (CR/BEL/…) to space too, so
+ *      `\r\r\n` collapses to whitespace.
+ * HINT_RE's `\s` / `[\s\S]*?` tolerate the resulting whitespace runs.
+ */
+// Built from RegExp strings with \u escapes so the source carries no literal
+// control chars (which the lint rule noControlCharactersInRegex flags).
+// CSI: ESC '[' <params 0x30-0x3F> <intermediates 0x20-0x2F> <final 0x40-0x7E>.
+const CSI_RE = new RegExp('\\u001b\\[[0-?]*[ -/]*[@-~]', 'g');
+// Remaining C0 controls (NUL..US) + DEL.
+const C0_RE = new RegExp('[\\u0000-\\u001f\\u007f]', 'g');
+
+function stripAnsi(text: string): string {
+  return text.replace(CSI_RE, ' ').replace(C0_RE, ' ');
+}
+
+export function parseCrossCwdHint(rawText: string): CrossCwdHint | null {
+  // Normalize the Ink-rendered control sequences (issue #210) so inter-word
+  // CHA escapes become plain spaces before HINT_RE runs.
+  const text = stripAnsi(rawText);
   // Reset the global regex's lastIndex defensively — matchAll handles this
   // correctly for us, but we treat HINT_RE as a module-level constant and
   // never want stateful surprises.
