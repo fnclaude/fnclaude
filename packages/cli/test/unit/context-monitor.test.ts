@@ -16,9 +16,13 @@
  * and that nothing flows back through the writer.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
+import { encodeCWDForProjects } from '../../src/launch/live-permission-reader.ts';
 import {
   COMPACT_FOLLOWUP_DELAY_MS,
   CONTEXT_NOTICE_THRESHOLD_ENV,
@@ -518,5 +522,215 @@ describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)
 
   test('default delay constant is 10s', () => {
     expect(COMPACT_FOLLOWUP_DELAY_MS).toBe(10_000);
+  });
+});
+
+describe('startContextMonitor — on-disk session pinning (real discovery)', () => {
+  // These drive the REAL on-disk discovery path (no injected readContextTokens
+  // seam) through a faked HOME, so they catch the per-tick newest-mtime race
+  // that the pinned reader fixes. context tokens of a synthetic file =
+  // input + cache_creation + cache_read of its LATEST assistant record.
+
+  const CWD = '/some/launch/cwd';
+  let home: string;
+  let projectDir: string;
+  let origHome: string | undefined;
+
+  function assistantLine(contextTokens: number): string {
+    return JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        model: 'claude-opus-4-8',
+        usage: {
+          input_tokens: contextTokens,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      },
+    });
+  }
+
+  /** Write `contextTokens` as the file's latest assistant record, set its mtime. */
+  function writeSession(name: string, contextTokens: number, mtimeSec: number): string {
+    const p = join(projectDir, name);
+    writeFileSync(p, assistantLine(contextTokens) + '\n');
+    utimesSync(p, mtimeSec, mtimeSec);
+    return p;
+  }
+
+  /** A driver that runs startContextMonitor with the DEFAULT (on-disk) reader. */
+  function startWithFakeInterval(spy: { write: PtyWriter; calls: string[] }): {
+    tick: () => void;
+    stop: () => void;
+  } {
+    let cb: (() => void) | null = null;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    const running = startContextMonitor({
+      launchCWD: CWD,
+      ladder: defaultLadder,
+      write: spy.write,
+      intervalMs: 10,
+      schedule: syncSchedule,
+      setIntervalFn: fakeSetInterval,
+      // NB: no readContextTokens — exercise the real discovery + read path.
+    });
+    return { tick: () => cb?.(), stop: running.stop };
+  }
+
+  beforeEach(() => {
+    origHome = process.env.HOME;
+    home = mkdtempSync(join(tmpdir(), 'fnc-ctxmon-'));
+    process.env.HOME = home;
+    projectDir = join(home, '.claude', 'projects', encodeCWDForProjects(CWD));
+    mkdirSync(projectDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test('brand-new session with a stale fat foreign file fires NOTHING', () => {
+    // A previous fat (165k) session's file already on disk; our own session's
+    // file never appears. Pre-fix: newest-mtime picks the fat foreign file and
+    // a [consider] fires immediately. Post-fix: it's in the baseline → null.
+    const spy = spyWriter();
+    writeSession('old-fat.jsonl', 165_000, 1_000);
+
+    const m = startWithFakeInterval(spy);
+    for (let i = 0; i < 5; i += 1) m.tick();
+
+    expect(spy.calls).toEqual([]);
+  });
+
+  test('cross-file mtime flapping never cites the foreign fat file', () => {
+    // Foreign fat (165k) pre-exists; our own session (54k, below first tier)
+    // is born after start. Alternate which file is newest each tick. Pre-fix:
+    // ticks that land on the fat file fire [consider] citing 165k, repeatedly
+    // (machine-gun). Post-fix: pinned to our 54k file → zero notices.
+    const spy = spyWriter();
+    const fat = writeSession('old-fat.jsonl', 165_000, 1_000);
+
+    const m = startWithFakeInterval(spy);
+    m.tick(); // baseline established; own file not yet present
+
+    const own = writeSession('own.jsonl', 54_000, 2_000);
+
+    // Flap mtimes back and forth across several ticks.
+    for (let i = 0; i < 6; i += 1) {
+      const fatNewer = i % 2 === 0;
+      utimesSync(fat, fatNewer ? 100 + i : 1_000, fatNewer ? 100 + i : 1_000);
+      utimesSync(own, fatNewer ? 50 : 200 + i, fatNewer ? 50 : 200 + i);
+      m.tick();
+    }
+
+    // No notice may ever cite the foreign 165k curve, and the own 54k file is
+    // below the first tier so the correct behaviour is ZERO notices.
+    expect(spy.calls.some((c) => c.includes('165k'))).toBe(false);
+    expect(spy.calls).toEqual([]);
+  });
+
+  test('never delivers a second consider notice with a lower count', () => {
+    // Tom's "second notice cites a lower count" symptom: the writer must not
+    // receive two [consider] notices from the cross-file race.
+    const spy = spyWriter();
+    const fat = writeSession('old-fat.jsonl', 165_000, 1_000);
+
+    const m = startWithFakeInterval(spy);
+    m.tick();
+    const own = writeSession('own.jsonl', 54_000, 2_000);
+
+    for (let i = 0; i < 8; i += 1) {
+      const fatNewer = i % 2 === 0;
+      utimesSync(fat, fatNewer ? 500 + i : 10, fatNewer ? 500 + i : 10);
+      utimesSync(own, fatNewer ? 5 : 600 + i, fatNewer ? 5 : 600 + i);
+      m.tick();
+    }
+
+    const considerCount = spy.calls.filter((c) => c.includes('[consider]')).length;
+    expect(considerCount).toBe(0);
+  });
+
+  test('pins our own file once it appears and feeds the ladder', () => {
+    // Empty dir at start; own file appears after 2 ticks at 160k → one
+    // [consider]; grow to 210k → one [plan]. (Guard — passes pre-fix too.)
+    const spy = spyWriter();
+
+    const m = startWithFakeInterval(spy);
+    m.tick();
+    m.tick();
+
+    const own = writeSession('own.jsonl', 160_000, 5_000);
+    m.tick();
+
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>[consider] context at 160k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
+      ),
+    );
+
+    writeFileSync(own, assistantLine(210_000) + '\n');
+    utimesSync(own, 6_000, 6_000);
+    m.tick();
+
+    expect(spy.calls).toEqual([
+      ...noticeWrites(
+        '<fnc-notice>[consider] context at 160k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
+      ),
+      ...noticeWrites(
+        '<fnc-notice>[plan] context at 210k tokens — plan your compact point now; work toward it, finish any queued prompts, then call request_compact.</fnc-notice>',
+      ),
+    ]);
+  });
+
+  test('in-place compaction of the pinned file re-arms the ladder', () => {
+    // own → 160k consider; rewrite same file to read 40k (in-place compaction)
+    // → no notice, watermark re-arms; grow back past 150k → consider again.
+    const spy = spyWriter();
+
+    const m = startWithFakeInterval(spy);
+    m.tick();
+    const own = writeSession('own.jsonl', 160_000, 5_000);
+    m.tick(); // consider
+
+    writeFileSync(own, assistantLine(40_000) + '\n');
+    utimesSync(own, 6_000, 6_000);
+    m.tick(); // drop, re-arm, silent
+
+    writeFileSync(own, assistantLine(160_000) + '\n');
+    utimesSync(own, 7_000, 7_000);
+    m.tick(); // consider fires again
+
+    const considerCount = spy.calls.filter((c) => c.includes('[consider]')).length;
+    expect(considerCount).toBe(2);
+    expect(spy.calls.some((c) => c.includes('165k') || c.includes('[plan]'))).toBe(false);
+  });
+
+  test('pins the OLDEST post-baseline candidate when two appear', () => {
+    // No baseline files. After start, our own file is born first (older mtime),
+    // a sibling later (younger). Reads must come from the older candidate.
+    const spy = spyWriter();
+
+    const m = startWithFakeInterval(spy);
+    m.tick(); // empty baseline
+
+    writeSession('own.jsonl', 160_000, 5_000); // ours, older
+    writeSession('sibling.jsonl', 250_000, 9_000); // sibling, younger
+    m.tick();
+
+    // Pinned to the older (ours, 160k) → exactly one [consider], never [now].
+    expect(spy.calls).toEqual(
+      noticeWrites(
+        '<fnc-notice>[consider] context at 160k tokens — no rush yet; note where a clean compact point would be, finish queued prompts there, then call request_compact.</fnc-notice>',
+      ),
+    );
+    expect(spy.calls.some((c) => c.includes('[now]') || c.includes('250k'))).toBe(false);
   });
 });
