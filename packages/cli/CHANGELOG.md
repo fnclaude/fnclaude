@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.1...cli-v2.8.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* **cli:** pin context monitor to its own session JSONL ([#217](https://github.com/fnclaude/fnclaude/issues/217)) ([0c823b7](https://github.com/fnclaude/fnclaude/commit/0c823b70516f221d22f7969672a4ea67695e9459))
+
 ## [2.8.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.0...cli-v2.8.1) (2026-06-04)
 
 
