@@ -1,6 +1,6 @@
 {
   "name": "@fnclaude/cli",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "fnclaude CLI implementation (TypeScript rewrite, in progress)",
   "license": "MIT",
   "repository": {
