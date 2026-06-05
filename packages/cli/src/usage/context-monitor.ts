@@ -62,15 +62,13 @@
  * is unit-testable without a real `~/.claude` or a live terminal.
  */
 
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash.ts';
 import { encodeCWDForProjects } from '../launch/live-permission-reader.ts';
 import { computeSessionUsage } from './session-usage.ts';
-
-import { readFileSync } from 'node:fs';
 
 /** The closed enum of escalation levels, low → high. */
 export type NoticeLevel = 'consider' | 'plan' | 'now' | 'urgent';
@@ -282,61 +280,127 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
   };
 }
 
-/**
- * On-disk default context reader. The parent doesn't statically know the
- * live session UUID (claude mints it at runtime), so this discovers the
- * active session JSONL itself: the most-recently-modified `*.jsonl` under
- * `~/.claude/projects/<encoded-cwd>/`, fed through `computeSessionUsage`.
- * Returns the latest context-token count, or `null` on any miss
- * (no project dir, no jsonl, no assistant turn, unreadable file).
- */
-export function readActiveContextTokens(launchCWD: string): number | null {
-  const newestPath = newestSessionJsonl(launchCWD);
-  if (newestPath === null) return null;
-
-  let raw: string;
-  try {
-    raw = readFileSync(newestPath, 'utf8');
-  } catch {
-    return null;
-  }
-  return computeSessionUsage(raw).context?.tokens ?? null;
+/** A `*.jsonl` regular file under the project dir + its mtime, for pinning. */
+interface SessionCandidate {
+  path: string;
+  mtimeMs: number;
 }
 
 /**
- * Discover the most-recently-modified `*.jsonl` under
- * `~/.claude/projects/<encoded-cwd>/`, or `null` on any miss (no project
- * dir, no jsonl). The live session UUID isn't statically known — claude
- * mints it at runtime — so the context reader locates the session file
- * this way.
+ * List `*.jsonl` regular files (with mtimes) under
+ * `~/.claude/projects/<encoded-cwd>/`. Returns `[]` on any miss (no project
+ * dir, unreadable dir). Unreadable individual entries are skipped.
  */
-export function newestSessionJsonl(launchCWD: string): string | null {
+function listSessionJsonls(launchCWD: string): SessionCandidate[] {
   const dir = join(resolveHome(), '.claude', 'projects', encodeCWDForProjects(launchCWD));
   let entries: string[];
   try {
     entries = readdirSync(dir);
   } catch {
-    return null;
+    return [];
   }
 
-  let newestPath: string | null = null;
-  let newestMtime = -Infinity;
+  const out: SessionCandidate[] = [];
   for (const name of entries) {
     if (!name.endsWith('.jsonl')) continue;
     const p = join(dir, name);
     try {
       const st = statSync(p);
       if (!st.isFile()) continue;
-      const m = st.mtimeMs;
-      if (m > newestMtime) {
-        newestMtime = m;
-        newestPath = p;
-      }
+      out.push({ path: p, mtimeMs: st.mtimeMs });
     } catch {
       // skip unreadable entry
     }
   }
-  return newestPath;
+  return out;
+}
+
+/**
+ * Build a context reader pinned to THIS monitor's own session JSONL.
+ *
+ * ── Why pinning, not newest-mtime ────────────────────────────────────────
+ * The parent doesn't statically know the live session UUID (claude mints it
+ * at runtime) and the session JSONL is created lazily — AFTER fnclaude spawns
+ * claude. The previous reader re-picked the most-recently-modified `*.jsonl`
+ * under the cwd's project dir on EVERY tick. That mtime race misreads
+ * whenever more than one session file exists for the cwd:
+ *   - A brand-new session whose own file doesn't exist yet reads a previous
+ *     fat file and fires a notice immediately.
+ *   - Two concurrent sessions in the same cwd flap between each other's
+ *     files; reading the sibling's lower count re-arms the watermark, so the
+ *     next tick's fatter file re-fires the same rung — unbounded machine-gun
+ *     notices citing the OTHER session's token curve.
+ *
+ * ── The pin ──────────────────────────────────────────────────────────────
+ * Because claude creates our jsonl after we spawn it (and a resume forks a
+ * NEW file rather than reusing one), every jsonl already present at
+ * monitor-start time is foreign by definition. We snapshot that set lazily on
+ * the FIRST call as the BASELINE. (Lazy vs eager doesn't matter — both happen
+ * within ms of claude spawn, before claude can write its file.) While
+ * unpinned, each call re-lists the dir and considers only files NOT in the
+ * baseline; if there are none we return `null` (the monitor stays silent —
+ * this is what fixes the brand-new-session false fire). Once a candidate
+ * appears we PIN to the one with the OLDEST mtime (ours was born first; a
+ * sibling launched later in the same cwd is younger) and only ever read that
+ * path thereafter. The pin is sticky for the monitor's lifetime.
+ *
+ * If the pinned file disappears (read throws ENOENT) we unpin and return
+ * `null`; the next call rescans. The baseline is NOT mutated on unpin, so a
+ * file that was foreign at start stays excluded forever.
+ *
+ * ── Residual race ────────────────────────────────────────────────────────
+ * If two sessions start near-simultaneously in one cwd — both born after each
+ * other's baseline snapshot — a monitor can pin the wrong (younger sibling's)
+ * file. But because the pin is STICKY, the worst case is bounded: at most one
+ * notice per rung, citing a STABLE file — not today's unbounded flapping
+ * between two files.
+ */
+export function createPinnedContextReader(): (launchCWD: string) => number | null {
+  let baseline: Set<string> | null = null; // basenames present at first call
+  let pinnedPath: string | null = null;
+
+  function readTokens(path: string): number | null {
+    let raw: string;
+    try {
+      raw = readFileSync(path, 'utf8');
+    } catch {
+      return null; // ENOENT / unreadable — caller decides whether to unpin
+    }
+    return computeSessionUsage(raw).context?.tokens ?? null;
+  }
+
+  return (launchCWD: string): number | null => {
+    if (pinnedPath !== null) {
+      let raw: string;
+      try {
+        raw = readFileSync(pinnedPath, 'utf8');
+      } catch {
+        // Pinned file vanished — unpin (baseline stays as snapshotted) and
+        // let the next tick rescan.
+        pinnedPath = null;
+        return null;
+      }
+      return computeSessionUsage(raw).context?.tokens ?? null;
+    }
+
+    const candidates = listSessionJsonls(launchCWD);
+
+    if (baseline === null) {
+      // First call: everything already on disk is foreign.
+      baseline = new Set(candidates.map((c) => basename(c.path)));
+    }
+
+    const fresh = candidates.filter((c) => !baseline!.has(basename(c.path)));
+    if (fresh.length === 0) return null;
+
+    // Pin to the oldest-mtime fresh candidate — ours was born first.
+    let oldest = fresh[0]!;
+    for (const c of fresh) {
+      if (c.mtimeMs < oldest.mtimeMs) oldest = c;
+    }
+    pinnedPath = oldest.path;
+    return readTokens(pinnedPath);
+  };
 }
 
 /** Default delay (ms) before a compact follow_up submits. See {@link createCompactFollowUpGate}. */
@@ -403,10 +467,11 @@ export interface StartContextMonitorArgs {
   /** Poll interval in ms. Defaults to 4000. */
   intervalMs?: number;
   /**
-   * Context reader seam. Defaults to {@link readActiveContextTokens},
-   * which discovers + reads the live session JSONL. Injectable so tests
-   * can drive a scripted sequence without a real `~/.claude`. Returns the
-   * latest context-token count, or `null`.
+   * Context reader seam. Defaults to a fresh {@link createPinnedContextReader}
+   * instance (one per monitor), which pins to this session's own JSONL rather
+   * than re-picking newest-mtime each tick. Injectable so tests can drive a
+   * scripted sequence without a real `~/.claude`. Returns the latest
+   * context-token count, or `null`.
    */
   readContextTokens?: (launchCWD: string) => number | null;
   /** Timer seam — defaults to global `setInterval`. */
@@ -437,7 +502,7 @@ export interface RunningContextMonitor {
  */
 export function startContextMonitor(args: StartContextMonitorArgs): RunningContextMonitor {
   const intervalMs = args.intervalMs ?? 4000;
-  const read = args.readContextTokens ?? readActiveContextTokens;
+  const read = args.readContextTokens ?? createPinnedContextReader();
   const setIntervalImpl = args.setIntervalFn ?? setInterval;
 
   const monitor = createContextMonitor({
