@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.0.0...renderer-v3.1.0) (2026-06-18)
+
+
+### Features
+
+* **renderer:** add importable mountRenderer entry point ([#226](https://github.com/fnclaude/fnclaude/issues/226)) ([e60f7ad](https://github.com/fnclaude/fnclaude/commit/e60f7ad8bf9db578ae8c7d8cf10ff7bd5644006e))
+
 ## [3.0.0](https://github.com/fnclaude/fnclaude/compare/renderer-v2.0.2...renderer-v3.0.0) (2026-05-27)
 
 
