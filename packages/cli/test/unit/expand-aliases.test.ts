@@ -79,6 +79,25 @@ describe('expandAliases — bare effort → opus injection (§4.3)', () => {
   });
 });
 
+describe('expandAliases — ultracode effort (delivered via initial prompt, not --effort)', () => {
+  // claude's --effort flag does NOT accept 'ultracode'; it rides as the
+  // `/effort ultracode` initial-prompt slash command (assembled in main.ts).
+  // expandAliases must therefore emit the implied --model opus but NO
+  // --effort and NOT leak the literal 'ultracode' token.
+  test('bare ultracode → --model opus only (no --effort)', () => {
+    expect(expandAliases(parsed(['ultracode']))).toEqual(['--model', 'opus']);
+  });
+
+  test('ultracode with passthrough → --model opus + passthrough, no --effort', () => {
+    expect(expandAliases(parsed(['ultracode', '--', 'hi']))).toEqual([
+      '--model',
+      'opus',
+      '--',
+      'hi',
+    ]);
+  });
+});
+
 describe('expandAliases — no magic captured', () => {
   test('empty argv → empty', () => {
     expect(expandAliases(parsed([]))).toEqual([]);

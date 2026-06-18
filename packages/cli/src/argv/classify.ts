@@ -12,7 +12,7 @@
  */
 
 export const MODELS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'auto'] as const;
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'auto', 'ultracode'] as const;
 
 export type Model = (typeof MODELS)[number];
 export type Effort = (typeof EFFORTS)[number];

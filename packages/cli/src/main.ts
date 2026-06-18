@@ -48,6 +48,7 @@ import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt.ts';
 import { sanitizeForPath } from './name/sanitize.ts';
 import { sdkLlmCall } from './name/sdk-llm.ts';
 import { findPromptSentinel, insertFlagsBeforeSentinel, promptBody } from './argv/sentinel.ts';
+import { makeSessionJsonlReady, seedUltracodePrompt } from './launch/seed-prompt.ts';
 import { seedNoopDir } from './noop/seed.ts';
 import { resolveTemplateSourcePath } from './noop/template-source.ts';
 import { ensureCwd } from './path/ensure-cwd.ts';
@@ -310,6 +311,18 @@ for (const w of intercept.warnings) warnings.add(w);
 cwd = intercept.launchCwd;
 const parsedWithIntercept = { ...parsed, passthrough: intercept.passthrough };
 
+// `ultracode` effort: claude's --effort flag rejects the value, so it rides
+// as the `/effort ultracode` initial-prompt slash command (runs on boot —
+// verified: `claude -- "/effort ultracode"`). The user's actual prompt (if
+// any) can't share that single prompt slot, so we capture it here as the
+// seed to submit as a follow-up after claude is ready (useTerminal branch
+// only). expandAliases already suppressed --effort for ultracode and the
+// parser implied --model opus, same as any bare effort.
+const isUltracode = parsedWithIntercept.effort === 'ultracode';
+const ultracodeSeedPrompt = isUltracode
+  ? promptBody(parsedWithIntercept.passthrough).join(' ').trim()
+  : '';
+
 // Build the final claude argv: prepend magic-captured flags (model/effort/
 // subcommand), then expand any short-flag clusters in the passthrough.
 const withAliases = expandAliases(parsedWithIntercept);
@@ -384,6 +397,17 @@ if (fragmentNames.length > 0) {
   } else if (promptsDir.warning !== undefined) {
     warnings.add(promptsDir.warning);
   }
+}
+
+// Ultracode: rewrite the prompt positional so claude's single prompt slot is
+// exactly `/effort ultracode`. Drop any user-prompt tokens that followed `--`
+// (they're delivered as a follow-up via the seed-prompt step after spawn).
+// Done after fragment injection (which keys off the prompt body) and before
+// MCP injection, so `--mcp-config` still lands BEFORE this `--`.
+if (isUltracode) {
+  const sentIdx = findPromptSentinel(claudeArgs);
+  const head = sentIdx < 0 ? claudeArgs : claudeArgs.slice(0, sentIdx);
+  claudeArgs = [...head, '--', '/effort ultracode'];
 }
 
 // Compute the MCP socket path. On Unix this also feeds FNC_SOCKET into
@@ -615,6 +639,22 @@ try {
     slashWriter.bind((payload: string) => {
       term.write(payload);
     });
+
+    // Ultracode seed: claude booted under the `/effort ultracode` initial
+    // prompt, which consumed its single prompt slot. If the user ALSO typed a
+    // prompt, submit it as a follow-up once claude is ready — detected by its
+    // session JSONL appearing under ~/.claude/projects/<cwd>/ (no fixed
+    // delay; capped by a fallback so it always fires). Fire-and-forget side
+    // promise — never blocks the main flow.
+    if (isUltracode && ultracodeSeedPrompt !== '') {
+      void seedUltracodePrompt({
+        seedPrompt: ultracodeSeedPrompt,
+        write: (payload) => {
+          term.write(payload);
+        },
+        waitForReady: makeSessionJsonlReady({ launchCWD: cwd }),
+      });
+    }
 
     // Forward user stdin → PTY. Raw mode so the shell line discipline
     // doesn't eat control sequences (Ctrl-C, arrow keys, etc.) before
