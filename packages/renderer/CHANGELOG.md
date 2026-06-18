@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.2.0...renderer-v3.3.0) (2026-06-18)
+
+
+### Features
+
+* **renderer:** mountRenderer owns subscription + returns handle; error boundary ([#234](https://github.com/fnclaude/fnclaude/issues/234)) ([8658591](https://github.com/fnclaude/fnclaude/commit/865859178dcad1a5d19e1e086dcf90d347723117))
+
 ## [3.2.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.1.0...renderer-v3.2.0) (2026-06-18)
 
 
