@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.1.0...renderer-v3.2.0) (2026-06-18)
+
+
+### Features
+
+* **renderer:** render stream-json faithfully incl token streaming ([#231](https://github.com/fnclaude/fnclaude/issues/231)) ([709b310](https://github.com/fnclaude/fnclaude/commit/709b31069b784d6dbf2670dbd6dbfab4445b8eaa))
+
 ## [3.1.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.0.0...renderer-v3.1.0) (2026-06-18)
 
 
