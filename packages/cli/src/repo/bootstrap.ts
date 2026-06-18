@@ -48,7 +48,7 @@ export async function bootstrapRepo(args: BootstrapRepoArgs): Promise<BootstrapR
   const { owner, name, host, destination, url, deps } = args;
 
   const wantsBootstrap = await deps.confirm(
-    `Repository ${owner}/${name} doesn't exist on ${host}. Bootstrap it as a new local repo at ${destination}? [y/N] `,
+    `${owner}/${name} doesn't exist yet — create it as a new local repo at ${destination}? [y/N] `,
     false,
   );
   if (!wantsBootstrap) return { kind: 'declined' };

@@ -17,6 +17,19 @@
 
 import type { GhApiResult } from './owner-lookup.ts';
 import type { GhCloneResult } from './clone-exec.ts';
+import { NOT_FOUND_SIGNATURES } from './clone-failure.ts';
+
+/**
+ * Lines matching GitHub's "repo not found" signature are withheld from the
+ * LIVE stderr echo so the benign bootstrap-a-new-repo path doesn't lead with
+ * a scary GraphQL error. They're still captured for failure classification.
+ *
+ * Uses the SAME signatures as clone-failure.ts's classifier so the two stay
+ * in sync.
+ */
+export function isNotFoundNoiseLine(line: string): boolean {
+  return NOT_FOUND_SIGNATURES.some((re) => re.test(line));
+}
 
 const GH_API_PATH_JQ: Record<string, string> = {
   user: '.login',
@@ -62,20 +75,34 @@ export async function runGhClone(url: string, destination: string): Promise<GhCl
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `failed to spawn gh: ${msg}`, stderr: '' };
   }
-  // Tee stderr: write each chunk through to the real stderr so the user
-  // still sees gh's progress/errors live, while accumulating the text.
+  // Tee stderr: echo gh's progress/errors live so the user still sees them,
+  // while accumulating the full text for failure classification. The tee is
+  // line-buffered so we can WITHHOLD repo-not-found lines from the LIVE echo
+  // (the benign bootstrap path shouldn't lead with a scary GraphQL error) —
+  // those lines still land in `captured` for the classifier downstream.
   let captured = '';
+  let pending = '';
   const decoder = new TextDecoder();
   const reader = proc.stderr.getReader();
+  const echoLine = (line: string): void => {
+    if (!isNotFoundNoiseLine(line)) process.stderr.write(line);
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (value !== undefined) {
-      process.stderr.write(value);
-      captured += decoder.decode(value, { stream: true });
+    if (value === undefined) continue;
+    const text = decoder.decode(value, { stream: true });
+    captured += text;
+    pending += text;
+    let nl: number;
+    while ((nl = pending.indexOf('\n')) !== -1) {
+      echoLine(pending.slice(0, nl + 1));
+      pending = pending.slice(nl + 1);
     }
   }
   captured += decoder.decode();
+  // Flush any trailing partial line (also filtered).
+  if (pending.length > 0) echoLine(pending);
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
     return { ok: false, error: `gh exited ${exitCode}`, stderr: captured };

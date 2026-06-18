@@ -107,6 +107,16 @@ describe('bootstrapRepo', () => {
     expect(calls.gitInit).toHaveLength(0);
   });
 
+  test('first prompt uses friendly wording, drops scary phrasing', async () => {
+    const { deps, calls } = makeDeps({ answers: [false] });
+    await bootstrapRepo({ ...base, deps });
+    const q = calls.confirms[0];
+    expect(q).toContain(`${base.owner}/${base.name} doesn't exist yet`);
+    expect(q).toContain(`create it as a new local repo at ${base.destination}`);
+    expect(q).not.toContain('Bootstrap');
+    expect(q).not.toContain("doesn't exist on");
+  });
+
   test('non-interactive defaults (confirm returns def=false) → declined', async () => {
     // Simulates the non-TTY path: confirm always returns its default (false).
     const { deps, calls } = makeDeps({ answers: [] });
