@@ -29,7 +29,7 @@ _fnc() {
     typeset -A opt_args
 
     # Magic positional words are position-sensitive:
-    #   position 1: model alias (opus / sonnet / haiku)
+    #   position 1: model alias (opus / sonnet / haiku / fable)
     #   position 2: effort level (only when position 1 was a model alias)
     # After the magic slots, the remaining positionals are:
     #   1st remaining → cwd (directory)
@@ -50,6 +50,7 @@ _fnc() {
         'opus:use claude-opus model'
         'sonnet:use claude-sonnet model'
         'haiku:use claude-haiku model'
+        'fable:use claude-fable-5 model'
     )
 
     effort_levels=(

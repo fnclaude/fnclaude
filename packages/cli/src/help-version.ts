@@ -37,7 +37,7 @@ Usage:
 
 Magic positional words (order-independent for SUBCOMMAND; MODEL/EFFORT scanned
 left-to-right at the head of argv before any flags):
-  Model alias:   opus | sonnet | haiku                       → --model <alias>
+  Model alias:   opus | sonnet | haiku | fable               → --model <alias>
   Effort level:  low | medium | high | xhigh | max | auto    → --effort <level>
                   (effort alone at position 1 implies opus)
   Subcommand:    resume | res                                → --resume

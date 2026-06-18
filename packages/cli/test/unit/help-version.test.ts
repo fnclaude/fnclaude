@@ -64,7 +64,7 @@ describe('helpText', () => {
     // Tight sanity checks — full content is the helpText constant itself.
     expect(helpText).toContain('Usage:');
     expect(helpText).toContain('Magic positional');
-    expect(helpText).toContain('opus | sonnet | haiku');
+    expect(helpText).toContain('opus | sonnet | haiku | fable');
     expect(helpText).toContain('low | medium | high | xhigh | max | auto');
     expect(helpText).toContain('resume');
     expect(helpText).toContain('-h, --help');

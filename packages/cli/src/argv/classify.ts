@@ -11,7 +11,7 @@
  * lowercase literals.
  */
 
-export const MODELS = ['opus', 'sonnet', 'haiku'] as const;
+export const MODELS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'auto'] as const;
 
 export type Model = (typeof MODELS)[number];
