@@ -25,7 +25,7 @@ import { composeEnv } from './launch/compose-env.ts';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader.ts';
-import { maybeMountRenderer } from './launch/renderer-mount.ts';
+import { buildRendererArgs, maybeMountRenderer, shouldUseRenderer } from './launch/renderer-mount.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
@@ -443,6 +443,12 @@ const childEnv = composeEnv({
 // is the bun runtime that will exec the subprocess script. Decision: bun
 // + script-path is a two-element shape because fnc.js is a bun script,
 // not a self-contained binary — see decisions.md 2026-05-27 entry.
+// Renderer mode: fnc hosts the Ink app and OWNS the claude spawn, driving a
+// headless `claude --print` child (renderer-mount.ts). The renderer is itself
+// a `--print` session, but it still WANTS the self-MCP config so claude can
+// dial fnc back over $FNC_SOCKET (spawn-args.md §2) — so we force the MCP
+// injection past the print gate when the renderer is selected.
+const useRenderer = shouldUseRenderer(process.env);
 if (mcpSocketPath !== undefined) {
   const binPathForMcp = process.argv[1] ?? '';
   const fncBin = binPathForMcp !== '' ? realpathSync(binPathForMcp) : '';
@@ -452,6 +458,7 @@ if (mcpSocketPath !== undefined) {
     fncBin,
     noop: usedNoopFallback,
     interactive: isInteractiveSession(claudeArgs),
+    forceInject: useRenderer,
   });
 }
 
@@ -583,17 +590,46 @@ if (!ensured.ok) {
 }
 logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
 
-// In-process renderer mount (design.renderer.md §2–§3). When FNC_RENDERER is
-// set AND @fnclaude/renderer (an optionalDependency) resolves with a
-// `mountRenderer` export, fnc hosts the Ink app in its own process and skips
-// BOTH launch-fork branches below. The renderer drives a bare `claude --print`
-// session via its own subscribeToClaude — fnc's args/model/MCP are NOT threaded
-// in yet (deferred). When the selector is unset or the renderer is absent/old,
-// maybeMountRenderer returns false (logging one line on the requested-but-
-// unavailable path) and execution falls through to the normal PTY/inherit
-// launch — everything-else-as-is. mountRenderer owns the TTY for its lifetime;
-// on exit we leave cleanly, mirroring the help/version early-outs above.
-if (await maybeMountRenderer({ env: process.env })) {
+// In-process renderer mount (design.renderer.md §2–§3, spawn-args.md §(b)).
+// When FNC_RENDERER is set AND @fnclaude/renderer (an optionalDependency)
+// resolves with a `mountRenderer` export, fnc hosts the Ink app in its own
+// process, OWNS the claude spawn, and skips BOTH launch-fork branches below.
+//
+// fnc threads its full pipeline into the renderer: the resolved claudeBin and
+// composed childEnv (via the injected SpawnFn), the launch cwd, the
+// CLAUDE-native args (claudeArgs minus --tmux/--print-family/prompt-tail, plus
+// an explicit --permission-mode), and the prompt — delivered as the renderer's
+// first sendUserTurn since a positional prompt is ignored under
+// --input-format stream-json (verified live). Ultracode rides as two turns:
+// `/effort ultracode` then the real seed (/effort,/model are TUI-only and
+// can't be forwarded, but `/effort ultracode` is honored as the boot turn).
+//
+// When the selector is unset or the renderer is absent/old, maybeMountRenderer
+// returns false (logging one line on the requested-but-unavailable path) and
+// execution falls through to the normal PTY/inherit launch — everything-else-
+// as-is. An old mountRenderer that ignores opts / lacks close() still mounts
+// cleanly. mountRenderer owns the TTY for its lifetime; on a §7 handle we exit
+// with claude's real code, else exit 0 (as before this PR).
+const rendererArgs = buildRendererArgs(claudeArgs);
+// The first turn: `/effort ultracode` for ultracode, else the prompt body.
+const rendererInitialPrompt = isUltracode
+  ? '/effort ultracode'
+  : promptBody(claudeArgs).join(' ').trim();
+// The second turn (ultracode only): the real captured seed prompt.
+const rendererFollowUp = isUltracode ? ultracodeSeedPrompt : '';
+if (
+  await maybeMountRenderer({
+    env: process.env,
+    claudeBin: claudeBin.path,
+    childEnv,
+    cwd,
+    rendererArgs,
+    ...(rendererInitialPrompt !== '' ? { initialPrompt: rendererInitialPrompt } : {}),
+    ...(rendererFollowUp !== '' ? { followUpPrompt: rendererFollowUp } : {}),
+  })
+) {
+  // maybeMountRenderer process.exits with claude's code on a §7 handle; this
+  // exit(0) covers the old-handle path that returns without exiting.
   process.exit(0);
 }
 
