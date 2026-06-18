@@ -25,6 +25,8 @@ export { EditDiff } from "./EditDiff.tsx";
 export type { EditDiffProps } from "./EditDiff.tsx";
 export { ErrorRenderer } from "./ErrorRenderer.tsx";
 export type { ErrorRendererProps } from "./ErrorRenderer.tsx";
+export { RawJson } from "./RawJson.tsx";
+export type { RawJsonProps } from "./RawJson.tsx";
 export { ReadContent } from "./ReadContent.tsx";
 export type { ReadContentProps } from "./ReadContent.tsx";
 export { ReadInput } from "./ReadInput.tsx";

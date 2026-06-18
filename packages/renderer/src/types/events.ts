@@ -6,11 +6,29 @@
  * the slice-level contract.
  */
 
-export type ClaudeEvent = SystemEvent | AssistantEvent | UserEvent | ResultEvent | RateLimitEvent;
+export type ClaudeEvent =
+  | SystemEvent
+  | AssistantEvent
+  | UserEvent
+  | ResultEvent
+  | RateLimitEvent
+  | StreamEvent
+  | ParseErrorEvent;
+
+/**
+ * Synthetic event the parser emits for a line it could not `JSON.parse`.
+ * Surfaces corruption instead of silently dropping it (the renderer shows it
+ * as a dim raw block). Not a wire type — the `type` discriminator is namespaced
+ * so it can never collide with a real claude event.
+ */
+export interface ParseErrorEvent {
+  type: "parse_error";
+  raw: string;
+}
 
 export interface SystemEvent {
   type: "system";
-  subtype: "init" | (string & {});
+  subtype: "init" | "status" | (string & {});
   session_id: string;
   uuid: string;
   cwd?: string;
@@ -20,6 +38,8 @@ export interface SystemEvent {
   permissionMode?: string;
   memory_paths?: string[];
   claude_code_version?: string;
+  /** Present on subtype "status" — e.g. "requesting" between turns. */
+  status?: string;
 }
 
 export interface AssistantEvent {
@@ -102,6 +122,42 @@ export interface RateLimitEvent {
   session_id?: string;
   rate_limit_info?: Record<string, unknown>;
 }
+
+/**
+ * Partial-message envelope — emitted only with `--include-partial-messages`.
+ * `event` is the verbatim Anthropic Messages-API streaming SSE event. These
+ * lines interleave between the consolidated events; the consolidated
+ * `assistant` event remains the source of truth (see
+ * docs/stream-json-findings.md). The renderer uses these purely for a live
+ * in-progress preview that is dropped when the matching `assistant` lands.
+ */
+export interface StreamEvent {
+  type: "stream_event";
+  event: StreamInner;
+  session_id: string;
+  uuid: string;
+  parent_tool_use_id?: string | null;
+  /** Present on the `message_start` inner event only. */
+  ttft_ms?: number;
+}
+
+export type StreamInner =
+  | { type: "message_start"; message: AssistantMessage }
+  | { type: "content_block_start"; index: number; content_block: ContentBlock }
+  | { type: "content_block_delta"; index: number; delta: BlockDelta }
+  | { type: "content_block_stop"; index: number }
+  | {
+      type: "message_delta";
+      delta: { stop_reason: string | null; stop_sequence: string | null };
+      usage?: TokenUsage;
+    }
+  | { type: "message_stop" };
+
+export type BlockDelta =
+  | { type: "text_delta"; text: string }
+  | { type: "thinking_delta"; thinking: string }
+  | { type: "signature_delta"; signature: string }
+  | { type: "input_json_delta"; partial_json: string };
 
 export interface TokenUsage {
   input_tokens: number;

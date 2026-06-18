@@ -236,6 +236,59 @@ describe("parseNdjsonStream — large-line tolerance", () => {
   });
 });
 
+describe("parseNdjsonStream — stream_event passthrough", () => {
+  test("yields stream_event objects from a partial-message capture", async () => {
+    let sawStream = false;
+    let sawTextDelta = false;
+    for await (const ev of parseNdjsonStream(fixtureStream("stream-partial-turn.ndjson"))) {
+      if (ev.type === "stream_event") {
+        sawStream = true;
+        if (ev.event.type === "content_block_delta" && ev.event.delta.type === "text_delta") {
+          sawTextDelta = true;
+        }
+      }
+    }
+    expect(sawStream).toBe(true);
+    expect(sawTextDelta).toBe(true);
+  });
+});
+
+describe("parseNdjsonStream — malformed line surfacing", () => {
+  test("a JSON.parse failure becomes a parse_error event, not a silent drop", async () => {
+    const good = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "s1",
+      uuid: "u1",
+      result: "ok",
+      num_turns: 1,
+      duration_ms: 0,
+      duration_api_ms: 0,
+      total_cost_usd: 0,
+    });
+    const bad = '{"type":"assistant", this is not json}';
+    const bytes = new TextEncoder().encode(`${good}\n${bad}\n`);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    const events = [];
+    for await (const ev of parseNdjsonStream(stream)) {
+      events.push(ev);
+    }
+    expect(events.length).toBe(2);
+    expect(events[0]?.type).toBe("result");
+    const err = events[1];
+    expect(err?.type).toBe("parse_error");
+    if (err?.type === "parse_error") {
+      expect(err.raw).toContain("not json");
+    }
+  });
+});
+
 describe("parseNdjsonStream — partial trailing data", () => {
   test("discards incomplete trailing line without throwing", async () => {
     // A complete line followed by partial (no trailing newline).

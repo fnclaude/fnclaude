@@ -6,6 +6,18 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-06-18 — Renderer streaming: deltas are a preview, the `assistant` event is truth
+
+**Decision:** The renderer's token-level streaming (`--include-partial-messages`, `stream_event` lines) does NOT reconstruct canonical content blocks from the SSE deltas. Instead it accumulates them into a transient live preview (`src/live-message.ts`, keyed by `(message.id, index)`) and drops each live block the frame its consolidated `assistant` event lands — the consolidated event, which claude emits per content block mid-stream, is the source of truth and drives the existing committed-render path unchanged. Live text/thinking render RAW (glow disabled); `input_json_delta.partial_json` is accumulated raw and never `JSON.parse`d mid-stream (live tool view is a dim placeholder).
+
+**Context:** "Render the json streaming faithfully" reads like "build the message from deltas, finalize on `content_block_stop`." But a live spike (claude-opus-4-8) showed claude *also* emits a full consolidated `assistant` event per block, mid-stream, before `content_block_stop` — so the deltas and the final block are redundant, and the deltas exactly equal the final text.
+
+**Why this:** finalizing on the `assistant` event (not `content_block_stop`) means we never reconcile deltas vs. final text (they're equal), never run glow on partial markdown (slow + mangles half-fenced code), and never `JSON.parse` an incomplete tool input. The committed-event render path stays byte-for-byte intact; all streaming complexity is an additive surface that's empty between turns. Lower-risk than the reconstruct-and-finalize alternative for identical on-screen output.
+
+**Revisit when:** claude stops emitting consolidated `assistant` events per block (then the reducer must become the finalizer, gated on `content_block_stop` + `message_stop`), or a parse-on-stop live tool view (showing parsed input one frame early) becomes worth the extra branch.
+
+---
+
 ## 2026-06-03 — True execve (libc via bun:ffi) for the relaunch path
 
 **Decision:** The handoff / cross-cwd relaunch (`reexecSelf` in `src/handoff/awaiter.ts`) replaces the running fnc process image with a real `execve(2)`, called through `bun:ffi` against libc (`src/handoff/exec-image.ts`). On platforms where the libc binding can't be loaded (Windows, or any `dlopen` failure) it falls back to the previous `Bun.spawn(child) + await child.exited + process.exit` shim. We use `execve` (explicit `envp`), not `execvp`, because Bun's `process.env` writes do not propagate to the libc `environ`, so the relaunched image would otherwise read a stale `FNC_ARGS_JSON` and re-run the original argv.
