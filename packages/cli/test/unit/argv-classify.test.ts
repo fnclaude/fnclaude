@@ -38,7 +38,7 @@ describe('classifyToken', () => {
   });
 
   describe('effort magic', () => {
-    test.each(['low', 'medium', 'high', 'xhigh', 'max', 'auto'])('%s is effort', (tok) => {
+    test.each(['low', 'medium', 'high', 'xhigh', 'max', 'auto', 'ultracode'])('%s is effort', (tok) => {
       expect(classifyToken(tok)).toBe('effort');
     });
   });
@@ -75,8 +75,8 @@ describe('exported alphabets', () => {
     expect(MODELS).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
   });
 
-  test('EFFORTS contains the six supported levels', () => {
-    expect(EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'auto']);
+  test('EFFORTS contains the supported levels incl. ultracode', () => {
+    expect(EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'auto', 'ultracode']);
   });
 
   test('SUBCOMMAND_ALIASES maps every alias to its canonical', () => {

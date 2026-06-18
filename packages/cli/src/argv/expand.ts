@@ -37,7 +37,11 @@ export function expandAliases(parsed: ParsedArgsOk): string[] {
   if (parsed.model !== null) {
     out.push('--model', parsed.model);
   }
-  if (parsed.effort !== null) {
+  // `ultracode` is NOT a value claude's --effort flag accepts. It rides as
+  // the `/effort ultracode` initial-prompt slash command instead (assembled
+  // in main.ts), so we deliberately emit no --effort for it here. The implied
+  // `--model opus` (set by the parser for any bare effort) still rides above.
+  if (parsed.effort !== null && parsed.effort !== 'ultracode') {
     out.push('--effort', parsed.effort);
   }
   if (parsed.subcommand !== null) {
