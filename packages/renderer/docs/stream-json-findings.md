@@ -79,16 +79,41 @@ Sessions are stored at `~/.claude/projects/<cwd-slug>/<session_id>.jsonl` where 
 
 ## `system/status` events
 
-`system` events with `subtype: "status"` appear between turns in the stream. They are informational — safe to ignore. The event spec currently only enumerates `system/init`; `system/status` is an additional undocumented subtype.
+`system` events with `subtype: "status"` appear between turns in the stream (e.g. `status: "requesting"`). The renderer surfaces them as a dim working indicator. `system/status` is now modeled (`SystemEvent.status`) alongside `system/init`.
 
 `system/init` repeating per turn is already documented above.
+
+## Token-level streaming (`--include-partial-messages`)
+
+The driver always passes `--include-partial-messages`. This adds an additive
+top-level event type, `stream_event`, that wraps a verbatim Anthropic SSE
+event (`message_start` / `content_block_{start,delta,stop}` /
+`message_{delta,stop}`). Every consolidated event (`system`/`assistant`/
+`user`/`result`/`rate_limit_event`) still arrives unchanged — the deltas
+interleave between them.
+
+The load-bearing finding: claude emits a consolidated `assistant` event per
+content block, **mid-stream**, carrying the complete block — so the deltas are
+only a latency/UX preview, never the source of truth. The renderer accumulates
+them into a transient live block (keyed by `(message.id, index)`, since `index`
+resets per message) and drops it the frame the matching `assistant` event
+lands (`src/live-message.ts`). Consequences:
+
+- Live text/thinking previews render RAW (glow disabled) — running glow per
+  delta is slow and mangles partial markdown; the finalized text gets glow one
+  frame later.
+- `input_json_delta.partial_json` is invalid until the final chunk — accumulate
+  raw, never `JSON.parse` mid-stream. The live tool view is a dim placeholder;
+  the parsed input renders from the consolidated `assistant` event.
+- A whole multi-line answer can arrive in a single `text_delta` — granularity
+  is not guaranteed; concatenation handles any chunking.
 
 ## Gotchas
 
 - `--output-format stream-json` requires `--verbose` — fails otherwise.
 - `system/init` repeats per turn. Informational, not a "new session" signal.
 - Each user turn counts as a fresh `num_turns: 1`.
-- No partial deltas by default — add `--include-partial-messages` if you want token-level streaming.
+- `result.result` is a verbatim copy of the final assistant text block — render one or the other, not both, or the answer prints twice.
 - Lines can be very large. Any `readline`-equivalent must use a generous max-line setting (default in Bun's stream APIs is fine; if rolling your own, allocate megabytes, not kilobytes).
 - Clean exit takes ~250ms after stdin close.
 - **CLAUDE.md in the subprocess cwd.** A `claude` subprocess spawned under a directory with a `CLAUDE.md` inherits those project instructions, which shape its behavior. Observed: during a test run where cwd was inside a repo with a restrictive `CLAUDE.md`, the model refused a contrived test prompt citing project rules. When driving stream-json for testing, run in a CLAUDE.md-free directory or expect project-instruction influence on model responses.

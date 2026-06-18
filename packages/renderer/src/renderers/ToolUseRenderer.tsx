@@ -1,7 +1,7 @@
-import { Text } from "ink";
 import type { ElementId, ToolUseBlock, Visibility } from "../types/events.ts";
 import { BashInput } from "./BashInput.tsx";
 import { EditDiff } from "./EditDiff.tsx";
+import { RawJson } from "./RawJson.tsx";
 import { ReadInput } from "./ReadInput.tsx";
 import { TaskNested } from "./TaskNested.tsx";
 import { WriteContent } from "./WriteContent.tsx";
@@ -75,7 +75,10 @@ export function ToolUseRenderer({ block, visibilityFor }: ToolUseRendererProps):
       );
 
     default:
-      return <Text>{`▸ ${block.name}: ${summarizeInput(input)}`}</Text>;
+      // Unknown tool: render the full tool_use block as dim raw JSON rather
+      // than a truncated one-liner, so nothing is silently lost. A styled
+      // per-tool view can supersede this later.
+      return <RawJson value={{ name: block.name, input }} label={`tool_use ${block.name}`} />;
   }
 }
 
@@ -89,24 +92,4 @@ function asOptionalString(v: unknown): string | undefined {
 
 function asOptionalNumber(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
-}
-
-/** Compact one-line summary of arbitrary tool input. */
-function summarizeInput(input: Record<string, unknown>): string {
-  const entries = Object.entries(input);
-  if (entries.length === 0) return "(no input)";
-  const parts = entries.slice(0, 3).map(([k, v]) => `${k}=${oneLine(v)}`);
-  return parts.join(" ");
-}
-
-function oneLine(v: unknown): string {
-  if (typeof v === "string") {
-    const flat = v.replace(/\s+/g, " ").trim();
-    return flat.length > 60 ? `${flat.slice(0, 57)}...` : flat;
-  }
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
 }

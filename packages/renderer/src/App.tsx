@@ -29,8 +29,18 @@ import {
 } from "./filter-state.ts";
 import { type Key, dispatchKey } from "./keybinds.ts";
 import {
+  type LiveState,
+  emptyLive,
+  finalizeForAssistant,
+  inFlightBlocks,
+  liveReducer,
+} from "./live-message.ts";
+import {
   ErrorRenderer,
+  type GlowRunner,
+  RawJson,
   ResultRenderer,
+  SystemInit,
   TextRenderer,
   ThinkingRenderer,
   ToolResultRenderer,
@@ -41,10 +51,23 @@ import type {
   ClaudeEvent,
   ElementId,
   FilterState,
+  RateLimitEvent,
   ResultEvent,
+  SystemEvent,
   UserEvent,
   Visibility,
 } from "./types/events.ts";
+
+/**
+ * A streaming feed: an injectable source of events for tests. Receives an
+ * emitter (`push` one event, `close` the stream) and returns a teardown fn.
+ * Production never passes this — it subscribes to claude directly. Tests use
+ * it to drive event arrival deterministically without a subprocess.
+ */
+export type StreamFeed = (emit: {
+  push: (event: ClaudeEvent) => void;
+  close: () => void;
+}) => () => void;
 
 const TOAST_DURATION_MS = 2000;
 
@@ -55,6 +78,19 @@ export interface AppProps {
    * so they don't need a running subprocess.
    */
   initialEvents?: ClaudeEvent[];
+  /**
+   * Test hook: an injectable event source. When provided, App ingests from
+   * this feed instead of subscribing to claude — letting a test push
+   * `stream_event`/`assistant`/… events one at a time to exercise the live
+   * streaming reducer. Mutually exclusive with `initialEvents` in practice.
+   */
+  streamFeed?: StreamFeed;
+  /**
+   * Glow runner for committed assistant text. Omitted → the module default
+   * (detect + run glow). Tests pass a spy to assert glow is run for committed
+   * text but never for the raw live preview.
+   */
+  glow?: GlowRunner | null;
   /**
    * Test hook: receives the same handler `useInput` registers, so a test
    * can drive input deterministically without a TTY. Production code
@@ -71,16 +107,22 @@ interface ToolCallInfo {
 function AssistantRender({
   event,
   visibilityFor,
+  glow,
 }: {
   event: AssistantEvent;
   visibilityFor: (id: ElementId) => Visibility;
+  glow?: GlowRunner | null;
 }): React.ReactElement {
   return (
     <Box flexDirection="column">
       {event.message.content.map((block, idx) => {
         const k = `${event.uuid}-${idx}`;
         if (block.type === "text") {
-          return <TextRenderer key={k} text={block.text} />;
+          return glow === undefined ? (
+            <TextRenderer key={k} text={block.text} />
+          ) : (
+            <TextRenderer key={k} text={block.text} glow={glow} />
+          );
         }
         if (block.type === "thinking") {
           return (
@@ -140,35 +182,91 @@ function UserRender({
 
 function ResultRender({
   event,
+  suppressBody,
 }: {
   event: ResultEvent;
-}): React.ReactElement {
+  /**
+   * When the result text duplicates the final assistant text block, the body
+   * is already on screen — render a compact terminator instead of re-printing.
+   */
+  suppressBody?: boolean;
+}): React.ReactElement | null {
   if (event.is_error) {
     return <ErrorRenderer message={event.result} />;
+  }
+  if (suppressBody) {
+    // The answer is already rendered (glow'd) via AssistantRender; emit nothing
+    // for the duplicated body. A future PR can surface result metadata here.
+    return null;
   }
   return <ResultRenderer event={event} />;
 }
 
+function SystemRender({ event }: { event: SystemEvent }): React.ReactElement {
+  if (event.subtype === "init") {
+    return <SystemInit event={event} />;
+  }
+  if (event.subtype === "status") {
+    return <Text dimColor>{`◌ ${event.status ?? "working"}…`}</Text>;
+  }
+  // Any other system subtype (compact_boundary, can_use_tool, error, …):
+  // surface raw rather than drop.
+  return <RawJson value={event} label={`system/${event.subtype}`} />;
+}
+
+function RateLimitRender({ event }: { event: RateLimitEvent }): React.ReactElement {
+  return <RawJson value={event.rate_limit_info ?? {}} label="rate_limit" />;
+}
+
 export function App(props: AppProps): React.ReactElement {
-  const { initialEvents, testInputBus } = props;
+  const { initialEvents, streamFeed, glow, testInputBus } = props;
   const [events, setEvents] = useState<ClaudeEvent[]>(() => initialEvents ?? []);
+  // Transient token-streaming state: an in-progress assistant message built
+  // from `stream_event` deltas, rendered below the committed transcript and
+  // self-clearing as each block's consolidated `assistant` event lands.
+  const [live, setLive] = useState<LiveState>(emptyLive);
   const [filter, setFilter] = useState<FilterState>(defaultState);
   const [draft, setDraft] = useState<string>("");
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
 
-  // Subscribe to slice A only when no initialEvents were provided — tests
-  // pass a static log; production starts empty and ingests live.
+  // Single ingest point for any event source. `stream_event` lines drive the
+  // transient live reducer; `assistant` events finalize the matching live
+  // block then append; everything else appends unchanged. Keeping the
+  // committed-event path byte-for-byte identical isolates all streaming
+  // complexity in the additive `live` surface.
+  const ingest = useMemo(
+    () => (event: ClaudeEvent) => {
+      if (event.type === "stream_event") {
+        setLive((prev) => liveReducer(prev, event));
+        return;
+      }
+      if (event.type === "assistant") {
+        setLive((prev) => finalizeForAssistant(prev, event));
+      }
+      setEvents((prev) => [...prev, event]);
+    },
+    [],
+  );
+
+  // Ingest from one of three sources, in priority order:
+  //   1. initialEvents → static, no live source (tests for committed render)
+  //   2. streamFeed     → injectable feed (tests for token streaming)
+  //   3. subscribeToClaude → production live subprocess
   useEffect(() => {
     if (initialEvents !== undefined) return;
+    if (streamFeed !== undefined) {
+      const teardown = streamFeed({ push: ingest, close: () => undefined });
+      return teardown;
+    }
     let cancelled = false;
     const sub = subscribeToClaude();
     subRef.current = sub;
     (async () => {
       for await (const event of sub.events) {
         if (cancelled) break;
-        setEvents((prev) => [...prev, event]);
+        ingest(event);
       }
     })();
     return () => {
@@ -176,7 +274,7 @@ export function App(props: AppProps): React.ReactElement {
       sub.close().catch(() => undefined);
       subRef.current = null;
     };
-  }, [initialEvents]);
+  }, [initialEvents, streamFeed, ingest]);
 
   // Build a tool_use_id → { name, input } index for tool_result dispatch.
   // Re-derived from the log on every render; cheap, log is in-memory.
@@ -285,14 +383,35 @@ export function App(props: AppProps): React.ReactElement {
     return parts.join("  |  ");
   })();
 
+  // Duplicate-answer guard: claude's `result.result` is a verbatim copy of the
+  // final assistant text block, and both render → the answer prints twice.
+  // The last assistant text block is the canonical, glow-rendered copy, so a
+  // `result` whose text matches it is shown as a terminator only, not re-printed.
+  const lastAssistantText = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev?.type === "assistant") {
+        const textBlock = ev.message.content.find((b) => b.type === "text");
+        return textBlock?.type === "text" ? textBlock.text : null;
+      }
+    }
+    return null;
+  }, [events]);
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="column">
-        {events.map((event) => {
-          const key =
-            "uuid" in event && event.uuid ? event.uuid : `${event.type}-${events.indexOf(event)}`;
+        {events.map((event, idx) => {
+          const key = "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`;
           if (event.type === "assistant") {
-            return <AssistantRender key={key} event={event} visibilityFor={visibilityFor} />;
+            return (
+              <AssistantRender
+                key={key}
+                event={event}
+                visibilityFor={visibilityFor}
+                {...(glow !== undefined ? { glow } : {})}
+              />
+            );
           }
           if (event.type === "user") {
             return (
@@ -305,17 +424,64 @@ export function App(props: AppProps): React.ReactElement {
             );
           }
           if (event.type === "result") {
-            return <ResultRender key={key} event={event} />;
+            const dup = !event.is_error && event.result === lastAssistantText;
+            return <ResultRender key={key} event={event} suppressBody={dup} />;
           }
-          // system / rate_limit_event: not rendered in the transcript.
           if (event.type === "system") {
-            return null;
+            return <SystemRender key={key} event={event} />;
           }
-          return null;
+          if (event.type === "rate_limit_event") {
+            return <RateLimitRender key={key} event={event} />;
+          }
+          if (event.type === "parse_error") {
+            return <RawJson key={key} value={event.raw} label="parse_error" />;
+          }
+          // Any unmodeled top-level event (image/document/error/compact_boundary
+          // /…): surface raw rather than silently drop.
+          return <RawJson key={key} value={event} label="event" />;
         })}
       </Box>
+      <LiveRegion live={live} visibilityFor={visibilityFor} />
       {draft.length > 0 ? <Text>{`> ${draft}`}</Text> : null}
       <Text>{statusLine}</Text>
+    </Box>
+  );
+}
+
+/**
+ * The transient token-streaming preview, rendered below the committed
+ * transcript. Only in-flight blocks (not yet finalized by their `assistant`
+ * event) are drawn. Text/thinking previews render RAW (glow disabled) — running
+ * glow per-delta is slow and mangles partial markdown; the finalized
+ * `assistant` text gets glow one frame later. tool_use shows a dim placeholder
+ * because `partialJson` is invalid until the last chunk (never parsed mid-stream).
+ */
+function LiveRegion({
+  live,
+  visibilityFor,
+}: {
+  live: LiveState;
+  visibilityFor: (id: ElementId) => Visibility;
+}): React.ReactElement | null {
+  const blocks = inFlightBlocks(live);
+  if (blocks.length === 0) return null;
+  return (
+    <Box flexDirection="column">
+      {blocks.map((b) => {
+        const k = `live-${b.index}`;
+        if (b.type === "text") {
+          return <TextRenderer key={k} text={b.text} glow={null} />;
+        }
+        if (b.type === "thinking") {
+          if (b.text.length === 0) return null;
+          return (
+            <ThinkingRenderer key={k} thinking={b.text} visibility={visibilityFor("thinking")} />
+          );
+        }
+        // tool_use: minimal dim placeholder; the real ToolUseRenderer renders
+        // from the consolidated `assistant` event one frame later.
+        return <Text key={k} dimColor>{`▸ ${b.toolName ?? "tool"}…`}</Text>;
+      })}
     </Box>
   );
 }

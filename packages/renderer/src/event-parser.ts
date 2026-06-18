@@ -12,9 +12,10 @@
  * - Partial trailing data (no terminating `\n` when the stream closes) is
  *   silently dropped — this matches observed behaviour where the process
  *   always terminates cleanly with a fully-written result line.
- * - JSON.parse errors on individual lines are silently dropped so that
- *   unexpected diagnostic output or future unknown event types do not break
- *   callers. The parser is meant to be forward-compatible.
+ * - JSON.parse errors on individual lines are surfaced as a synthetic
+ *   `parse_error` event (carrying the raw line) rather than silently dropped,
+ *   so corruption is visible to the renderer instead of vanishing. Unknown but
+ *   well-formed event types still flow through untouched (forward-compatible).
  */
 import type { ClaudeEvent } from "./types/events.ts";
 
@@ -82,8 +83,10 @@ function tryParseLine(line: string): ClaudeEvent | null {
     if (obj !== null && typeof obj === "object" && "type" in obj) {
       return obj as ClaudeEvent;
     }
-    return null;
+    // Well-formed JSON without a `type` field — surface it raw rather than drop.
+    return { type: "parse_error", raw: line };
   } catch {
-    return null;
+    // Malformed JSON — surface the raw line so corruption is visible.
+    return { type: "parse_error", raw: line };
   }
 }

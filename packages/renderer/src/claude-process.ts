@@ -51,6 +51,11 @@ const REQUIRED_ARGS = [
   "stream-json",
   "--output-format",
   "stream-json",
+  // Surfaces token-level `stream_event` lines (Anthropic SSE deltas) in
+  // addition to the consolidated events. Additive and safe: every
+  // assistant/user/result event still arrives unchanged. See
+  // docs/stream-json-findings.md and src/live-message.ts.
+  "--include-partial-messages",
 ];
 
 export function subscribeToClaude(opts: SubscribeOptions = {}): ClaudeSubscription {
