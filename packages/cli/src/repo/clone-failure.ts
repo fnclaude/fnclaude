@@ -10,7 +10,12 @@
  * network errors must NOT be classified as not-found.
  */
 
-const NOT_FOUND_SIGNATURES = [
+/**
+ * GitHub's "repo doesn't exist" stderr signatures. Exported so the live-tee
+ * filter in gh-runner.ts can suppress these lines from the live echo using
+ * the SAME signatures the classifier matches on — keeping the two in sync.
+ */
+export const NOT_FOUND_SIGNATURES = [
   // GraphQL clone path (gh repo clone uses the API):
   //   "GraphQL: Could not resolve to a Repository with the name 'x/y'."
   /could not resolve to a repository/i,
