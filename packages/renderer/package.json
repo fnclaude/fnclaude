@@ -13,6 +13,10 @@
   "bin": {
     "fnclaude-renderer": "./src/index.tsx"
   },
+  "main": "./src/mount.tsx",
+  "exports": {
+    ".": "./src/mount.tsx"
+  },
   "files": [
     "src",
     "bin",
