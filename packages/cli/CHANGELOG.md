@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.9.0...cli-v2.10.0) (2026-06-18)
+
+
+### Features
+
+* **cli:** accept 'ultracode' effort, seed via /effort initial prompt ([#221](https://github.com/fnclaude/fnclaude/issues/221)) ([f9eebdb](https://github.com/fnclaude/fnclaude/commit/f9eebdbb4763c3284fd06259b344b45200621544))
+
 ## [2.9.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.2...cli-v2.9.0) (2026-06-18)
 
 
