@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.11.0...cli-v2.12.0) (2026-06-18)
+
+
+### Features
+
+* **cli:** fnc owns the renderer's claude spawn (args/env/stderr) ([#230](https://github.com/fnclaude/fnclaude/issues/230)) ([b933aae](https://github.com/fnclaude/fnclaude/commit/b933aae59dcc18ef50c1b0307c8c4e9a1b2d9683))
+
 ## [2.11.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.10.1...cli-v2.11.0) (2026-06-18)
 
 
