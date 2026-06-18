@@ -25,6 +25,7 @@ import { composeEnv } from './launch/compose-env.ts';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch.ts';
 import { findClaude } from './launch/find-claude.ts';
 import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader.ts';
+import { maybeMountRenderer } from './launch/renderer-mount.ts';
 import { RingBuffer } from './launch/ring-buffer.ts';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch.ts';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard.ts';
@@ -581,6 +582,20 @@ if (!ensured.ok) {
   process.exit(2);
 }
 logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
+
+// In-process renderer mount (design.renderer.md §2–§3). When FNC_RENDERER is
+// set AND @fnclaude/renderer (an optionalDependency) resolves with a
+// `mountRenderer` export, fnc hosts the Ink app in its own process and skips
+// BOTH launch-fork branches below. The renderer drives a bare `claude --print`
+// session via its own subscribeToClaude — fnc's args/model/MCP are NOT threaded
+// in yet (deferred). When the selector is unset or the renderer is absent/old,
+// maybeMountRenderer returns false (logging one line on the requested-but-
+// unavailable path) and execution falls through to the normal PTY/inherit
+// launch — everything-else-as-is. mountRenderer owns the TTY for its lifetime;
+// on exit we leave cleanly, mirroring the help/version early-outs above.
+if (await maybeMountRenderer({ env: process.env })) {
+  process.exit(0);
+}
 
 // §9.0: spawn claude via Bun.Terminal on POSIX so the launcher can tee PTY
 // output through a ring buffer for cross-cwd resume detection (§9.1+). On

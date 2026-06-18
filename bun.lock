@@ -11,12 +11,15 @@
     },
     "packages/cli": {
       "name": "@fnclaude/cli",
-      "version": "1.1.1",
+      "version": "2.10.1",
       "bin": {
         "fnc": "./bin/fnc.js",
       },
       "dependencies": {
         "@anthropic-ai/sdk": "^0.99.0",
+      },
+      "optionalDependencies": {
+        "@fnclaude/renderer": "workspace:*",
       },
     },
     "packages/fnclaude": {
