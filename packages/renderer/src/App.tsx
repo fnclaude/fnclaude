@@ -10,16 +10,19 @@
  * toggle re-renders the whole transcript from the log through the new
  * filter — Ink reconciles the screen diff.
  *
- * `subscribeToClaude` is imported from `./claude-process.ts` (slice A).
- * The returned `ClaudeSubscription` exposes `.events` (the async iterable),
- * `.sendUserTurn(text)`, and `.close()`.
+ * The live `ClaudeSubscription` is now CREATED by `mountRenderer` and
+ * INJECTED via the `subscription` prop (docs/design.renderer.md §7) — App no
+ * longer self-subscribes. The subscription exposes `.events` (the async
+ * iterable), `.sendUserTurn(text)`, and `.close()`; App consumes `.events`
+ * and drives turns, but the OWNER (mountRenderer/fnc) owns lifecycle, so App
+ * never calls `.close()` on unmount.
  * Per-element renderers are imported from `./renderers/` (slice C;
  * stubbed locally until that slice merges).
  */
 
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type ClaudeSubscription, subscribeToClaude } from "./claude-process.ts";
+import type { ClaudeSubscription } from "./claude-process.ts";
 import {
   cyclePreset,
   defaultState,
@@ -73,16 +76,24 @@ const TOAST_DURATION_MS = 2000;
 
 export interface AppProps {
   /**
-   * Seed the event log. Omit (or pass `undefined`) to subscribe live to
-   * claude via slice A's `subscribeToClaude`. Tests pass a fixed array
-   * so they don't need a running subprocess.
+   * Live claude subscription, created and owned by `mountRenderer` (§7). When
+   * present, App consumes `subscription.events` and routes input through its
+   * `sendUserTurn`. When `undefined`, App is in static/test mode: it renders
+   * `initialEvents` (or a `streamFeed`) with no live stream. App never closes
+   * the subscription — the handle/fnc owns its lifecycle.
+   */
+  subscription?: ClaudeSubscription;
+  /**
+   * Seed the event log. Can be combined with a live `subscription` (e.g. seed
+   * a resumed transcript, then stream new events). On its own (no
+   * subscription, no streamFeed) it's the static render path tests use.
    */
   initialEvents?: ClaudeEvent[];
   /**
-   * Test hook: an injectable event source. When provided, App ingests from
-   * this feed instead of subscribing to claude — letting a test push
-   * `stream_event`/`assistant`/… events one at a time to exercise the live
-   * streaming reducer. Mutually exclusive with `initialEvents` in practice.
+   * Test hook: an injectable event source for the token-streaming tests.
+   * Used only in static/test mode (no live `subscription`); App ingests from
+   * this feed so a test can push `stream_event`/`assistant`/… events one at a
+   * time to exercise the live streaming reducer without a subprocess.
    */
   streamFeed?: StreamFeed;
   /**
@@ -219,7 +230,7 @@ function RateLimitRender({ event }: { event: RateLimitEvent }): React.ReactEleme
 }
 
 export function App(props: AppProps): React.ReactElement {
-  const { initialEvents, streamFeed, glow, testInputBus } = props;
+  const { subscription, initialEvents, streamFeed, glow, testInputBus } = props;
   const [events, setEvents] = useState<ClaudeEvent[]>(() => initialEvents ?? []);
   // Transient token-streaming state: an in-progress assistant message built
   // from `stream_event` deltas, rendered below the committed transcript and
@@ -250,31 +261,36 @@ export function App(props: AppProps): React.ReactElement {
     [],
   );
 
-  // Ingest from one of three sources, in priority order:
-  //   1. initialEvents → static, no live source (tests for committed render)
-  //   2. streamFeed     → injectable feed (tests for token streaming)
-  //   3. subscribeToClaude → production live subprocess
+  // Consume the injected live subscription (production / fnc). The
+  // subscription is created and OWNED by mountRenderer — App reads its
+  // `.events` and stores it in `subRef` for input dispatch, but does NOT
+  // close it on unmount: lifecycle belongs to the handle/fnc (spawn-args §c).
   useEffect(() => {
-    if (initialEvents !== undefined) return;
-    if (streamFeed !== undefined) {
-      const teardown = streamFeed({ push: ingest, close: () => undefined });
-      return teardown;
-    }
+    if (subscription === undefined) return;
+    subRef.current = subscription;
     let cancelled = false;
-    const sub = subscribeToClaude();
-    subRef.current = sub;
     (async () => {
-      for await (const event of sub.events) {
+      for await (const event of subscription.events) {
         if (cancelled) break;
         ingest(event);
       }
     })();
     return () => {
       cancelled = true;
-      sub.close().catch(() => undefined);
+      // Intentionally NO subscription.close() here — the owner (mountRenderer
+      // /fnc) closes it via the handle. The closeStdin keybind still sends EOF.
       subRef.current = null;
     };
-  }, [initialEvents, streamFeed, ingest]);
+  }, [subscription, ingest]);
+
+  // Test-only injectable feed for token-streaming tests (no subprocess). When
+  // a live `subscription` is present this is skipped — production never sets
+  // both.
+  useEffect(() => {
+    if (subscription !== undefined) return;
+    if (streamFeed === undefined) return;
+    return streamFeed({ push: ingest, close: () => undefined });
+  }, [subscription, streamFeed, ingest]);
 
   // Build a tool_use_id → { name, input } index for tool_result dispatch.
   // Re-derived from the log on every render; cheap, log is in-memory.

@@ -1,28 +1,69 @@
 /**
- * Library entry point. `mountRenderer` mounts the `App` into Ink and hands
- * back a handle so a host process (fnc) can drive the renderer in-process —
- * the same code path the standalone bin (`index.tsx`) takes.
+ * Library entry point. `mountRenderer` OWNS the `claude` subscription:
+ * it creates the stream-json session, hands the subscription into `<App>`
+ * as a prop, and returns a handle so a host process (fnc) can drive the
+ * renderer in-process — send turns, await teardown, and reap claude's exit
+ * code. The standalone bin (`index.tsx`) takes the same path and simply
+ * ignores the returned handle.
+ *
+ * Lifting subscription creation out of `App` (it used to self-subscribe in a
+ * `useEffect`) is what lets fnc reach `sendUserTurn`/`close` — see
+ * docs/design.renderer.md §7 and /tmp/renderer-parity/spawn-args.md §(c).
  *
  * This module is import-safe: importing it has NO side effects (no top-level
  * `render()`), so `import("@fnclaude/renderer")` can resolve to a real
- * library without spawning a TUI. See docs/design.renderer.md §7.
+ * library without spawning a TUI.
  */
 
 import { type Instance, render } from "ink";
-import type { ReactElement } from "react";
-import { App, type AppProps } from "./App.tsx";
+import { Component, type ErrorInfo, type ReactElement, type ReactNode } from "react";
+import { App } from "./App.tsx";
+import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process.ts";
 
 export type { AppProps } from "./App.tsx";
+export type { ClaudeSubscription, SpawnFn } from "./claude-process.ts";
 
 /**
- * Handle returned by {@link mountRenderer}. Mirrors the subset of Ink's
- * `Instance` a host needs to await teardown or unmount imperatively.
+ * Options for {@link mountRenderer}. All optional: called bare (the
+ * standalone bin) it spawns a default `claude` session in `process.cwd()`.
+ */
+export interface MountOptions {
+  /** Working dir for the claude child. fnc passes its resolved launch cwd. */
+  cwd?: string;
+  /**
+   * CLAUDE-native args threaded into the spawn after the renderer's required
+   * flags (`--model`/`--effort`/`--resume`/`--append-system-prompt`/the
+   * self-MCP `--mcp-config`). See spawn-args.md §(a).
+   */
+  extraArgs?: string[];
+  /**
+   * fnc-built spawn baking in the resolved `claude` binary, composed child
+   * env, and piped stderr. Omit → the default spawn (standalone bin).
+   */
+  spawnFn?: SpawnFn;
+  /**
+   * Delivered as the first `sendUserTurn` after the subscription is created
+   * and BEFORE the first render — the stream-json first turn (and the
+   * ultracode `/effort` seed). See spawn-args.md §(a)/§(c).
+   */
+  initialPrompt?: string;
+}
+
+/**
+ * Handle returned by {@link mountRenderer}. `waitUntilExit`/`unmount` mirror
+ * the subset of Ink's `Instance` a host needs; `sendUserTurn`/`close` expose
+ * the subscription so fnc can drive turns and reap claude's exit code (the
+ * renderer-mount equivalent of `proc.exited`).
  */
 export interface RendererHandle {
   /** Resolves when the Ink app unmounts (Ctrl+C, `unmount()`, or exit). */
   waitUntilExit(): Promise<void>;
   /** Tear the Ink app down immediately. */
   unmount(): void;
+  /** Send a user turn to claude over the subscription's stdin pipe. */
+  sendUserTurn(text: string): void;
+  /** Close claude's stdin (EOF) and resolve with its exit code. */
+  close(): Promise<number>;
 }
 
 /**
@@ -35,17 +76,93 @@ export interface RendererHandle {
 export type RenderFn = (node: ReactElement) => Pick<Instance, "waitUntilExit" | "unmount">;
 
 /**
- * Render `<App />` via Ink and return a handle to it.
- *
- * Called with no props in production (by the bin), the App self-subscribes
- * to a live `claude --print` stream-json session exactly as before. Pass
- * `{ initialEvents }` to seed a static log without a subprocess (tests do
- * this); `{ testInputBus }` to drive input deterministically.
+ * React error boundary so a render-time throw in the transcript tree is
+ * caught and surfaced as a single line instead of crashing the host fnc
+ * process (combined-mode crash-domain mitigation — design.renderer.md §6).
  */
-export function mountRenderer(props: AppProps = {}, renderFn: RenderFn = render): RendererHandle {
-  const instance = renderFn(<App {...props} />);
+class RenderErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Best-effort diagnostic to the file logger (never the TTY — Ink owns it).
+    // No logger is wired here yet; keep the throw contained and visible.
+    void info;
+    void error;
+  }
+
+  override render(): ReactNode {
+    if (this.state.error !== null) {
+      return (
+        <App
+          initialEvents={[
+            {
+              type: "parse_error",
+              raw: `renderer crashed: ${this.state.error.message}`,
+            },
+          ]}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Create the claude subscription, render `<App />` consuming it, and return a
+ * handle. With no options (standalone bin) the subscription uses the default
+ * spawn and `process.cwd()`. With an `initialPrompt`, the first user turn is
+ * delivered before the first render. `<App>` is wrapped in an error boundary
+ * + a top-level guard so a render throw cannot crash the host process.
+ */
+export function mountRenderer(
+  opts: MountOptions = {},
+  renderFn: RenderFn = render,
+): RendererHandle {
+  const sub: ClaudeSubscription = subscribeToClaude({
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.extraArgs !== undefined ? { extraArgs: opts.extraArgs } : {}),
+    ...(opts.spawnFn !== undefined ? { spawnFn: opts.spawnFn } : {}),
+  });
+
+  if (opts.initialPrompt) sub.sendUserTurn(opts.initialPrompt);
+
+  const instance = guardedRender(renderFn, sub);
+
   return {
     waitUntilExit: () => instance.waitUntilExit(),
     unmount: () => instance.unmount(),
+    sendUserTurn: sub.sendUserTurn,
+    close: sub.close,
   };
+}
+
+/**
+ * Render with both layers of crash containment: the React error boundary
+ * (render-time throws inside the tree) and a synchronous try/catch around the
+ * `renderFn` call itself (a throw before React mounts). If the initial render
+ * throws, return an inert handle so the host can still exit cleanly.
+ */
+function guardedRender(
+  renderFn: RenderFn,
+  sub: ClaudeSubscription,
+): Pick<Instance, "waitUntilExit" | "unmount"> {
+  try {
+    return renderFn(
+      <RenderErrorBoundary>
+        <App subscription={sub} />
+      </RenderErrorBoundary>,
+    );
+  } catch {
+    return {
+      waitUntilExit: () => Promise.resolve(),
+      unmount: () => undefined,
+    };
+  }
 }
