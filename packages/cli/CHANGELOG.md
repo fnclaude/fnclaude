@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.10.0...cli-v2.10.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **cli:** quiet the bootstrap-new-repo prompt ([#224](https://github.com/fnclaude/fnclaude/issues/224)) ([e03b471](https://github.com/fnclaude/fnclaude/commit/e03b4718f2590c7a9809b1aaf9741d053e4e4929))
+
 ## [2.10.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.9.0...cli-v2.10.0) (2026-06-18)
 
 
