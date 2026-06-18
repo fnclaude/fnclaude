@@ -34,7 +34,7 @@ _fnclaude() {
     _init_completion || return
 
     # Magic positional: model alias at position 1.
-    local -a model_aliases=(opus sonnet haiku)
+    local -a model_aliases=(opus sonnet haiku fable)
 
     # Magic positional: effort level. `auto` is included here (rewrite-only
     # addition over the Go canonical set); used alone at position 1 it implies

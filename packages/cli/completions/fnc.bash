@@ -21,7 +21,7 @@ _fnc_complete() {
     _init_completion || return
 
     # Model aliases (magic position 1).
-    local -a model_aliases=(opus sonnet haiku)
+    local -a model_aliases=(opus sonnet haiku fable)
 
     # Effort levels (magic position 2, only when position 1 was a model alias).
     local -a effort_levels=(low medium high xhigh max)

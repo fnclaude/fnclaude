@@ -23,6 +23,10 @@ describe('expandAliases — model alias (§4.1)', () => {
     expect(expandAliases(parsed(['haiku']))).toEqual(['--model', 'haiku']);
   });
 
+  test('fable → --model fable', () => {
+    expect(expandAliases(parsed(['fable']))).toEqual(['--model', 'fable']);
+  });
+
   test('explicit --model in passthrough also present (last-wins is claude\'s problem)', () => {
     expect(expandAliases(parsed(['opus', '--', 'hi']))).toEqual([
       '--model',

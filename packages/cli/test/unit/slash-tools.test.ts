@@ -223,7 +223,7 @@ describe('fnc_set_model (C3)', () => {
   });
 
   test('every vocabulary value is accepted', async () => {
-    for (const model of ['opus', 'sonnet', 'haiku']) {
+    for (const model of ['opus', 'sonnet', 'haiku', 'fable']) {
       const spy = spyWriter();
       const handler = createSetModelHandler({ write: spy.write, schedule: syncSchedule });
       const r = await handler({ op: 'set_model', model });

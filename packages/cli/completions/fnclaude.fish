@@ -56,7 +56,7 @@ function __fnclaude_walk_tokens
         end
         # Magic at pos 1: model alias.
         if test $__fnclaude_magic_state -eq 0
-            if contains -- $tok opus sonnet haiku
+            if contains -- $tok opus sonnet haiku fable
                 set __fnclaude_magic_state 1
                 continue
             end
@@ -160,7 +160,7 @@ plan\tplan (read-only) mode' -d 'set permission mode'
 
     # ── Other claude long flags worth surfacing ───────────────────────────
     complete -c $__fnclaude_cmd      -l name                  -r -d 'session label (skips auto-name)'
-    complete -c $__fnclaude_cmd      -l model                 -r -a 'opus sonnet haiku' -d 'set model alias'
+    complete -c $__fnclaude_cmd      -l model                 -r -a 'opus sonnet haiku fable' -d 'set model alias'
     complete -c $__fnclaude_cmd      -l effort                -r -a 'low medium high xhigh max auto' -d 'set effort level'
     complete -c $__fnclaude_cmd      -l mcp-config            -r -d 'path to MCP config JSON'
     complete -c $__fnclaude_cmd -s p -l print                    -d 'print-mode invocation (-p)'
@@ -171,6 +171,7 @@ plan\tplan (read-only) mode' -d 'set permission mode'
     complete -c $__fnclaude_cmd -n '__fnclaude_pos_model' -a 'opus'   -d 'use claude-opus model'
     complete -c $__fnclaude_cmd -n '__fnclaude_pos_model' -a 'sonnet' -d 'use claude-sonnet model'
     complete -c $__fnclaude_cmd -n '__fnclaude_pos_model' -a 'haiku'  -d 'use claude-haiku model'
+    complete -c $__fnclaude_cmd -n '__fnclaude_pos_model' -a 'fable'  -d 'use claude-fable-5 model'
 
     # Effort levels are also valid at pos 1 (implies opus).
     complete -c $__fnclaude_cmd -n '__fnclaude_pos_model' -a 'low'    -d 'low effort (implies opus)'

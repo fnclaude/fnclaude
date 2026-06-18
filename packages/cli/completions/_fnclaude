@@ -51,6 +51,7 @@ _fnclaude() {
         'opus:use claude-opus model'
         'sonnet:use claude-sonnet model'
         'haiku:use claude-haiku model'
+        'fable:use claude-fable-5 model'
     )
 
     effort_levels=(
@@ -86,7 +87,7 @@ _fnclaude() {
         '--no-tmux[suppress auto-tmux injection for this invocation]' \
         '--tmux[enable tmux (auto-detect)]' \
         '--name[session name (also used as worktree name)]:session name' \
-        '--model[claude model alias]:model:(opus sonnet haiku)' \
+        '--model[claude model alias]:model:(opus sonnet haiku fable)' \
         '--effort[claude effort level]:effort:(low medium high xhigh max auto)' \
         '--resume[resume an existing session]' \
         '--continue[resume the most recent session]' \

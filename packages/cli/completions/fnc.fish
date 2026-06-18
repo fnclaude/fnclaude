@@ -95,7 +95,7 @@ function __fnc_walk_tokens
         end
         # Magic at pos 1: model alias.
         if test $__fnc_magic_state -eq 0
-            if contains -- $tok opus sonnet haiku
+            if contains -- $tok opus sonnet haiku fable
                 set __fnc_magic_state 1
                 continue
             end
@@ -150,6 +150,7 @@ end
 complete -c fnc -n '__fnc_pos_model' -a 'opus'   -d 'use claude-opus model'
 complete -c fnc -n '__fnc_pos_model' -a 'sonnet' -d 'use claude-sonnet model'
 complete -c fnc -n '__fnc_pos_model' -a 'haiku'  -d 'use claude-haiku model'
+complete -c fnc -n '__fnc_pos_model' -a 'fable'  -d 'use claude-fable-5 model'
 
 # Position 2: effort level (only when pos1 was a model alias).
 complete -c fnc -n '__fnc_pos_effort' -a 'low'    -d 'low effort'

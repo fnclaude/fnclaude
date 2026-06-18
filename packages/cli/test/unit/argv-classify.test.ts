@@ -27,7 +27,7 @@ describe('classifyToken', () => {
   });
 
   describe('model magic', () => {
-    test.each(['opus', 'sonnet', 'haiku'])('%s is model', (tok) => {
+    test.each(['opus', 'sonnet', 'haiku', 'fable'])('%s is model', (tok) => {
       expect(classifyToken(tok)).toBe('model');
     });
 
@@ -71,8 +71,8 @@ describe('classifyToken', () => {
 });
 
 describe('exported alphabets', () => {
-  test('MODELS contains exactly opus/sonnet/haiku', () => {
-    expect(MODELS).toEqual(['opus', 'sonnet', 'haiku']);
+  test('MODELS contains exactly opus/sonnet/haiku/fable', () => {
+    expect(MODELS).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
   });
 
   test('EFFORTS contains the six supported levels', () => {
