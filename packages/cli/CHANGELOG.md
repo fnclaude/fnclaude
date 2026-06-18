@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.10.1...cli-v2.11.0) (2026-06-18)
+
+
+### Features
+
+* **cli:** mount in-process renderer when FNC_RENDERER set ([#227](https://github.com/fnclaude/fnclaude/issues/227)) ([b943a27](https://github.com/fnclaude/fnclaude/commit/b943a273d92ee5b0212dc5e7d9a721d9bfc2dc69))
+
 ## [2.10.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.10.0...cli-v2.10.1) (2026-06-18)
 
 
