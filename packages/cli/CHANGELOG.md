@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.2...cli-v2.9.0) (2026-06-18)
+
+
+### Features
+
+* **cli:** accept 'fable' as a model alias ([#219](https://github.com/fnclaude/fnclaude/issues/219)) ([bf76da1](https://github.com/fnclaude/fnclaude/commit/bf76da10671eef49860e204a36ce4dc9c482b93f))
+
 ## [2.8.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.8.1...cli-v2.8.2) (2026-06-05)
 
 
