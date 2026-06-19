@@ -288,6 +288,13 @@ switch (resolved.kind) {
     );
     process.exit(2);
   }
+  case 'ambiguous-local': {
+    const list = resolved.paths.map((p) => `  ${p}`).join('\n');
+    process.stderr.write(
+      `fnclaude: ambiguous reference — multiple local clones named '${resolved.name}':\n${list}\nDisambiguate with '${resolved.name}@<owner>'.\n`,
+    );
+    process.exit(2);
+  }
   case 'error':
     process.stderr.write(`fnclaude: ${resolved.error}\n`);
     process.exit(2);
