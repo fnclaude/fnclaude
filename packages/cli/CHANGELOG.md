@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.0...cli-v2.13.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* **cli:** ship prompts dir in published package ([#242](https://github.com/fnclaude/fnclaude/issues/242)) ([c92ef1d](https://github.com/fnclaude/fnclaude/commit/c92ef1dccf1e68849ccf77832c72bf3558f48f92))
+
 ## [2.13.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.12.0...cli-v2.13.0) (2026-06-19)
 
 
