@@ -25,7 +25,8 @@ import { isAbsolute, join } from 'node:path';
 
 import { expandTilde, noopDir } from '../path/resolve.ts';
 import { buildCloneUrl, computeCloneDestination } from './clone.ts';
-import { hasResolvedOwner, parseRepoRef } from './ref.ts';
+import { findLocalClones } from './local-clones.ts';
+import { effectiveHost, hasResolvedOwner, parseRepoRef } from './ref.ts';
 
 export interface ResolveInputArgs {
   input: string | null;
@@ -61,6 +62,11 @@ export type ResolveResult =
       path: string;
       cloneDestination?: string;
       repoRef?: string;
+    }
+  | {
+      kind: 'ambiguous-local';
+      name: string;
+      paths: string[];
     }
   | { kind: 'error'; error: string };
 
@@ -130,10 +136,35 @@ export function resolveInput(args: ResolveInputArgs): ResolveResult {
 
   const ref = parseResult.ref;
 
-  // Bare name (owner not in input) — need gh CLI to find owner.
+  // Bare name (owner not in input). Disk presence disambiguates BEFORE any
+  // remote owner lookup: a single local clone wins over remote ambiguity.
   if (!hasResolvedOwner(ref)) {
     if (pathExists) {
       return { kind: 'ambiguous', path: pathCandidate, repoRef: input };
+    }
+    if (settings.cloneTemplate !== '') {
+      const local = findLocalClones({
+        name: ref.name,
+        template: settings.cloneTemplate,
+        host: effectiveHost(ref),
+        hostAliases: settings.hostAliases,
+        home,
+      });
+      if (local.ok) {
+        if (local.paths.length === 1) {
+          return {
+            kind: 'launch',
+            launchCwd: local.paths[0]!,
+            usedNoopFallback: false,
+            workspace: ref.workspace,
+          };
+        }
+        if (local.paths.length > 1) {
+          return { kind: 'ambiguous-local', name: ref.name, paths: local.paths };
+        }
+      }
+      // local.ok === false (template error) or zero matches: fall through to
+      // the existing remote owner-lookup behavior, unchanged.
     }
     return { kind: 'needs-owner-lookup', name: ref.name, workspace: ref.workspace };
   }

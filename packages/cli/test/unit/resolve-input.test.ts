@@ -199,6 +199,54 @@ describe('resolveInput — bare name → needs-owner-lookup', () => {
   });
 });
 
+describe('resolveInput — bare name disambiguated by local clones on disk', () => {
+  // Row 1: exactly one local clone → launch it, skip remote owner-lookup.
+  test('one local clone → launch in it, no owner-lookup', () => {
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
+    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'launch');
+    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
+    expect(r.workspace).toBe('');
+  });
+
+  test('one local clone carries the +workspace suffix onto launch', () => {
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
+    const r = assertKind(resolveInput(args({ input: 'fnclaude+feat-x' })), 'launch');
+    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
+    expect(r.workspace).toBe('feat-x');
+  });
+
+  // Row 2: multiple local clones (two owners) → ambiguous-local.
+  test('two local clones (different owners) → ambiguous-local listing both', () => {
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
+    mkdirSync(join(HOME, 'src/fnclaude@fnrhombus'), { recursive: true });
+    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'ambiguous-local');
+    expect(r.name).toBe('fnclaude');
+    expect(r.paths.sort()).toEqual(
+      [join(HOME, 'src/fnclaude@fnclaude'), join(HOME, 'src/fnclaude@fnrhombus')].sort(),
+    );
+  });
+
+  // Row 3: zero local clones → unchanged needs-owner-lookup.
+  test('no local clone → needs-owner-lookup (remote path unchanged)', () => {
+    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'needs-owner-lookup');
+    expect(r.name).toBe('fnclaude');
+  });
+
+  // Row 4: clone + its +workspace worktree sibling → resolves to the one clone.
+  test('clone plus its +workspace worktree sibling → exactly one match (worktree excluded)', () => {
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude+feat-renderer'), { recursive: true });
+    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'launch');
+    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
+  });
+
+  test('a different repo name in the same dir does not count as a match', () => {
+    mkdirSync(join(HOME, 'src/other@fnclaude'), { recursive: true });
+    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'needs-owner-lookup');
+    expect(r.name).toBe('fnclaude');
+  });
+});
+
 describe('resolveInput — dual lookup ambiguity', () => {
   test('owner/name where BOTH local <shellCwd>/owner/name AND clone destination exist → ambiguous', () => {
     mkdirSync(join(SHELL_CWD, 'fnrhombus/arch-setup'), { recursive: true });
