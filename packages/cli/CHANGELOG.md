@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.12.0...cli-v2.13.0) (2026-06-19)
+
+
+### Features
+
+* **cli:** resolve bare repo names from local clones before owner lookup ([#240](https://github.com/fnclaude/fnclaude/issues/240)) ([834aae1](https://github.com/fnclaude/fnclaude/commit/834aae18ef1f47c1d27bbc763383f8ab8130006c))
+
 ## [2.12.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.11.0...cli-v2.12.0) (2026-06-18)
 
 
