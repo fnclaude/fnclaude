@@ -1,5 +1,7 @@
 # Subagent panes — design notes
 
+> Related but distinct: [`multipane-orchestration-proposal.md`](multipane-orchestration-proposal.md) proposes a single-agent workspace TUI (Ink chrome + Neovim + transcript). This doc is the *multi-agent cockpit*; the two compose (that doc's region 5 could host the per-subagent panes proposed here).
+
 Status: design in progress. Open questions at the end.
 
 ## Goal

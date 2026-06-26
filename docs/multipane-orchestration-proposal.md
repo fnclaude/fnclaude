@@ -1,5 +1,7 @@
 # Multi-pane orchestration proposal
 
+> Related but distinct: [`subagent-panes-idea.md`](subagent-panes-idea.md) proposes per-subagent panes for mid-flight steering of multiple agents. This doc is the *single-agent workspace layout*; the two compose (region 5 here could host that doc's subagent panes).
+
 A design exploration for a TUI that hosts an Ink chrome, a real Neovim editor, and a Claude-conversation transcript renderer side-by-side, coordinated by a parent CLI orchestrator. Captured from an extended design conversation; not a commitment to build, just a record of the architecture and the tradeoffs that fall out of it.
 
 ## The target layout
