@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.1](https://github.com/fnclaude/fnclaude/compare/renderer-v3.3.0...renderer-v3.3.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **renderer:** always render input prompt so bare session shows it's interactive ([#249](https://github.com/fnclaude/fnclaude/issues/249)) ([26f7900](https://github.com/fnclaude/fnclaude/commit/26f790071a25ccfd8a44980fc484828f92f79706))
+
 ## [3.3.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.2.0...renderer-v3.3.0) (2026-06-18)
 
 
