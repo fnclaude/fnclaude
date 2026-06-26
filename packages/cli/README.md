@@ -58,7 +58,7 @@ The first two positional slots can be a model alias and an effort level. `fnc` i
 ```sh
 fnc opus max ~/src/proj          # --model claude-opus-4-5 --effort max
 fnc sonnet ~/src/proj            # --model claude-sonnet-4-5
-fnc haiku low ~/src/proj         # --model claude-haiku-4-5 --effort low
+fnc haiku ~/src/proj             # --model claude-haiku-4-5
 fnc ~/src/proj                   # no model flag — claude picks the default
 ```
 
