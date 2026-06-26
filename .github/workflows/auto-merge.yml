@@ -8,6 +8,15 @@ name: auto-merge
 # success isn't a gate; it just registers intent to merge. If it fails
 # (transient network, etc.), the PR is unblocked but auto-merge isn't
 # enabled, and the author can enable it manually.
+#
+# AUTOMATIC NPM PUBLISHING IS PAUSED (for the time being). release-please
+# PRs (head ref `release-please--...`) are intentionally excluded from
+# auto-merge below. Publishing only happens when a release PR merges (that
+# merge is the push that triggers the `publish` job in ci.yml), so leaving
+# release PRs un-auto-merged means nothing auto-publishes. Feature/fix/docs
+# PRs keep auto-merging normally. To RESUME publishing, either (a) revert
+# the `!startsWith(github.head_ref, 'release-please')` condition below, or
+# (b) merge a pending release PR manually.
 
 on:
   pull_request:
@@ -19,7 +28,7 @@ permissions:
 
 jobs:
   enable-auto-merge:
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false && !startsWith(github.head_ref, 'release-please')
     runs-on: ubuntu-latest
     steps:
       - name: Enable auto-merge (squash)
