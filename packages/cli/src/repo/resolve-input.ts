@@ -35,6 +35,12 @@ export interface ResolveInputArgs {
   xdgConfigHome: string | undefined;
   settings: {
     cloneTemplate: string;
+    /**
+     * The user's `worktreeTemplate` (repoSettings). Drives worktree-sibling
+     * exclusion when disambiguating bare names against local clones. Optional:
+     * absent falls back to the documented default marker.
+     */
+    worktreeTemplate?: string;
     hostAliases: Record<string, string>;
   };
 }
@@ -146,6 +152,7 @@ export function resolveInput(args: ResolveInputArgs): ResolveResult {
       const local = findLocalClones({
         name: ref.name,
         template: settings.cloneTemplate,
+        worktreeTemplate: settings.worktreeTemplate,
         host: effectiveHost(ref),
         hostAliases: settings.hostAliases,
         home,
