@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { readArgv } from '../../src/argv/intake.ts';
-import { bootFields } from '../../src/log/boot.ts';
+import { readArgv } from '../../src/argv/intake';
+import { bootFields } from '../../src/log/boot';
 
 const ORIGINAL_ENV = process.env.FNC_ARGS_JSON;
 const ORIGINAL_ARGV = process.argv;

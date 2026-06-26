@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type Key, dispatchKey } from "./keybinds.ts";
+import { type Key, dispatchKey } from "./keybinds";
 
 const baseKey: Key = {
   upArrow: false,

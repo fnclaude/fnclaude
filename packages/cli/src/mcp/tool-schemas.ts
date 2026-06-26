@@ -17,7 +17,7 @@
  * defaults) just lands here.
  */
 
-import type { McpToolName } from './dispatch.ts';
+import type { McpToolName } from './dispatch';
 
 export interface McpToolSchema {
   description: string;

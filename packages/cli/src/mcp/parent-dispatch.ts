@@ -27,8 +27,8 @@
  * Design: docs/design.mcp.md §2.3, §3.
  */
 
-import type { AcceptedSocket } from './listener.ts';
-import type { WireOp, WireRequest, WireResponse } from './wire.ts';
+import type { AcceptedSocket } from './listener';
+import type { WireOp, WireRequest, WireResponse } from './wire';
 
 export type ParentDispatchHandler = (req: WireRequest) => Promise<WireResponse>;
 

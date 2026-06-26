@@ -20,7 +20,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { decideCrossCwdRelaunch } from '../../src/launch/cross-cwd-relaunch.ts';
+import { decideCrossCwdRelaunch } from '../../src/launch/cross-cwd-relaunch';
 
 // 8-4-4-4-12 hex UUID for the hint matcher.
 const UUID = '68aa15ae-af23-4c7a-b59f-5cee07c61790';

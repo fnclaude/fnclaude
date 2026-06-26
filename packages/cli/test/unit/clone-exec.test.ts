@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { cloneRepo, type GhCloneCall, type GhCloneResult } from '../../src/repo/clone-exec.ts';
+import { cloneRepo, type GhCloneCall, type GhCloneResult } from '../../src/repo/clone-exec';
 
 function makeGhClone(result: GhCloneResult, capture?: { url?: string; dest?: string }): GhCloneCall {
   return async (url: string, dest: string) => {

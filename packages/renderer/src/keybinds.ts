@@ -9,7 +9,7 @@
  * See docs/keybind-spec.md.
  */
 
-import type { ElementId } from "./types/events.ts";
+import type { ElementId } from "./types/events";
 
 /**
  * Mirror of ink's `Key` shape, decoupled so the dispatch logic stays

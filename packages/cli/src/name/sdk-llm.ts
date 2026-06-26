@@ -15,7 +15,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-import { AUTO_NAME_SYSTEM_PROMPT, AUTO_NAME_MODEL } from './llm-prompt.ts';
+import { AUTO_NAME_SYSTEM_PROMPT, AUTO_NAME_MODEL } from './llm-prompt';
 
 export async function sdkLlmCall(prompt: string): Promise<string> {
   // SDK picks ANTHROPIC_API_KEY up from process.env by default. Letting it

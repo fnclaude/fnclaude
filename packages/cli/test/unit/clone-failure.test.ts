@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isRepoNotFoundError } from '../../src/repo/clone-failure.ts';
+import { isRepoNotFoundError } from '../../src/repo/clone-failure';
 
 describe('isRepoNotFoundError', () => {
   test('true for GraphQL "Could not resolve to a Repository"', () => {

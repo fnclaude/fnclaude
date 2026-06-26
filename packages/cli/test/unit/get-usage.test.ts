@@ -19,9 +19,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildUsageResponse,
   createGetUsageHandler,
-} from '../../src/mcp/handlers/get-usage.ts';
-import type { SessionUsage } from '../../src/usage/session-usage.ts';
-import type { WireRequest } from '../../src/mcp/wire.ts';
+} from '../../src/mcp/handlers/get-usage';
+import type { SessionUsage } from '../../src/usage/session-usage';
+import type { WireRequest } from '../../src/mcp/wire';
 
 const VALID_SID = '12345678-1234-1234-1234-123456789abc';
 

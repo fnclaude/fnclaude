@@ -15,7 +15,7 @@
 
 import { appendFileSync } from 'node:fs';
 
-import type { LogRecord, LogSink } from './logger.ts';
+import type { LogRecord, LogSink } from './logger';
 
 export interface CreateFileSinkArgs {
   path: string;

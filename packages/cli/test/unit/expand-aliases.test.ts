@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseArgs, type ParsedArgsOk } from '../../src/argv/parse.ts';
-import { expandAliases } from '../../src/argv/expand.ts';
+import { parseArgs, type ParsedArgsOk } from '../../src/argv/parse';
+import { expandAliases } from '../../src/argv/expand';
 
 // Helper: parse + assert ok, return the parsed args.
 function parsed(args: string[]): ParsedArgsOk {

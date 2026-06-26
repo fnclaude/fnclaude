@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ReadContent } from "./ReadContent.tsx";
+import { ReadContent } from "./ReadContent";
 
 const bigFile = Array.from({ length: 50 }, (_, i) => `line${i + 1}`).join("\n");
 

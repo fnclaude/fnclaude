@@ -31,10 +31,10 @@ import {
   preserveArgs,
   splitLeadingMagic,
   type OverrideRequest,
-} from '../../argv/preserve-args.ts';
-import type { HandoffTrigger } from '../../handoff/trigger.ts';
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
+} from '../../argv/preserve-args';
+import type { HandoffTrigger } from '../../handoff/trigger';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
 
 const SESSION_ID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;

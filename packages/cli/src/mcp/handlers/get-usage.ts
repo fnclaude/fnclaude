@@ -33,9 +33,9 @@
 import {
   readSessionUsage,
   type SessionUsage,
-} from '../../usage/session-usage.ts';
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
+} from '../../usage/session-usage';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
 
 const SESSION_ID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;

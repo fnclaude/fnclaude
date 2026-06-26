@@ -33,7 +33,7 @@ import {
   type NoticeRepeat,
   type NoticeTier,
   isNoticeLevel,
-} from '../usage/context-monitor.ts';
+} from '../usage/context-monitor';
 
 export interface FnConfig {
   autoTmux: string | undefined;

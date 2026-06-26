@@ -17,12 +17,12 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-import { subscribeToClaude } from '../../../renderer/src/claude-process.ts';
+import { subscribeToClaude } from '../../../renderer/src/claude-process';
 import {
   type LowLevelSpawn,
   makeFncSpawn,
   makeProdSpawnProc,
-} from '../../src/launch/renderer-mount.ts';
+} from '../../src/launch/renderer-mount';
 
 /**
  * A Bun.spawn stub whose stdin is a FileSink (write/end, NO getWriter) — the

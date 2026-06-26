@@ -22,8 +22,8 @@
  * + subcommand merge point).
  */
 
-import type { CanonicalSubcommand } from './classify.ts';
-import type { ParsedArgsOk } from './parse.ts';
+import type { CanonicalSubcommand } from './classify';
+import type { ParsedArgsOk } from './parse';
 
 const SUBCOMMAND_FLAGS: Record<CanonicalSubcommand, readonly string[]> = {
   resume: ['--resume'],

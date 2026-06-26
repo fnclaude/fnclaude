@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { pruneLogDir } from '../../src/log/prune.ts';
+import { pruneLogDir } from '../../src/log/prune';
 
 function fakeFs(files: Record<string, number>) {
   const unlinked: string[] = [];

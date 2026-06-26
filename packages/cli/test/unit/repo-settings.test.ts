@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { loadRepoSettings, type LoadRepoSettingsArgs } from '../../src/repo/repo-settings.ts';
+import { loadRepoSettings, type LoadRepoSettingsArgs } from '../../src/repo/repo-settings';
 
 let tmpRoot: string;
 let paths: LoadRepoSettingsArgs;

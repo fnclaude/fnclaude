@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { autoName, type AutoNameOptions } from '../../src/name/auto-name.ts';
+import { autoName, type AutoNameOptions } from '../../src/name/auto-name';
 
 async function run(opts: Partial<AutoNameOptions> & { prompt: string }): Promise<string> {
   return autoName({ timeoutMs: 1000, ...opts });

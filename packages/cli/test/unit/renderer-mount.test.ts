@@ -37,7 +37,7 @@ import {
   type RendererHandle,
   type SpawnFn,
   type SpawnResult,
-} from '../../src/launch/renderer-mount.ts';
+} from '../../src/launch/renderer-mount';
 
 function fakeHandle(over: Partial<RendererHandle> = {}): RendererHandle {
   return {

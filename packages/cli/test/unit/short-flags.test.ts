@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { expandShortFlags } from '../../src/argv/short-flags.ts';
+import { expandShortFlags } from '../../src/argv/short-flags';
 
 function ok(input: string[], expected: string[]) {
   const r = expandShortFlags(input);

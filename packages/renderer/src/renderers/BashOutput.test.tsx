@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { BashOutput } from "./BashOutput.tsx";
+import { BashOutput } from "./BashOutput";
 
 const longOutput = Array.from({ length: 12 }, (_, i) => `line${i + 1}`).join("\n");
 

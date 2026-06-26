@@ -21,7 +21,7 @@
  * from the committed event log. This self-clears with no duplicate render.
  */
 
-import type { AssistantEvent, ContentBlock, StreamEvent } from "./types/events.ts";
+import type { AssistantEvent, ContentBlock, StreamEvent } from "./types/events";
 
 export type LiveBlockType = "text" | "thinking" | "tool_use";
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import type { SystemEvent } from "../types/events.ts";
-import { SystemInit } from "./SystemInit.tsx";
+import type { SystemEvent } from "../types/events";
+import { SystemInit } from "./SystemInit";
 
 const baseEvent: SystemEvent = {
   type: "system",

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isInteractiveSession,
   selectFragments,
-} from '../../src/prompts/select.ts';
+} from '../../src/prompts/select';
 
 describe('isInteractiveSession', () => {
   test('empty passthrough → interactive', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { TaskNested } from "./TaskNested.tsx";
+import { TaskNested } from "./TaskNested";
 
 const prompt = `Find all TypeScript files.
 Then count lines of code in each.

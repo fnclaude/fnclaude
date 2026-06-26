@@ -39,17 +39,17 @@
 import {
   applyOverrides,
   type OverrideRequest,
-} from '../../argv/preserve-args.ts';
-import { cleanEnvForSpawn } from '../../handoff/clean-env.ts';
+} from '../../argv/preserve-args';
+import { cleanEnvForSpawn } from '../../handoff/clean-env';
 import {
   chooseAndSpawn,
   defaultSpawn,
   renderSpawnCommand,
   type SpawnFn,
-} from '../../handoff/spawn-launcher.ts';
-import { writeSummaryFile } from '../../handoff/summary-file.ts';
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
+} from '../../handoff/spawn-launcher';
+import { writeSummaryFile } from '../../handoff/summary-file';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
 
 export interface SpawnHandlerConfig {
   /** `cfg.auto.spawnCommand` — undefined or empty = "not configured". */

@@ -14,7 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { handleMcpLine } from '../../src/mcp/dispatch.ts';
+import { handleMcpLine } from '../../src/mcp/dispatch';
 
 const PKG_VERSION = (() => {
   const pkgPath = resolve(__dirname, '..', '..', 'package.json');

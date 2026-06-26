@@ -6,7 +6,7 @@ import {
   EFFORTS,
   MODELS,
   SUBCOMMAND_ALIASES,
-} from '../../src/argv/classify.ts';
+} from '../../src/argv/classify';
 
 describe('classifyToken', () => {
   describe('flag-shaped', () => {

@@ -16,8 +16,8 @@ import {
   findPromptSentinel,
   hasPromptBody,
   promptBody,
-} from '../argv/sentinel.ts';
-import type { ParsedArgsOk } from '../argv/parse.ts';
+} from '../argv/sentinel';
+import type { ParsedArgsOk } from '../argv/parse';
 
 // ── shouldAutoName ──────────────────────────────────────────────────────────
 

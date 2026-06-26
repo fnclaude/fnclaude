@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseArgs } from '../../src/argv/parse.ts';
+import { parseArgs } from '../../src/argv/parse';
 
 const ok = (overrides: Record<string, unknown> = {}) => ({
   ok: true,

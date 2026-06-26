@@ -1,5 +1,5 @@
 import { Text } from "ink";
-import type { SystemEvent } from "../types/events.ts";
+import type { SystemEvent } from "../types/events";
 
 export interface SystemInitProps {
   event: SystemEvent;

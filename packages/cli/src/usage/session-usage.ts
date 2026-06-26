@@ -30,7 +30,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { sessionJSONLPath } from '../launch/live-permission-reader.ts';
+import { sessionJSONLPath } from '../launch/live-permission-reader';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pricing table

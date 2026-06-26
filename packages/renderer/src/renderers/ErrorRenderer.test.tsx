@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ErrorRenderer } from "./ErrorRenderer.tsx";
+import { ErrorRenderer } from "./ErrorRenderer";
 
 describe("ErrorRenderer", () => {
   test("renders error text with red styling (ANSI escape present)", () => {

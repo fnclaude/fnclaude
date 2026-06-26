@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { BashInput } from "./BashInput.tsx";
+import { BashInput } from "./BashInput";
 
 const multilineCmd = "echo line1\necho line2\necho line3\necho line4\necho line5\necho line6";
 

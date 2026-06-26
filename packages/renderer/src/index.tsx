@@ -7,6 +7,6 @@
  * launcher that shares their code path.
  */
 
-import { mountRenderer } from "./mount.tsx";
+import { mountRenderer } from "./mount";
 
 mountRenderer();

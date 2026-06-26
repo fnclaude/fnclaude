@@ -5,7 +5,7 @@ import {
   NOOP_LOGGER,
   parseLevel,
   type LogRecord,
-} from '../../src/log/logger.ts';
+} from '../../src/log/logger';
 
 function collect(): { sink: (r: LogRecord) => void; records: LogRecord[] } {
   const records: LogRecord[] = [];

@@ -24,7 +24,7 @@ import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { startMcpListener } from '../../src/mcp/listener.ts';
+import { startMcpListener } from '../../src/mcp/listener';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 

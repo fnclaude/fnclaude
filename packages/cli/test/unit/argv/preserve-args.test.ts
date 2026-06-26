@@ -6,7 +6,7 @@ import {
   splitLeadingMagic,
   TRANSFER_DENY_BARE_OK,
   TRANSFER_DENY_FLAGS,
-} from '../../../src/argv/preserve-args.ts';
+} from '../../../src/argv/preserve-args';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // splitLeadingMagic — TS-specific helper (no Go analog)

@@ -38,12 +38,12 @@ import {
   TRANSFER_DENY_BARE_OK,
   TRANSFER_DENY_FLAGS,
   type OverrideRequest,
-} from '../../argv/preserve-args.ts';
-import { writeSummaryFile, type BaseDirResolver } from '../../handoff/summary-file.ts';
-import type { HandoffTrigger } from '../../handoff/trigger.ts';
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
-import { handleCopyToClipboard } from './clipboard.ts';
+} from '../../argv/preserve-args';
+import { writeSummaryFile, type BaseDirResolver } from '../../handoff/summary-file';
+import type { HandoffTrigger } from '../../handoff/trigger';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
+import { handleCopyToClipboard } from './clipboard';
 
 /**
  * Read the most recent live permission-mode value from claude's

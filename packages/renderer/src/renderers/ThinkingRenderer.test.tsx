@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ThinkingRenderer } from "./ThinkingRenderer.tsx";
+import { ThinkingRenderer } from "./ThinkingRenderer";
 
 const longThought =
   "This is the first sentence. And here is the second sentence which keeps going. " +

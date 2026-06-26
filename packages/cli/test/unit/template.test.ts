@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyTemplate, cloneTemplateVars, type TemplateVars } from '../../src/repo/template.ts';
+import { applyTemplate, cloneTemplateVars, type TemplateVars } from '../../src/repo/template';
 
 const ok = (s: string) => ({ ok: true as const, value: s });
 

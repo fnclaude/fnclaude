@@ -13,7 +13,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { runWithFakeClaude } from '../fixtures/run-with-fake-claude.ts';
+import { runWithFakeClaude } from '../fixtures/run-with-fake-claude';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 

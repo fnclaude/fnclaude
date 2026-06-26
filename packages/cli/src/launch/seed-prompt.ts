@@ -29,8 +29,8 @@ import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash.ts';
-import { encodeCWDForProjects } from './live-permission-reader.ts';
+import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash';
+import { encodeCWDForProjects } from './live-permission-reader';
 
 export interface SeedUltracodePromptArgs {
   /** The user-supplied prompt body to submit as a follow-up. Empty → no-op. */

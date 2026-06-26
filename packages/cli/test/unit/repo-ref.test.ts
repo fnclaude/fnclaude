@@ -5,7 +5,7 @@ import {
   hasResolvedOwner,
   parseRepoRef,
   type RepoRef,
-} from '../../src/repo/ref.ts';
+} from '../../src/repo/ref';
 
 // Helper for ok-result assertions — TS-narrowing the result union.
 function assertOk(r: ReturnType<typeof parseRepoRef>): RepoRef {

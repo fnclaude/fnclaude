@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { expandTilde, noopDir, resolveCwd } from '../../src/path/resolve.ts';
+import { expandTilde, noopDir, resolveCwd } from '../../src/path/resolve';
 
 describe('expandTilde', () => {
   const home = '/home/tom';

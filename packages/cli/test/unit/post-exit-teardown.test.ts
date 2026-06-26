@@ -33,7 +33,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { decidePostExitTeardown } from '../../src/handoff/post-exit-teardown.ts';
+import { decidePostExitTeardown } from '../../src/handoff/post-exit-teardown';
 
 describe('decidePostExitTeardown — MCP handoff stashed', () => {
   test('handoff stashed → defer to awaiter, do NOT restore raw mode or self-exit', () => {

@@ -21,11 +21,11 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { EFFORTS, MODELS } from '../../argv/classify.ts';
-import { createCompactFollowUpGate } from '../../usage/context-monitor.ts';
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
-import { type PtyWriter, formatSlashCommand, injectSubmittedLine } from './inject-slash.ts';
+import { EFFORTS, MODELS } from '../../argv/classify';
+import { createCompactFollowUpGate } from '../../usage/context-monitor';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
+import { type PtyWriter, formatSlashCommand, injectSubmittedLine } from './inject-slash';
 
 const QUEUED: WireResponse = { action: 'queued' };
 

@@ -49,8 +49,8 @@
  * tool; it is internal-only.
  */
 
-import type { ParentDispatchHandler } from '../parent-dispatch.ts';
-import type { WireRequest, WireResponse } from '../wire.ts';
+import type { ParentDispatchHandler } from '../parent-dispatch';
+import type { WireRequest, WireResponse } from '../wire';
 
 /**
  * Sink for the formatted slash-command payload. In production this wraps

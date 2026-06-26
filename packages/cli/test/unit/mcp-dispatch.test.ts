@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isMcpSubcommand, parseMcpFlags } from '../../src/mcp/dispatch.ts';
+import { isMcpSubcommand, parseMcpFlags } from '../../src/mcp/dispatch';
 
 describe('isMcpSubcommand', () => {
   test('detects "mcp" at position 0', () => {

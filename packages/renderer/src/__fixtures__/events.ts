@@ -6,7 +6,7 @@
  * live in slice A's recordings.
  */
 
-import type { ClaudeEvent } from "../types/events.ts";
+import type { ClaudeEvent } from "../types/events";
 
 export const fixtureSession: ClaudeEvent[] = [
   {

@@ -20,7 +20,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { insertFlagsBeforeSentinel } from '../argv/sentinel.ts';
+import { insertFlagsBeforeSentinel } from '../argv/sentinel';
 
 export interface LoadFragmentsResult {
   content: string;

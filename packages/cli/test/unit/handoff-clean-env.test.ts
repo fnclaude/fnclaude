@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { cleanEnvForSpawn } from '../../src/handoff/clean-env.ts';
+import { cleanEnvForSpawn } from '../../src/handoff/clean-env';
 
 describe('cleanEnvForSpawn', () => {
   test('drops FNC_SOCKET, FNCLAUDE_HANDOFF, CLAUDE_CODE_SESSION_ID', () => {

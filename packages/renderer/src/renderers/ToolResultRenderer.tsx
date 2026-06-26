@@ -1,8 +1,8 @@
 import { Text } from "ink";
-import type { ElementId, ToolResultBlock, Visibility } from "../types/events.ts";
-import { BashOutput } from "./BashOutput.tsx";
-import { ErrorRenderer } from "./ErrorRenderer.tsx";
-import { ReadContent } from "./ReadContent.tsx";
+import type { ElementId, ToolResultBlock, Visibility } from "../types/events";
+import { BashOutput } from "./BashOutput";
+import { ErrorRenderer } from "./ErrorRenderer";
+import { ReadContent } from "./ReadContent";
 
 export interface ToolResultRendererProps {
   block: ToolResultBlock;

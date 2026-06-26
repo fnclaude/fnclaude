@@ -14,7 +14,7 @@
  * Wave 2.
  */
 
-import type { WireRequest, WireResponse } from '../wire.ts';
+import type { WireRequest, WireResponse } from '../wire';
 import {
   defaultSpawn,
   defaultWhich,
@@ -22,7 +22,7 @@ import {
   runBackend,
   type SpawnFn,
   type WhichFn,
-} from './clipboard-backends.ts';
+} from './clipboard-backends';
 
 export interface HandleCopyToClipboardDeps {
   which?: WhichFn;

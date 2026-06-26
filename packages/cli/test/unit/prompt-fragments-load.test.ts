@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import {
   injectFragments,
   loadFragments,
-} from '../../src/prompts/load.ts';
+} from '../../src/prompts/load';
 
 let tmpRoot: string;
 let promptsDir: string;

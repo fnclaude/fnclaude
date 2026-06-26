@@ -17,16 +17,16 @@
 
 import { mkdirSync } from 'node:fs';
 
-import { createFileSink } from './file-sink.ts';
-import { computeLogDir, computeLogFilePath } from './log-path.ts';
+import { createFileSink } from './file-sink';
+import { computeLogDir, computeLogFilePath } from './log-path';
 import {
   createLogger,
   type Logger,
   NOOP_LOGGER,
   parseLevel,
   type LogLevel,
-} from './logger.ts';
-import { pruneLogDir } from './prune.ts';
+} from './logger';
+import { pruneLogDir } from './prune';
 
 const DEFAULT_LEVEL: LogLevel = 'info';
 const DEFAULT_KEEP = 50;

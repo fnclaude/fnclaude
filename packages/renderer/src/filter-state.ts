@@ -6,7 +6,7 @@
  * state in a useState/useReducer.
  */
 
-import type { ElementId, FilterState, Preset, Visibility } from "./types/events.ts";
+import type { ElementId, FilterState, Preset, Visibility } from "./types/events";
 
 /**
  * Preset defaults table. Mirror of the table in docs/filter-state-spec.md.

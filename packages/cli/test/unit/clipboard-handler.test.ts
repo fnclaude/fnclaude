@@ -7,8 +7,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { handleCopyToClipboard } from '../../src/mcp/handlers/clipboard.ts';
-import type { WhichFn, SpawnFn } from '../../src/mcp/handlers/clipboard-backends.ts';
+import { handleCopyToClipboard } from '../../src/mcp/handlers/clipboard';
+import type { WhichFn, SpawnFn } from '../../src/mcp/handlers/clipboard-backends';
 
 const whichWlCopy: WhichFn = (name) => (name === 'wl-copy' ? '/usr/bin/wl-copy' : null);
 const whichNone: WhichFn = () => null;

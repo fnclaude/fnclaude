@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createFileSink } from '../../src/log/file-sink.ts';
-import type { LogRecord } from '../../src/log/logger.ts';
+import { createFileSink } from '../../src/log/file-sink';
+import type { LogRecord } from '../../src/log/logger';
 
 const rec: LogRecord = { t: 1, pid: 2, ppid: 3, lvl: 'info', ev: 'boot', cwd: '/tmp' };
 

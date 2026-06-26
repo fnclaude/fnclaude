@@ -37,9 +37,9 @@ import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { startMcpListener, type McpListener } from '../../src/mcp/listener.ts';
-import { createParentDispatcher } from '../../src/mcp/parent-dispatch.ts';
-import type { WireOp, WireRequest, WireResponse } from '../../src/mcp/wire.ts';
+import { startMcpListener, type McpListener } from '../../src/mcp/listener';
+import { createParentDispatcher } from '../../src/mcp/parent-dispatch';
+import type { WireOp, WireRequest, WireResponse } from '../../src/mcp/wire';
 
 const CLI_ROOT = resolve(__dirname, '..', '..');
 const BIN = resolve(CLI_ROOT, 'bin', 'fnc.js');

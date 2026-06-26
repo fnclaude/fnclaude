@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import type { Visibility } from "../types/events.ts";
-import { countLines } from "./summarize.ts";
+import type { Visibility } from "../types/events";
+import { countLines } from "./summarize";
 
 export interface TaskNestedProps {
   description?: string | undefined;

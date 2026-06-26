@@ -24,7 +24,7 @@ import {
   encodeCWDForProjects,
   readLivePermissionMode,
   sessionJSONLPath,
-} from '../../src/launch/live-permission-reader.ts';
+} from '../../src/launch/live-permission-reader';
 
 const cleanupPaths: string[] = [];
 let savedHome: string | undefined;

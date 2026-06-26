@@ -22,8 +22,8 @@ import {
   applyOverrides,
   preserveArgs,
   splitLeadingMagic,
-} from '../argv/preserve-args.ts';
-import { parseCrossCwdHint } from './cross-cwd-parse.ts';
+} from '../argv/preserve-args';
+import { parseCrossCwdHint } from './cross-cwd-parse';
 
 export interface CrossCwdRelaunchInput {
   /** claude's exit code. Non-zero short-circuits — no relaunch. */

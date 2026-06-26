@@ -23,7 +23,7 @@ import {
   MODEL_PRICING,
   computeSessionUsage,
   readSessionUsage,
-} from '../../src/usage/session-usage.ts';
+} from '../../src/usage/session-usage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture helpers

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { scanMagic } from '../../src/argv/magic.ts';
+import { scanMagic } from '../../src/argv/magic';
 
 describe('scanMagic — empty and trivial cases', () => {
   test('empty argv', () => {

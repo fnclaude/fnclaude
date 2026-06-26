@@ -17,7 +17,7 @@ import {
   type WhichFn,
   type SpawnFn,
   type SpawnedProc,
-} from '../../src/mcp/handlers/clipboard-backends.ts';
+} from '../../src/mcp/handlers/clipboard-backends';
 
 function whichOf(present: Record<string, string>): WhichFn {
   return (name: string): string | null => (name in present ? present[name]! : null);

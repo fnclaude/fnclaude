@@ -11,7 +11,7 @@
  * `(message.id, index)` keying must survive.
  */
 
-import type { AssistantEvent, StreamEvent } from "../types/events.ts";
+import type { AssistantEvent, StreamEvent } from "../types/events";
 
 const M1 = "msg_text_tool";
 const M2 = "msg_answer";

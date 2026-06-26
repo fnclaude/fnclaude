@@ -10,8 +10,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { seedUltracodePrompt } from '../../src/launch/seed-prompt.ts';
-import type { PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
+import { seedUltracodePrompt } from '../../src/launch/seed-prompt';
+import type { PtyWriter } from '../../src/mcp/handlers/inject-slash';
 
 function spyWriter(): { write: PtyWriter; calls: string[] } {
   const calls: string[] = [];
