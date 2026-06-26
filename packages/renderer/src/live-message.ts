@@ -128,7 +128,17 @@ export function liveReducer(state: LiveState, event: StreamEvent): LiveState {
  */
 export function finalizeForAssistant(state: LiveState, event: AssistantEvent): LiveState {
   if (state === null) return state;
-  if (event.message.id !== state.id) return state;
+
+  // Match by id when BOTH sides carry a concrete one. If either id is missing
+  // or empty (AssistantMessage.id is optional, and a message_start can arrive
+  // without one → state.id === ""), fall back to block-index matching so the
+  // preview always gets consumed by its committed event. Bailing here was the
+  // double-render bug: the live block stayed in flight and rendered alongside
+  // the committed copy. Only a concrete *different* id means a different
+  // message — leave that live state intact.
+  const evId = event.message.id;
+  const idMismatch = evId !== undefined && evId !== "" && state.id !== "" && evId !== state.id;
+  if (idMismatch) return state;
 
   const committedCount = state.committedCount + 1;
 

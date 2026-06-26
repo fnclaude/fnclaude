@@ -263,6 +263,64 @@ describe("<App /> token streaming", () => {
     instance.unmount();
   });
 
+  test("drops the live preview on finalize even when the assistant event has no id (no double render)", async () => {
+    let push!: (e: ClaudeEvent) => void;
+    const feed: StreamFeed = (emit) => {
+      push = emit.push;
+      return () => undefined;
+    };
+    const instance = render(<App streamFeed={feed} />);
+    await flush();
+
+    // A message_start with NO id (state.id becomes "") then a text block.
+    push({
+      type: "stream_event",
+      event: {
+        type: "message_start",
+        message: { model: "claude-opus-4-8", role: "assistant", content: [] },
+      },
+      session_id: "s",
+      uuid: "ms",
+    });
+    push({
+      type: "stream_event",
+      event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      session_id: "s",
+      uuid: "cbs",
+    });
+    push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "unique-answer-token" },
+      },
+      session_id: "s",
+      uuid: "cbd",
+    });
+    await flush();
+    // Preview shows the streamed text.
+    expect(instance.lastFrame() ?? "").toContain("unique-answer-token");
+
+    // Consolidated assistant event WITHOUT a message.id.
+    push({
+      type: "assistant",
+      session_id: "s",
+      uuid: "a",
+      message: {
+        model: "claude-opus-4-8",
+        role: "assistant",
+        content: [{ type: "text", text: "unique-answer-token" }],
+      },
+    });
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    // Exactly one copy — the lingering preview must not coexist with the
+    // committed render.
+    expect(frame.split("unique-answer-token").length - 1).toBe(1);
+    instance.unmount();
+  });
+
   test("never JSON.parses tool_use partial_json mid-stream (no throw, placeholder shown)", async () => {
     let push!: (e: ClaudeEvent) => void;
     const feed: StreamFeed = (emit) => {
