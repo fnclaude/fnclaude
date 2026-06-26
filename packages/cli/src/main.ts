@@ -144,7 +144,11 @@ const resolved = resolveInput({
   shellCwd,
   home: HOME,
   xdgConfigHome: process.env.XDG_CONFIG_HOME,
-  settings: { cloneTemplate: settings.cloneTemplate, hostAliases },
+  settings: {
+    cloneTemplate: settings.cloneTemplate,
+    worktreeTemplate: settings.worktreeTemplate,
+    hostAliases,
+  },
 });
 
 // Clone the ref into `destination`; if the clone fails *because the repo

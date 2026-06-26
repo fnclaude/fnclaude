@@ -245,6 +245,29 @@ describe('resolveInput — bare name disambiguated by local clones on disk', () 
     const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'needs-owner-lookup');
     expect(r.name).toBe('fnclaude');
   });
+
+  // Worktree exclusion must follow the user's configured worktreeTemplate
+  // separator, not a hardcoded `+`. A user whose worktrees are named
+  // `<clone>--wt--<workspace>` gets a clone-plus-worktree pair that must still
+  // resolve to exactly one clone.
+  test('custom worktreeTemplate separator excludes the worktree sibling', () => {
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
+    mkdirSync(join(HOME, 'src/fnclaude@fnclaude--wt--feat-renderer'), { recursive: true });
+    const r = assertKind(
+      resolveInput(
+        args({
+          input: 'fnclaude',
+          settings: {
+            cloneTemplate: '~/src/{repo}@{owner}',
+            worktreeTemplate: '~/src/{repo}@{owner}--wt--{input}',
+            hostAliases: { 'github.com': 'gh' },
+          },
+        }),
+      ),
+      'launch',
+    );
+    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
+  });
 });
 
 describe('resolveInput — dual lookup ambiguity', () => {

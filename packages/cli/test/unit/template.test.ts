@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyTemplate, cloneTemplateVars, type TemplateVars } from '../../src/repo/template';
+import {
+  applyTemplate,
+  cloneTemplateVars,
+  deriveWorktreeMarker,
+  type TemplateVars,
+} from '../../src/repo/template';
 
 const ok = (s: string) => ({ ok: true as const, value: s });
 
@@ -107,5 +112,30 @@ describe('cloneTemplateVars', () => {
     expect(
       applyTemplate('~/src/{host-short}/{owner}/{repo}', vars),
     ).toEqual(ok('~/src/gh/fnrhombus/arch-setup'));
+  });
+});
+
+describe('deriveWorktreeMarker', () => {
+  test('worktreeTemplate suffixes cloneTemplate: literal before placeholder is the marker', () => {
+    expect(deriveWorktreeMarker('~/src/{repo}@{owner}', '~/src/{repo}@{owner}+{input}')).toBe('+');
+  });
+
+  test('multi-char custom separator is derived verbatim', () => {
+    expect(
+      deriveWorktreeMarker('~/src/{repo}@{owner}', '~/src/{repo}@{owner}--wt--{input}'),
+    ).toBe('--wt--');
+  });
+
+  test('absent worktreeTemplate falls back to the documented + default', () => {
+    expect(deriveWorktreeMarker('~/src/{repo}@{owner}', '')).toBe('+');
+  });
+
+  test('worktreeTemplate not sharing the clone prefix falls back to + default', () => {
+    // Worktrees live in a different tree entirely; no same-dir marker applies.
+    expect(deriveWorktreeMarker('~/src/{repo}@{owner}', '~/wt/{repo}-{input}')).toBe('+');
+  });
+
+  test('worktreeTemplate equal to cloneTemplate (no suffix) falls back to + default', () => {
+    expect(deriveWorktreeMarker('~/src/{repo}@{owner}', '~/src/{repo}@{owner}')).toBe('+');
   });
 });

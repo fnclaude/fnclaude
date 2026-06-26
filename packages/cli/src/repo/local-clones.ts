@@ -27,7 +27,7 @@ import { readdirSync } from 'node:fs';
 import { dirname, sep } from 'node:path';
 
 import { expandTilde } from '../path/resolve';
-import { applyTemplate, cloneTemplateVars } from './template';
+import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker } from './template';
 
 // Sentinel substituted for {owner} so we can locate the owner segment in the
 // fully-expanded path. Chosen to never collide with a real owner name or any
@@ -37,6 +37,12 @@ const OWNER_SENTINEL = '\uFFFF';
 export interface FindLocalClonesArgs {
   name: string;
   template: string;
+  /**
+   * The user's `worktreeTemplate` (repoSettings), used to derive the separator
+   * that distinguishes worktree siblings from real clones. Omitted/empty falls
+   * back to the documented default marker (see {@link deriveWorktreeMarker}).
+   */
+  worktreeTemplate?: string;
   host: string;
   hostAliases: Record<string, string>;
   home: string;
@@ -74,6 +80,10 @@ export function findLocalClones(args: FindLocalClonesArgs): FindLocalClonesResul
   // matching it against prefix+<owner>+suffix.
   const scanDir = dirname(expanded.replace(OWNER_SENTINEL, ''));
 
+  // Worktree-sibling marker, derived from the user's worktreeTemplate (not
+  // hardcoded). A clone's owner segment never contains it; a worktree's does.
+  const worktreeMarker = deriveWorktreeMarker(args.template, args.worktreeTemplate ?? '');
+
   const paths: string[] = [];
   let entries: string[];
   try {
@@ -88,9 +98,15 @@ export function findLocalClones(args: FindLocalClonesArgs): FindLocalClonesResul
     if (owner === null) {
       continue;
     }
-    // Reject worktree siblings (owner segment carries a +workspace suffix)
-    // and any owner that would span a path separator.
-    if (owner.includes('+') || owner.includes('/') || owner.includes(sep) || owner === '') {
+    // Reject worktree siblings (owner segment carries the derived worktree
+    // marker before its workspace name) and any owner that would span a path
+    // separator.
+    if (
+      (worktreeMarker !== '' && owner.includes(worktreeMarker)) ||
+      owner.includes('/') ||
+      owner.includes(sep) ||
+      owner === ''
+    ) {
       continue;
     }
     paths.push(`${scanDir}${sep}${entry}`);
