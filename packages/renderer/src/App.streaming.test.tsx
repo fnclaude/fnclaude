@@ -6,7 +6,7 @@
  *   - system/init, system/status, rate_limit_event: dropped (returned null)
  *   - unknown top-level event: dropped (final `return null`)
  *   - live streaming preview + finalize-on-assistant: no reducer wired
- *   - glow: never disabled for a live preview (there was no live preview)
+ *   - markdown: live preview + committed text both render natively (no glow)
  */
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
@@ -180,18 +180,13 @@ describe("<App /> token streaming", () => {
     instance.unmount();
   });
 
-  test("glow is disabled for the live preview and enabled for committed text", async () => {
-    const calls: string[] = [];
-    const glowSpy = (md: string) => {
-      calls.push(md);
-      return `[glow]${md}`;
-    };
+  test("live preview and committed text both render natively (no markup leak)", async () => {
     let push!: (e: ClaudeEvent) => void;
     const feed: StreamFeed = (emit) => {
       push = emit.push;
       return () => undefined;
     };
-    const instance = render(<App streamFeed={feed} glow={glowSpy} />);
+    const instance = render(<App streamFeed={feed} />);
     await flush();
 
     // Stream the text deltas only (no assistant event yet).
@@ -199,14 +194,15 @@ describe("<App /> token streaming", () => {
       push(ev);
       await flush();
     }
-    // Live preview rendered raw — glow must NOT have run on the partial text.
-    expect(calls).not.toContain("Hi\n\nNow the file:");
+    // Live preview is rendered through MarkdownRenderer.
     expect(instance.lastFrame() ?? "").toContain("Now the file:");
 
-    // Finalize: the committed text path DOES run glow.
+    // Finalize: the committed text path renders the same content, once.
     push(assistantMsg1Text);
     await flush();
-    expect(calls).toContain("Hi\n\nNow the file:");
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("Now the file:");
+    expect(frame.split("Now the file:").length - 1).toBe(1);
     instance.unmount();
   });
 });
