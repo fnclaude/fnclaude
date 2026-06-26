@@ -213,7 +213,7 @@ export interface MaybeMountRendererArgs {
 }
 
 /** Production low-level spawn: Bun.spawn with piped stdio, draining stderr. */
-function makeProdSpawnProc(onStderr: (line: string) => void): SpawnProc {
+export function makeProdSpawnProc(onStderr: (line: string) => void): SpawnProc {
   return (cmd, opts) => {
     const proc = Bun.spawn(cmd, {
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
@@ -231,9 +231,26 @@ function makeProdSpawnProc(onStderr: (line: string) => void): SpawnProc {
         // best-effort — a stderr drain failure must not break the session
       }
     })();
+    // Bun.spawn returns a FileSink for stdin when stdin:'pipe'. The renderer's
+    // subscribeToClaude calls `.getWriter()` on the SpawnResult's stdin, which a
+    // FileSink lacks — so it must be wrapped in a real WritableStream or the
+    // conversation crashes the instant it mounts. Mirrors the wrapper in
+    // claude-process.ts's defaultSpawn so the injected and self-spawn paths
+    // expose the same surface.
+    const sink = proc.stdin;
     return {
       stdout: proc.stdout as ReadableStream<Uint8Array>,
-      stdin: proc.stdin as WritableStream<Uint8Array>,
+      stdin: new WritableStream<Uint8Array>({
+        async write(chunk) {
+          await sink.write(chunk);
+        },
+        async close() {
+          await sink.end();
+        },
+        abort() {
+          sink.end();
+        },
+      }),
       exited: proc.exited,
       kill: () => proc.kill(),
     };

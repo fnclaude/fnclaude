@@ -31,6 +31,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildRendererArgs,
+  makeProdSpawnProc,
   maybeMountRenderer,
   shouldUseRenderer,
   type MountOptions,
@@ -370,5 +371,31 @@ describe('maybeMountRenderer — defensive degradation', () => {
     });
     expect(result).toBe(false);
     expect(called).toBe(false);
+  });
+});
+
+describe('makeProdSpawnProc — stdin must be a real WritableStream', () => {
+  // Regression: the production spawn returned Bun's raw FileSink cast as a
+  // WritableStream. The renderer's subscribeToClaude calls `.getWriter()` on
+  // it the instant it mounts (claude-process.ts) — and a FileSink has no
+  // getWriter, so a `FNC_RENDERER=1` conversation crashed on mount. The fix
+  // wraps the FileSink in a WritableStream; this test exercises that surface
+  // with `cat` standing in for the claude pipe (echoes stdin to stdout).
+  test('returned stdin exposes getWriter() and round-trips a write to the child', async () => {
+    const spawnProc = makeProdSpawnProc(() => {});
+    const proc = spawnProc(['cat'], {
+      env: { PATH: process.env.PATH ?? '' },
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    const writer = proc.stdin.getWriter();
+    await writer.write(new TextEncoder().encode('ping\n'));
+    await writer.close();
+
+    const out = await new Response(proc.stdout).text();
+    expect(out).toContain('ping');
+    await proc.exited;
   });
 });
