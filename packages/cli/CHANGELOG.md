@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.1...cli-v2.13.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* **cli:** wrap Bun FileSink stdin so combined-mode renderer mounts ([#245](https://github.com/fnclaude/fnclaude/issues/245)) ([9dcabe7](https://github.com/fnclaude/fnclaude/commit/9dcabe74972b3c0bcd4dc25840c977f46040c19f))
+
 ## [2.13.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.0...cli-v2.13.1) (2026-06-19)
 
 
