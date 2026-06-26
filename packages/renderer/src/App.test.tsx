@@ -97,6 +97,18 @@ describe("<App />", () => {
     instance.unmount();
   });
 
+  test("renders the input prompt even with an empty draft (bare session)", async () => {
+    // Regression: a bare session (no draft typed, no events) used to render
+    // the prompt line as `null`, leaving just the status line over a blank
+    // screen — the session looked dead. The prompt marker must always show.
+    const instance = render(<App initialEvents={[]} />);
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("> ");
+    expect(frame).toContain("type a message and press Enter");
+    instance.unmount();
+  });
+
   test("ingests events and shows Bash command (input is `show` in normal)", async () => {
     const instance = render(<App initialEvents={fixtureSession} />);
     await flush();
