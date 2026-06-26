@@ -18,6 +18,8 @@
  * exercise the wiring without actually killing or re-executing.
  */
 
+import { existsSync } from 'node:fs';
+
 import { execImage } from './exec-image';
 import { killAndExec, type KillAndExecArgs, type SignalName } from './kill-and-exec';
 import type { HandoffTrigger } from './trigger';
@@ -157,6 +159,18 @@ export interface ReexecSelfArgs {
   ) => Pick<Bun.Subprocess, 'exited'>;
   /** Test seam: process exit. Defaults to process.exit. */
   exit?: (code: number) => never;
+  /**
+   * Test seam: does the captured fnc bin script still exist on disk?
+   * Defaults to `existsSync`. A live session captures the bin as the
+   * version-pinned mise path; `mise upgrade` deletes that dir out from
+   * under it, so we check before re-exec'ing into a dead path.
+   */
+  binExists?: (path: string) => boolean;
+  /**
+   * Test seam: resolve the `fnc` command from PATH (the stable mise shim,
+   * which survives version-dir deletion). Defaults to `Bun.which('fnc')`.
+   */
+  whichFnc?: () => string | null;
 }
 
 export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
@@ -179,6 +193,8 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
       }));
   const exec = args.exec ?? execImage;
   const exit = args.exit ?? ((code: number): never => process.exit(code));
+  const binExists = args.binExists ?? ((p: string): boolean => existsSync(p));
+  const whichFnc = args.whichFnc ?? ((): string | null => Bun.which('fnc'));
 
   // Rewrite FNC_ARGS_JSON to THIS relaunch's argv. The parent inherited the
   // var from the node→bun preflight shim (bin/fnc.js), where it holds the
@@ -205,11 +221,25 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
   // silentRelaunch / silentRelaunchHandoff (pty_run_unix.go).
   clearScreen(CLEAR_SCREEN_SEQ);
 
+  // Decide what to re-exec. Normally we relaunch via `bun <fncBin> …`, the
+  // same script/runtime we're running. But a long-running session captures
+  // fncBin as the VERSION-PINNED mise path
+  // (…/installs/npm-fnclaude-cli/<VER>/…/bin/fnc.js); `mise upgrade` deletes
+  // that version dir out from under the live session, so re-exec'ing
+  // `bun <stale-path>` dies with "Module not found". When the captured bin
+  // is gone, re-resolve the `fnc` COMMAND from PATH (the mise shim, which is
+  // stable across version-dir deletion) and exec it DIRECTLY — no bun prefix,
+  // because the shim re-bootstraps the runtime + preflight itself, and mise
+  // dispatches on argv[0]'s basename. If PATH resolution also fails, fall
+  // back to the stale `bun <fncBin>` best-effort so we don't regress.
+  const fncCmd = binExists(fncBin) ? null : whichFnc();
+  const relaunchArgv = fncCmd ? [fncCmd, ...args.argv] : [bunExec, fncBin, ...args.argv];
+
   // Primary path: true execve — replaces the running fnc image, so no
   // ancestor generation survives the relaunch (#205 symptom 1). execImage
   // never returns on success; a `false` return means execve isn't available
   // (or failed), so fall back to spawn-and-wait.
-  const replaced = exec([bunExec, fncBin, ...args.argv], childEnv);
+  const replaced = exec(relaunchArgv, childEnv);
   if (replaced !== false) {
     // Unreachable in practice — execve doesn't return on success. Guard
     // against a seam that lies about its return so we never silently fall
@@ -217,7 +247,7 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
     return exit(0);
   }
 
-  const child = spawn([bunExec, fncBin, ...args.argv], childEnv);
+  const child = spawn(relaunchArgv, childEnv);
   const code = await child.exited;
   return exit(code);
 }

@@ -133,3 +133,78 @@ describe('reexecSelf — relaunch argv overrides inherited FNC_ARGS_JSON', () =>
     );
   });
 });
+
+describe('reexecSelf — stale captured bin path after mise upgrade', () => {
+  // A long-running session captures the fnc bin as the VERSION-PINNED mise
+  // path (…/installs/npm-fnclaude-cli/<VER>/…/bin/fnc.js). `mise upgrade`
+  // deletes that version dir out from under the live session, so the
+  // captured path no longer exists. Re-exec'ing `bun <stale-path>` dies with
+  // "Module not found". When the captured bin is gone, reexecSelf must
+  // re-resolve the `fnc` COMMAND from PATH (the stable mise shim, which
+  // survives version-dir deletion) and exec it directly — no bun prefix,
+  // since the shim re-bootstraps the runtime itself.
+  const STALE_BIN =
+    '/home/tom/.local/share/mise/installs/npm-fnclaude-cli/2.13.1/lib/node_modules/@fnclaude/cli/bin/fnc.js';
+  const SHIM = '/home/tom/.local/share/mise/shims/fnc';
+  const BUN = '/runtime/bin/bun';
+
+  test('bin gone + PATH resolves → exec the shim directly, no bun prefix', async () => {
+    let execArgv: string[] | undefined;
+    await reexecSelf({
+      argv: ['/dest', '--resume', 'x'],
+      bunExec: BUN,
+      fncBin: STALE_BIN,
+      clearScreen: () => {},
+      binExists: () => false, // version dir deleted by `mise upgrade`
+      whichFnc: () => SHIM,
+      exec: (argv) => {
+        execArgv = argv;
+        return true as unknown as false;
+      },
+      spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+      exit: () => undefined as never,
+    });
+
+    expect(execArgv).toEqual([SHIM, '/dest', '--resume', 'x']);
+  });
+
+  test('bin present → unchanged: exec [bunExec, fncBin, ...argv]', async () => {
+    let execArgv: string[] | undefined;
+    await reexecSelf({
+      argv: ['/dest', '--resume', 'x'],
+      bunExec: BUN,
+      fncBin: STALE_BIN,
+      clearScreen: () => {},
+      binExists: () => true,
+      whichFnc: () => SHIM,
+      exec: (argv) => {
+        execArgv = argv;
+        return true as unknown as false;
+      },
+      spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+      exit: () => undefined as never,
+    });
+
+    expect(execArgv).toEqual([BUN, STALE_BIN, '/dest', '--resume', 'x']);
+  });
+
+  test('bin gone + PATH resolution fails → best-effort [bunExec, fncBin, ...argv]', async () => {
+    let execArgv: string[] | undefined;
+    await reexecSelf({
+      argv: ['/dest', '--resume', 'x'],
+      bunExec: BUN,
+      fncBin: STALE_BIN,
+      clearScreen: () => {},
+      binExists: () => false,
+      whichFnc: () => null, // not on PATH either
+      exec: (argv) => {
+        execArgv = argv;
+        return true as unknown as false;
+      },
+      spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+      exit: () => undefined as never,
+    });
+
+    expect(execArgv).toEqual([BUN, STALE_BIN, '/dest', '--resume', 'x']);
+  });
+});
