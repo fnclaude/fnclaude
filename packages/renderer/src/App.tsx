@@ -184,12 +184,18 @@ function UserRender({
  * prompt affordance.
  */
 function UserPromptRender({ text }: { text: string }): React.ReactElement {
-  // Single <Text> so the marker and body stay contiguous (sibling <Text>s would
-  // interleave SGR resets between them). bold+cyan reads as a distinct prompt
-  // bar against the assistant's plain text.
+  // The body routes through MarkdownRenderer (same as assistant text) so any
+  // markdown the user typed renders styled, never as raw syntax. The cyan "›"
+  // marker keeps the native prompt-bar affordance; it sits in a row beside the
+  // markdown block.
   return (
-    <Box marginTop={1} marginBottom={1}>
-      <Text bold color="cyan">{`› ${text}`}</Text>
+    <Box marginTop={1} marginBottom={1} flexDirection="row">
+      <Text bold color="cyan">
+        {"› "}
+      </Text>
+      <Box flexDirection="column" flexGrow={1}>
+        <MarkdownRenderer text={text} />
+      </Box>
     </Box>
   );
 }

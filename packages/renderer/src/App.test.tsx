@@ -263,10 +263,43 @@ describe("<App /> injected subscription", () => {
 
     const frame = instance.lastFrame() ?? "";
     // The submitted prompt is now visible in the transcript (claude does not
-    // echo user turns back), prefixed with the native-style › marker.
-    expect(frame).toContain("› hi");
+    // echo user turns back), prefixed with the native-style › marker. The body
+    // routes through MarkdownRenderer, so the marker and text are separate
+    // nodes rather than one contiguous string.
+    expect(frame).toContain("›");
+    expect(frame).toContain("hi");
     // And it routed to the subscription.
     expect(fake.sendUserTurn).toHaveBeenCalledWith("hi");
+    instance.unmount();
+  });
+
+  test("renders a submitted prompt as markdown (no literal ** for bold)", async () => {
+    const fake = fakeSubscription();
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    for (const ch of "**bold**") send(ch, { ...baseKey });
+    await flush();
+    send("", { ...baseKey, return: true });
+    await flush();
+
+    const frame = instance.lastFrame() ?? "";
+    // The body is markdown-rendered (same MarkdownRenderer as assistant text),
+    // so the ** syntax is consumed — the transcript shows styled text, never
+    // the literal markers.
+    expect(frame).toContain("bold");
+    expect(frame).not.toContain("**");
+    // The raw markdown is still what's sent to claude.
+    expect(fake.sendUserTurn).toHaveBeenCalledWith("**bold**");
     instance.unmount();
   });
 
