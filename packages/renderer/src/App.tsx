@@ -458,7 +458,14 @@ export function App(props: AppProps): React.ReactElement {
         })}
       </Box>
       <LiveRegion live={live} visibilityFor={visibilityFor} />
-      {draft.length > 0 ? <Text>{`> ${draft}`}</Text> : null}
+      {draft.length > 0 ? (
+        <Text>{`> ${draft}`}</Text>
+      ) : (
+        <Text>
+          {"> "}
+          <Text dimColor>type a message and press Enter</Text>
+        </Text>
+      )}
       <Text>{statusLine}</Text>
     </Box>
   );
