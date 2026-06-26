@@ -178,6 +178,22 @@ function UserRender({
   );
 }
 
+/**
+ * A prompt the user typed and submitted, rendered as a native-style bar so the
+ * conversation reads as a dialogue. The "› " marker mirrors Claude Code's own
+ * prompt affordance.
+ */
+function UserPromptRender({ text }: { text: string }): React.ReactElement {
+  // Single <Text> so the marker and body stay contiguous (sibling <Text>s would
+  // interleave SGR resets between them). bold+cyan reads as a distinct prompt
+  // bar against the assistant's plain text.
+  return (
+    <Box marginTop={1} marginBottom={1}>
+      <Text bold color="cyan">{`› ${text}`}</Text>
+    </Box>
+  );
+}
+
 function ResultRender({
   event,
   suppressBody,
@@ -361,6 +377,9 @@ export function App(props: AppProps): React.ReactElement {
     // Text input: typed chars go into the draft; Enter submits.
     if (key.return) {
       if (draft.length > 0) {
+        // Append the prompt to the transcript — claude never echoes user turns
+        // back, so without this the submitted text would vanish.
+        setEvents((prev) => [...prev, { type: "user_prompt", text: draft }]);
         subRef.current?.sendUserTurn(draft);
         setDraft("");
       }
@@ -425,6 +444,9 @@ export function App(props: AppProps): React.ReactElement {
           const key = "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`;
           if (event.type === "assistant") {
             return <AssistantRender key={key} event={event} visibilityFor={visibilityFor} />;
+          }
+          if (event.type === "user_prompt") {
+            return <UserPromptRender key={key} text={event.text} />;
           }
           if (event.type === "user") {
             return (

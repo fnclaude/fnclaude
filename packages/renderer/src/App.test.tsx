@@ -241,6 +241,35 @@ describe("<App /> injected subscription", () => {
     instance.unmount();
   });
 
+  test("Enter appends the typed prompt to the transcript with a › marker", async () => {
+    const fake = fakeSubscription();
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    send("h", { ...baseKey });
+    send("i", { ...baseKey });
+    await flush();
+    send("", { ...baseKey, return: true });
+    await flush();
+
+    const frame = instance.lastFrame() ?? "";
+    // The submitted prompt is now visible in the transcript (claude does not
+    // echo user turns back), prefixed with the native-style › marker.
+    expect(frame).toContain("› hi");
+    // And it routed to the subscription.
+    expect(fake.sendUserTurn).toHaveBeenCalledWith("hi");
+    instance.unmount();
+  });
+
   test("does NOT close the subscription on unmount (handle owns close)", async () => {
     const fake = fakeSubscription();
     const instance = render(<App subscription={fake.sub} />);
