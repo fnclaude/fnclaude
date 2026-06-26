@@ -12,7 +12,25 @@ import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { App, type StreamFeed } from "./App";
 import { assistantMsg1Text, assistantMsg1Tool, streamMsg1 } from "./__fixtures__/stream-events";
+import type { Key } from "./keybinds";
 import type { ClaudeEvent } from "./types/events";
+
+const baseKey: Key = {
+  upArrow: false,
+  downArrow: false,
+  leftArrow: false,
+  rightArrow: false,
+  pageDown: false,
+  pageUp: false,
+  return: false,
+  escape: false,
+  ctrl: false,
+  shift: false,
+  tab: false,
+  backspace: false,
+  delete: false,
+  meta: false,
+};
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -56,7 +74,7 @@ describe("<App /> faithful rendering", () => {
     instance.unmount();
   });
 
-  test("renders the system/init session header", async () => {
+  test("hides the system/init session header by default (meta noise)", async () => {
     const events: ClaudeEvent[] = [
       {
         type: "system",
@@ -70,8 +88,9 @@ describe("<App /> faithful rendering", () => {
     const instance = render(<App initialEvents={events} />);
     await flush();
     const frame = instance.lastFrame() ?? "";
-    expect(frame).toContain("sess-xyz");
-    expect(frame).toContain("/tmp/work");
+    // The session header is meta noise — hidden under the normal preset.
+    expect(frame).not.toContain("sess-xyz");
+    expect(frame).not.toContain("session=");
     instance.unmount();
   });
 
@@ -91,7 +110,7 @@ describe("<App /> faithful rendering", () => {
     instance.unmount();
   });
 
-  test("renders rate_limit_event info instead of dropping it", async () => {
+  test("hides rate_limit_event by default (meta noise)", async () => {
     const events: ClaudeEvent[] = [
       {
         type: "rate_limit_event",
@@ -102,7 +121,24 @@ describe("<App /> faithful rendering", () => {
     const instance = render(<App initialEvents={events} />);
     await flush();
     const frame = instance.lastFrame() ?? "";
-    expect(frame).toContain("five_hour");
+    expect(frame).not.toContain("five_hour");
+    expect(frame).not.toContain("rate_limit");
+    instance.unmount();
+  });
+
+  test("hides non-init/status system events (e.g. thinking_tokens) by default", async () => {
+    const events = [
+      {
+        type: "system",
+        subtype: "thinking_tokens",
+        session_id: "s",
+        uuid: "u9",
+        thinking_tokens: 1234,
+      },
+    ] as unknown as ClaudeEvent[];
+    const instance = render(<App initialEvents={events} />);
+    await flush();
+    expect(instance.lastFrame() ?? "").not.toContain("thinking_tokens");
     instance.unmount();
   });
 
@@ -123,6 +159,71 @@ describe("<App /> faithful rendering", () => {
     const instance = render(<App initialEvents={events} />);
     await flush();
     expect(instance.lastFrame() ?? "").toContain("oops");
+    instance.unmount();
+  });
+});
+
+describe("<App /> meta-noise filter", () => {
+  test("Alt+m reveals the hidden session header", async () => {
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const events: ClaudeEvent[] = [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "sess-xyz",
+        uuid: "u1",
+        cwd: "/tmp/work",
+        model: "claude-opus-4-8",
+      },
+    ];
+    const instance = render(
+      <App
+        initialEvents={events}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    // Hidden by default.
+    expect(instance.lastFrame() ?? "").not.toContain("sess-xyz");
+
+    // Alt+m toggles the meta element → header repaints into view.
+    (dispatch as unknown as (i: string, k: Key) => void)("m", { ...baseKey, meta: true });
+    await flush();
+    expect(instance.lastFrame() ?? "").toContain("sess-xyz");
+    instance.unmount();
+  });
+
+  test("debug preset shows meta noise (rate_limit, header)", async () => {
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const events: ClaudeEvent[] = [
+      {
+        type: "rate_limit_event",
+        session_id: "s",
+        rate_limit_info: { status: "allowed", rateLimitType: "five_hour" },
+      },
+    ];
+    const instance = render(
+      <App
+        initialEvents={events}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+    expect(instance.lastFrame() ?? "").not.toContain("five_hour");
+
+    // normal → verbose → debug (Alt+0 cycles forward).
+    send("0", { ...baseKey, meta: true });
+    await flush();
+    send("0", { ...baseKey, meta: true });
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("preset: debug");
+    expect(frame).toContain("five_hour");
     instance.unmount();
   });
 });

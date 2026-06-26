@@ -25,6 +25,7 @@ Toggling an element flips its override: no override → set the opposite of the 
 6. `Write.content` — `tool_use` of `Write`, the content field
 7. `Task.nested` — `tool_use` of `Task`, the subagent prompt
 8. `errors` — blocks with `is_error: true` and result events with `is_error: true`
+- `meta` (Alt+m) — session-init header, non-init/status `system` events (e.g. `thinking_tokens`), and `rate_limit_event`s. Raw JSON noise; hidden everywhere but `debug`.
 
 **Always-shown content** (not filterable): assistant text, tool-call headers, result events' `result` text.
 
@@ -40,6 +41,7 @@ Toggling an element flips its override: no override → set the opposite of the 
 | Write.content | summary | summary | show | show |
 | Task.nested | summary | summary | show | show |
 | errors | show | show | show | show |
+| meta | hide | hide | hide | show |
 
 ## Visibility levels
 

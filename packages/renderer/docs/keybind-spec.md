@@ -12,8 +12,9 @@
 | `Alt+6` | `Write.content` |
 | `Alt+7` | `Task.nested` |
 | `Alt+8` | `errors` |
+| `Alt+m` | `meta` (session header, non-init/status `system` events, rate-limit events) |
 
-Each toggles the corresponding element's override (see [filter-state-spec.md](filter-state-spec.md)). Emits an in-pane status toast on toggle.
+Each toggles the corresponding element's override (see [filter-state-spec.md](filter-state-spec.md)). Emits an in-pane status toast on toggle. `meta` uses a mnemonic letter bind rather than a digit because `Alt+1`–`8` are taken and `Alt+9`/`Alt+0` cycle presets.
 
 ## Preset cycling
 

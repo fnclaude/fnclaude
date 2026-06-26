@@ -200,19 +200,36 @@ function ResultRender({
   return <ResultRenderer event={event} />;
 }
 
-function SystemRender({ event }: { event: SystemEvent }): React.ReactElement {
+function SystemRender({
+  event,
+  visibilityFor,
+}: {
+  event: SystemEvent;
+  visibilityFor: (id: ElementId) => Visibility;
+}): React.ReactElement | null {
   if (event.subtype === "init") {
+    // The session header is meta noise — hidden unless meta is shown (debug
+    // preset or Alt+m toggle).
+    if (visibilityFor("meta") === "hide") return null;
     return <SystemInit event={event} />;
   }
   if (event.subtype === "status") {
     return <Text dimColor>{`◌ ${event.status ?? "working"}…`}</Text>;
   }
-  // Any other system subtype (compact_boundary, can_use_tool, error, …):
-  // surface raw rather than drop.
+  // Any other system subtype (thinking_tokens, compact_boundary, error, …) is
+  // raw JSON noise — gated behind the meta filter rather than always shown.
+  if (visibilityFor("meta") === "hide") return null;
   return <RawJson value={event} label={`system/${event.subtype}`} />;
 }
 
-function RateLimitRender({ event }: { event: RateLimitEvent }): React.ReactElement {
+function RateLimitRender({
+  event,
+  visibilityFor,
+}: {
+  event: RateLimitEvent;
+  visibilityFor: (id: ElementId) => Visibility;
+}): React.ReactElement | null {
+  if (visibilityFor("meta") === "hide") return null;
   return <RawJson value={event.rate_limit_info ?? {}} label="rate_limit" />;
 }
 
@@ -424,10 +441,10 @@ export function App(props: AppProps): React.ReactElement {
             return <ResultRender key={key} event={event} suppressBody={dup} />;
           }
           if (event.type === "system") {
-            return <SystemRender key={key} event={event} />;
+            return <SystemRender key={key} event={event} visibilityFor={visibilityFor} />;
           }
           if (event.type === "rate_limit_event") {
-            return <RateLimitRender key={key} event={event} />;
+            return <RateLimitRender key={key} event={event} visibilityFor={visibilityFor} />;
           }
           if (event.type === "parse_error") {
             return <RawJson key={key} value={event.raw} label="parse_error" />;

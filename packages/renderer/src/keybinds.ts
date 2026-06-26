@@ -64,6 +64,13 @@ export function dispatchKey(input: string, key: Key): KeybindAction | null {
     return null;
   }
 
+  // Alt + m → toggle the meta (system/rate-limit/session) noise group.
+  // Digits 1-8 are taken and 9/0 cycle presets, so the noise group gets a
+  // mnemonic letter bind instead of an out-of-range digit.
+  if (key.meta && input === "m") {
+    return { kind: "toggleElement", element: "meta" };
+  }
+
   // Ctrl combos
   if (key.ctrl && !key.meta) {
     if (input === "l") return { kind: "repaint" };

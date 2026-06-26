@@ -193,7 +193,13 @@ export type ElementId =
   | "Read.content"
   | "Write.content"
   | "Task.nested"
-  | "errors";
+  | "errors"
+  /**
+   * System/JSON noise: the session-init header, non-init/status `system`
+   * events (e.g. thinking_tokens), and rate-limit events. Hidden in
+   * quiet/normal/verbose; shown only in `debug`. Toggle with Alt+m.
+   */
+  | "meta";
 
 export interface FilterState {
   preset: Preset;
