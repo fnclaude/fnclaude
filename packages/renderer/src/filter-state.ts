@@ -22,6 +22,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Write.content": "summary",
     "Task.nested": "summary",
     errors: "show",
+    meta: "hide",
   },
   normal: {
     thinking: "dim",
@@ -32,6 +33,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Write.content": "summary",
     "Task.nested": "summary",
     errors: "show",
+    meta: "hide",
   },
   verbose: {
     thinking: "dim",
@@ -42,6 +44,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Write.content": "show",
     "Task.nested": "show",
     errors: "show",
+    meta: "hide",
   },
   debug: {
     thinking: "show",
@@ -52,6 +55,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Write.content": "show",
     "Task.nested": "show",
     errors: "show",
+    meta: "show",
   },
 };
 

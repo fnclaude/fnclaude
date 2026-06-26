@@ -25,6 +25,8 @@ export { EditDiff } from "./EditDiff.tsx";
 export type { EditDiffProps } from "./EditDiff.tsx";
 export { ErrorRenderer } from "./ErrorRenderer.tsx";
 export type { ErrorRendererProps } from "./ErrorRenderer.tsx";
+export { MarkdownRenderer } from "./MarkdownRenderer.tsx";
+export type { MarkdownRendererProps } from "./MarkdownRenderer.tsx";
 export { RawJson } from "./RawJson.tsx";
 export type { RawJsonProps } from "./RawJson.tsx";
 export { ReadContent } from "./ReadContent.tsx";
@@ -37,12 +39,7 @@ export { SystemInit } from "./SystemInit.tsx";
 export type { SystemInitProps } from "./SystemInit.tsx";
 export { TaskNested } from "./TaskNested.tsx";
 export type { TaskNestedProps } from "./TaskNested.tsx";
-export {
-  detectGlowPath,
-  type GlowRunner,
-  runGlow,
-  TextRenderer,
-} from "./TextRenderer.tsx";
+export { TextRenderer } from "./TextRenderer.tsx";
 export type { TextRendererProps } from "./TextRenderer.tsx";
 export { ThinkingRenderer } from "./ThinkingRenderer.tsx";
 export type { ThinkingRendererProps } from "./ThinkingRenderer.tsx";

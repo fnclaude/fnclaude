@@ -13,7 +13,20 @@ export type ClaudeEvent =
   | ResultEvent
   | RateLimitEvent
   | StreamEvent
-  | ParseErrorEvent;
+  | ParseErrorEvent
+  | UserPromptEvent;
+
+/**
+ * Synthetic event for a prompt the user typed and submitted in the renderer.
+ * claude does NOT echo user turns back over stream-json, so without this the
+ * transcript would show only assistant replies. The renderer appends one of
+ * these on Enter to keep the conversation legible. Not a wire type — the
+ * `type` discriminator is namespaced so it can't collide with a real event.
+ */
+export interface UserPromptEvent {
+  type: "user_prompt";
+  text: string;
+}
 
 /**
  * Synthetic event the parser emits for a line it could not `JSON.parse`.
@@ -193,7 +206,13 @@ export type ElementId =
   | "Read.content"
   | "Write.content"
   | "Task.nested"
-  | "errors";
+  | "errors"
+  /**
+   * System/JSON noise: the session-init header, non-init/status `system`
+   * events (e.g. thinking_tokens), and rate-limit events. Hidden in
+   * quiet/normal/verbose; shown only in `debug`. Toggle with Alt+m.
+   */
+  | "meta";
 
 export interface FilterState {
   preset: Preset;

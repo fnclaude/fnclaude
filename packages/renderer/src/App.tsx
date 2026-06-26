@@ -40,11 +40,10 @@ import {
 } from "./live-message.ts";
 import {
   ErrorRenderer,
-  type GlowRunner,
+  MarkdownRenderer,
   RawJson,
   ResultRenderer,
   SystemInit,
-  TextRenderer,
   ThinkingRenderer,
   ToolResultRenderer,
   ToolUseRenderer,
@@ -97,12 +96,6 @@ export interface AppProps {
    */
   streamFeed?: StreamFeed;
   /**
-   * Glow runner for committed assistant text. Omitted → the module default
-   * (detect + run glow). Tests pass a spy to assert glow is run for committed
-   * text but never for the raw live preview.
-   */
-  glow?: GlowRunner | null;
-  /**
    * Test hook: receives the same handler `useInput` registers, so a test
    * can drive input deterministically without a TTY. Production code
    * never passes this — Ink wires real stdin.
@@ -118,22 +111,16 @@ interface ToolCallInfo {
 function AssistantRender({
   event,
   visibilityFor,
-  glow,
 }: {
   event: AssistantEvent;
   visibilityFor: (id: ElementId) => Visibility;
-  glow?: GlowRunner | null;
 }): React.ReactElement {
   return (
     <Box flexDirection="column">
       {event.message.content.map((block, idx) => {
         const k = `${event.uuid}-${idx}`;
         if (block.type === "text") {
-          return glow === undefined ? (
-            <TextRenderer key={k} text={block.text} />
-          ) : (
-            <TextRenderer key={k} text={block.text} glow={glow} />
-          );
+          return <MarkdownRenderer key={k} text={block.text} />;
         }
         if (block.type === "thinking") {
           return (
@@ -191,6 +178,22 @@ function UserRender({
   );
 }
 
+/**
+ * A prompt the user typed and submitted, rendered as a native-style bar so the
+ * conversation reads as a dialogue. The "› " marker mirrors Claude Code's own
+ * prompt affordance.
+ */
+function UserPromptRender({ text }: { text: string }): React.ReactElement {
+  // Single <Text> so the marker and body stay contiguous (sibling <Text>s would
+  // interleave SGR resets between them). bold+cyan reads as a distinct prompt
+  // bar against the assistant's plain text.
+  return (
+    <Box marginTop={1} marginBottom={1}>
+      <Text bold color="cyan">{`› ${text}`}</Text>
+    </Box>
+  );
+}
+
 function ResultRender({
   event,
   suppressBody,
@@ -206,31 +209,48 @@ function ResultRender({
     return <ErrorRenderer message={event.result} />;
   }
   if (suppressBody) {
-    // The answer is already rendered (glow'd) via AssistantRender; emit nothing
-    // for the duplicated body. A future PR can surface result metadata here.
+    // The answer is already rendered via AssistantRender; emit nothing for the
+    // duplicated body. A future PR can surface result metadata here.
     return null;
   }
   return <ResultRenderer event={event} />;
 }
 
-function SystemRender({ event }: { event: SystemEvent }): React.ReactElement {
+function SystemRender({
+  event,
+  visibilityFor,
+}: {
+  event: SystemEvent;
+  visibilityFor: (id: ElementId) => Visibility;
+}): React.ReactElement | null {
   if (event.subtype === "init") {
+    // The session header is meta noise — hidden unless meta is shown (debug
+    // preset or Alt+m toggle).
+    if (visibilityFor("meta") === "hide") return null;
     return <SystemInit event={event} />;
   }
   if (event.subtype === "status") {
     return <Text dimColor>{`◌ ${event.status ?? "working"}…`}</Text>;
   }
-  // Any other system subtype (compact_boundary, can_use_tool, error, …):
-  // surface raw rather than drop.
+  // Any other system subtype (thinking_tokens, compact_boundary, error, …) is
+  // raw JSON noise — gated behind the meta filter rather than always shown.
+  if (visibilityFor("meta") === "hide") return null;
   return <RawJson value={event} label={`system/${event.subtype}`} />;
 }
 
-function RateLimitRender({ event }: { event: RateLimitEvent }): React.ReactElement {
+function RateLimitRender({
+  event,
+  visibilityFor,
+}: {
+  event: RateLimitEvent;
+  visibilityFor: (id: ElementId) => Visibility;
+}): React.ReactElement | null {
+  if (visibilityFor("meta") === "hide") return null;
   return <RawJson value={event.rate_limit_info ?? {}} label="rate_limit" />;
 }
 
 export function App(props: AppProps): React.ReactElement {
-  const { subscription, initialEvents, streamFeed, glow, testInputBus } = props;
+  const { subscription, initialEvents, streamFeed, testInputBus } = props;
   const [events, setEvents] = useState<ClaudeEvent[]>(() => initialEvents ?? []);
   // Transient token-streaming state: an in-progress assistant message built
   // from `stream_event` deltas, rendered below the committed transcript and
@@ -357,6 +377,9 @@ export function App(props: AppProps): React.ReactElement {
     // Text input: typed chars go into the draft; Enter submits.
     if (key.return) {
       if (draft.length > 0) {
+        // Append the prompt to the transcript — claude never echoes user turns
+        // back, so without this the submitted text would vanish.
+        setEvents((prev) => [...prev, { type: "user_prompt", text: draft }]);
         subRef.current?.sendUserTurn(draft);
         setDraft("");
       }
@@ -401,7 +424,7 @@ export function App(props: AppProps): React.ReactElement {
 
   // Duplicate-answer guard: claude's `result.result` is a verbatim copy of the
   // final assistant text block, and both render → the answer prints twice.
-  // The last assistant text block is the canonical, glow-rendered copy, so a
+  // The last assistant text block is the canonical, markdown-rendered copy, so a
   // `result` whose text matches it is shown as a terminator only, not re-printed.
   const lastAssistantText = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
@@ -420,14 +443,10 @@ export function App(props: AppProps): React.ReactElement {
         {events.map((event, idx) => {
           const key = "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`;
           if (event.type === "assistant") {
-            return (
-              <AssistantRender
-                key={key}
-                event={event}
-                visibilityFor={visibilityFor}
-                {...(glow !== undefined ? { glow } : {})}
-              />
-            );
+            return <AssistantRender key={key} event={event} visibilityFor={visibilityFor} />;
+          }
+          if (event.type === "user_prompt") {
+            return <UserPromptRender key={key} text={event.text} />;
           }
           if (event.type === "user") {
             return (
@@ -444,10 +463,10 @@ export function App(props: AppProps): React.ReactElement {
             return <ResultRender key={key} event={event} suppressBody={dup} />;
           }
           if (event.type === "system") {
-            return <SystemRender key={key} event={event} />;
+            return <SystemRender key={key} event={event} visibilityFor={visibilityFor} />;
           }
           if (event.type === "rate_limit_event") {
-            return <RateLimitRender key={key} event={event} />;
+            return <RateLimitRender key={key} event={event} visibilityFor={visibilityFor} />;
           }
           if (event.type === "parse_error") {
             return <RawJson key={key} value={event.raw} label="parse_error" />;
@@ -474,10 +493,11 @@ export function App(props: AppProps): React.ReactElement {
 /**
  * The transient token-streaming preview, rendered below the committed
  * transcript. Only in-flight blocks (not yet finalized by their `assistant`
- * event) are drawn. Text/thinking previews render RAW (glow disabled) — running
- * glow per-delta is slow and mangles partial markdown; the finalized
- * `assistant` text gets glow one frame later. tool_use shows a dim placeholder
- * because `partialJson` is invalid until the last chunk (never parsed mid-stream).
+ * event) are drawn. Text previews render natively through MarkdownRenderer,
+ * whose `remend` pass heals partial markdown so a per-delta render never leaks a
+ * dangling `**`/fence; the finalized `assistant` text re-renders identically one
+ * frame later. tool_use shows a dim placeholder because `partialJson` is invalid
+ * until the last chunk (never parsed mid-stream).
  */
 function LiveRegion({
   live,
@@ -493,7 +513,9 @@ function LiveRegion({
       {blocks.map((b) => {
         const k = `live-${b.index}`;
         if (b.type === "text") {
-          return <TextRenderer key={k} text={b.text} glow={null} />;
+          // remend (inside MarkdownRenderer) heals partial markdown, so the
+          // per-delta preview renders natively without leaking dangling syntax.
+          return <MarkdownRenderer key={k} text={b.text} />;
         }
         if (b.type === "thinking") {
           if (b.text.length === 0) return null;

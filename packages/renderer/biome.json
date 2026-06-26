@@ -50,6 +50,16 @@
           }
         }
       }
+    },
+    {
+      "include": ["src/renderers/MarkdownRenderer.tsx"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
     }
   ]
 }

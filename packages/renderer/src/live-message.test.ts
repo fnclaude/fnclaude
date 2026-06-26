@@ -85,8 +85,57 @@ describe("finalizeForAssistant — drop on truth", () => {
   test("an assistant event for a different message id leaves live state intact", () => {
     const state = fold(streamMsg1);
     const after = finalizeForAssistant(state, assistantMsg2);
-    // Mismatched id: committedCount must not advance.
+    // A concrete *different* id means a different message — don't advance.
     expect(inFlightBlocks(after).map((b) => b.index)).toEqual([0, 1]);
+  });
+
+  test("finalizes the preview when both the live message and assistant event lack an id", () => {
+    // A message_start with no id leaves state.id === "" (id is optional). The
+    // matching assistant event can also arrive without an id. The old strict
+    // `event.message.id !== state.id` check bailed here (undefined !== ""), so
+    // the preview never finalized and rendered alongside the committed block —
+    // the visible double-render. Fall back to block-index matching instead.
+    let state = liveReducer(emptyLive(), {
+      type: "stream_event",
+      event: {
+        type: "message_start",
+        message: { model: "claude-opus-4-8", role: "assistant", content: [] },
+      },
+      session_id: "s",
+      uuid: "ms",
+    });
+    state = liveReducer(state, {
+      type: "stream_event",
+      event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      session_id: "s",
+      uuid: "cbs",
+    });
+    state = liveReducer(state, {
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "hello" },
+      },
+      session_id: "s",
+      uuid: "cbd",
+    });
+    expect(inFlightBlocks(state).map((b) => b.index)).toEqual([0]);
+
+    // Consolidated assistant event with NO message.id.
+    state = finalizeForAssistant(state, {
+      type: "assistant",
+      session_id: "s",
+      uuid: "a",
+      message: {
+        model: "claude-opus-4-8",
+        role: "assistant",
+        content: [{ type: "text", text: "hello" }],
+      },
+    });
+    // The block is consumed → nothing in flight, so the preview is dropped and
+    // only the committed render remains.
+    expect(inFlightBlocks(state)).toEqual([]);
   });
 });
 

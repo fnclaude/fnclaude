@@ -92,6 +92,14 @@ describe("dispatchKey — Alt+1-8 element toggles", () => {
       element: "errors",
     });
   });
+
+  test("Alt+m → toggle meta (system/rate-limit/session noise)", () => {
+    const { input, key } = meta("m");
+    expect(dispatchKey(input, key)).toEqual({
+      kind: "toggleElement",
+      element: "meta",
+    });
+  });
 });
 
 describe("dispatchKey — preset cycle", () => {
