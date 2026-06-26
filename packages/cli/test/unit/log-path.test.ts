@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { computeLogDir, computeLogFilePath, logFileName } from '../../src/log/log-path.ts';
+import { computeLogDir, computeLogFilePath, logFileName } from '../../src/log/log-path';
 
 describe('computeLogDir', () => {
   test('linux: honors XDG_STATE_HOME', () => {

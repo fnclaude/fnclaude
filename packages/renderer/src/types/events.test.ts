@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ClaudeEvent, FilterState, UserTurn, Visibility } from "./events.ts";
+import type { ClaudeEvent, FilterState, UserTurn, Visibility } from "./events";
 
 describe("events contract", () => {
   test("UserTurn shape is constructible", () => {

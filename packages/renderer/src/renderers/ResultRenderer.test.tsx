@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import type { ResultEvent } from "../types/events.ts";
-import { ResultRenderer } from "./ResultRenderer.tsx";
+import type { ResultEvent } from "../types/events";
+import { ResultRenderer } from "./ResultRenderer";
 
 const baseEvent: ResultEvent = {
   type: "result",

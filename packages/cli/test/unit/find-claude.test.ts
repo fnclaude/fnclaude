@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { findClaude } from '../../src/launch/find-claude.ts';
+import { findClaude } from '../../src/launch/find-claude';
 
 let tmpRoot: string;
 

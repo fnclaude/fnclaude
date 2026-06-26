@@ -13,7 +13,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { RingBuffer } from '../../src/launch/ring-buffer.ts';
+import { RingBuffer } from '../../src/launch/ring-buffer';
 
 function bytes(...values: number[]): Uint8Array {
   return new Uint8Array(values);

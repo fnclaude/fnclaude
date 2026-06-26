@@ -1,6 +1,6 @@
 import { Text } from "ink";
-import type { ResultEvent } from "../types/events.ts";
-import { ErrorRenderer } from "./ErrorRenderer.tsx";
+import type { ResultEvent } from "../types/events";
+import { ErrorRenderer } from "./ErrorRenderer";
 
 export interface ResultRendererProps {
   event: ResultEvent;

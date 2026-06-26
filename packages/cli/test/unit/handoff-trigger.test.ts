@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { createHandoffTrigger } from '../../src/handoff/trigger.ts';
+import { createHandoffTrigger } from '../../src/handoff/trigger';
 
 describe('createHandoffTrigger — stashArgv', () => {
   test('first stash returns true; getStashedArgv returns it', () => {

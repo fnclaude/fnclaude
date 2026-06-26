@@ -17,7 +17,7 @@
  *   so corruption is visible to the renderer instead of vanishing. Unknown but
  *   well-formed event types still flow through untouched (forward-compatible).
  */
-import type { ClaudeEvent } from "./types/events.ts";
+import type { ClaudeEvent } from "./types/events";
 
 const NEWLINE = 0x0a; // '\n'
 

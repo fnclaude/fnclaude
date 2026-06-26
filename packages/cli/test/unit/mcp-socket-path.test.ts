@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { computeSocketPath } from '../../src/mcp/socket-path.ts';
+import { computeSocketPath } from '../../src/mcp/socket-path';
 
 describe('computeSocketPath', () => {
   test('XDG_RUNTIME_DIR set → wins over everything', () => {

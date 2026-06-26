@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, statSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ensureCwd } from '../../src/path/ensure-cwd.ts';
+import { ensureCwd } from '../../src/path/ensure-cwd';
 
 let tmpRoot: string;
 

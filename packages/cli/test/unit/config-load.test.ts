@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { loadConfig } from '../../src/config/load.ts';
+import { loadConfig } from '../../src/config/load';
 
 let tmpRoot: string;
 let configPath: string;

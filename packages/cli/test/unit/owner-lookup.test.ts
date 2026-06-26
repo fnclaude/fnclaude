@@ -5,7 +5,7 @@ import {
   formatOwnerLookupError,
   type GhApiCall,
   type GhApiResult,
-} from '../../src/repo/owner-lookup.ts';
+} from '../../src/repo/owner-lookup';
 
 function makeGhApi(table: Record<string, GhApiResult>): GhApiCall {
   return async (path: string) => {

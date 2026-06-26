@@ -1,6 +1,6 @@
 import { Text } from "ink";
-import type { Visibility } from "../types/events.ts";
-import { firstNLines } from "./summarize.ts";
+import type { Visibility } from "../types/events";
+import { firstNLines } from "./summarize";
 
 export interface BashInputProps {
   command: string;

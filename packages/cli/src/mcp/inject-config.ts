@@ -29,7 +29,7 @@
  * That regression shipped in cli 2.0.0; the helper centralises the fix.
  */
 
-import { insertFlagsBeforeSentinel } from '../argv/sentinel.ts';
+import { insertFlagsBeforeSentinel } from '../argv/sentinel';
 
 export interface InjectMcpConfigArgs {
   claudeArgs: readonly string[];

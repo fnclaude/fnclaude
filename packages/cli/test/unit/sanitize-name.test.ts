@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { sanitizeForPath } from '../../src/name/sanitize.ts';
+import { sanitizeForPath } from '../../src/name/sanitize';
 
 describe('sanitizeForPath — unchanged when input is already safe', () => {
   test('plain name', () => {

@@ -21,8 +21,8 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
-import { encodeCWDForProjects } from '../../src/launch/live-permission-reader.ts';
+import { formatSlashCommand, type PtyWriter } from '../../src/mcp/handlers/inject-slash';
+import { encodeCWDForProjects } from '../../src/launch/live-permission-reader';
 import {
   COMPACT_FOLLOWUP_DELAY_MS,
   CONTEXT_NOTICE_THRESHOLD_ENV,
@@ -33,7 +33,7 @@ import {
   formatContextNotice,
   resolveContextNoticeLadder,
   startContextMonitor,
-} from '../../src/usage/context-monitor.ts';
+} from '../../src/usage/context-monitor';
 
 function spyWriter(): { write: PtyWriter; calls: string[] } {
   const calls: string[] = [];

@@ -10,9 +10,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { App, type StreamFeed } from "./App.tsx";
-import { assistantMsg1Text, assistantMsg1Tool, streamMsg1 } from "./__fixtures__/stream-events.ts";
-import type { ClaudeEvent } from "./types/events.ts";
+import { App, type StreamFeed } from "./App";
+import { assistantMsg1Text, assistantMsg1Tool, streamMsg1 } from "./__fixtures__/stream-events";
+import type { ClaudeEvent } from "./types/events";
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 5; i++) await Promise.resolve();

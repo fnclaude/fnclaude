@@ -1,5 +1,5 @@
 import { Text } from "ink";
-import type { Visibility } from "../types/events.ts";
+import type { Visibility } from "../types/events";
 
 export interface ThinkingRendererProps {
   thinking: string;

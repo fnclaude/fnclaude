@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolveTemplateSourcePath } from '../../src/noop/template-source.ts';
+import { resolveTemplateSourcePath } from '../../src/noop/template-source';
 
 let tmpRoot: string;
 let exeDir: string;

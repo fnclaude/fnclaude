@@ -6,7 +6,7 @@ import {
   insertFlagsBeforeSentinel,
   promptBody,
   preSentinelArgs,
-} from '../../src/argv/sentinel.ts';
+} from '../../src/argv/sentinel';
 
 describe('findPromptSentinel', () => {
   test('returns -1 when no sentinel', () => {

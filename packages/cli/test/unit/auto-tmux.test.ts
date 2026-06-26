@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   shouldInjectTmux,
   type AutoTmuxArgs,
-} from '../../src/worktree/auto-tmux.ts';
+} from '../../src/worktree/auto-tmux';
 
 function args(overrides: Partial<AutoTmuxArgs> = {}): AutoTmuxArgs {
   return {

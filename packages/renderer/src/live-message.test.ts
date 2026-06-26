@@ -13,8 +13,8 @@ import {
   streamMsg1,
   streamMsg2,
   streamThinking,
-} from "./__fixtures__/stream-events.ts";
-import { emptyLive, finalizeForAssistant, inFlightBlocks, liveReducer } from "./live-message.ts";
+} from "./__fixtures__/stream-events";
+import { emptyLive, finalizeForAssistant, inFlightBlocks, liveReducer } from "./live-message";
 
 /** Fold a sequence of stream events through the reducer from empty. */
 function fold(events: typeof streamMsg1, start = emptyLive()) {

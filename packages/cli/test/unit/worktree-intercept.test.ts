@@ -4,7 +4,7 @@ import {
   applyWorktreeIntercept,
   type InterceptArgs,
   type Worktree,
-} from '../../src/worktree/intercept.ts';
+} from '../../src/worktree/intercept';
 
 function args(overrides: Partial<InterceptArgs> = {}): InterceptArgs {
   return {

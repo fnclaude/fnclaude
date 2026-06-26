@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { type ReactElement, isValidElement } from "react";
-import { App } from "./App.tsx";
-import type { ClaudeSubscription, SpawnFn, SpawnResult } from "./claude-process.ts";
-import { mountRenderer } from "./mount.tsx";
+import { App } from "./App";
+import type { ClaudeSubscription, SpawnFn, SpawnResult } from "./claude-process";
+import { mountRenderer } from "./mount";
 
 /**
  * `mountRenderer` wraps `<App>` in a React error boundary, so the captured

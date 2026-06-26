@@ -15,9 +15,9 @@
  * keep walking the candidate list or fail the whole resolution.
  */
 
-import type { GhApiResult } from './owner-lookup.ts';
-import type { GhCloneResult } from './clone-exec.ts';
-import { NOT_FOUND_SIGNATURES } from './clone-failure.ts';
+import type { GhApiResult } from './owner-lookup';
+import type { GhCloneResult } from './clone-exec';
+import { NOT_FOUND_SIGNATURES } from './clone-failure';
 
 /**
  * Lines matching GitHub's "repo not found" signature are withheld from the

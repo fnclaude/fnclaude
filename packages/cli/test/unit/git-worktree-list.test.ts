@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseGitWorktreeListPorcelain } from '../../src/worktree/git-list.ts';
+import { parseGitWorktreeListPorcelain } from '../../src/worktree/git-list';
 
 describe('parseGitWorktreeListPorcelain', () => {
   test('empty output → empty list', () => {

@@ -26,7 +26,7 @@ import {
   type CanonicalSubcommand,
   type Effort,
   type Model,
-} from './classify.ts';
+} from './classify';
 
 export interface MagicResultOk {
   ok: true;

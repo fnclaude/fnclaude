@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { parseCrossCwdHint } from '../../src/launch/cross-cwd-parse.ts';
+import { parseCrossCwdHint } from '../../src/launch/cross-cwd-parse';
 
 describe('parseCrossCwdHint', () => {
   test('empty text → null', () => {

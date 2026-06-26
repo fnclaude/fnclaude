@@ -14,8 +14,8 @@
  * - `close()` closes stdin (signals EOF to claude) and awaits the process
  *   exit. The process exits cleanly ~250ms after stdin close per the findings.
  */
-import { parseNdjsonStream } from "./event-parser.ts";
-import type { ClaudeEvent, UserTurn } from "./types/events.ts";
+import { parseNdjsonStream } from "./event-parser";
+import type { ClaudeEvent, UserTurn } from "./types/events";
 
 export interface SpawnResult {
   stdout: ReadableStream<Uint8Array>;

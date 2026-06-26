@@ -16,8 +16,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { createHandoffTrigger } from '../../src/handoff/trigger.ts';
-import { createRestartHandler } from '../../src/mcp/handlers/restart.ts';
+import { createHandoffTrigger } from '../../src/handoff/trigger';
+import { createRestartHandler } from '../../src/mcp/handlers/restart';
 
 const VALID_SID = '01234567-89ab-cdef-0123-456789abcdef';
 

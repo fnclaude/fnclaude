@@ -19,7 +19,7 @@
 
 import { spawnSync } from 'node:child_process';
 
-import type { Worktree } from './intercept.ts';
+import type { Worktree } from './intercept';
 
 const REFS_HEADS_PREFIX = 'refs/heads/';
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createJsonRpcServer } from '../../src/mcp/jsonrpc-server.ts';
+import { createJsonRpcServer } from '../../src/mcp/jsonrpc-server';
 
 const INITIALIZE_RESPONSE = {
   protocolVersion: '2025-06-18',

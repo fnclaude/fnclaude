@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { ReadInput } from "./ReadInput.tsx";
+import { ReadInput } from "./ReadInput";
 
 describe("ReadInput", () => {
   test("renders path being read", () => {

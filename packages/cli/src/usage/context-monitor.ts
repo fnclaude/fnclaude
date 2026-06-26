@@ -66,9 +66,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash.ts';
-import { encodeCWDForProjects } from '../launch/live-permission-reader.ts';
-import { computeSessionUsage } from './session-usage.ts';
+import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash';
+import { encodeCWDForProjects } from '../launch/live-permission-reader';
+import { computeSessionUsage } from './session-usage';
 
 /** The closed enum of escalation levels, low → high. */
 export type NoticeLevel = 'consider' | 'plan' | 'now' | 'urgent';

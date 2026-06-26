@@ -4,8 +4,8 @@ import {
   heuristicName,
   sanitizeLLMOutput,
   shouldAutoName,
-} from '../../src/name/auto-name.ts';
-import { parseArgs, type ParsedArgsOk } from '../../src/argv/parse.ts';
+} from '../../src/name/auto-name';
+import { parseArgs, type ParsedArgsOk } from '../../src/argv/parse';
 
 function parsed(args: string[]): ParsedArgsOk {
   const r = parseArgs(args);

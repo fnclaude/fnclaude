@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { resolvePromptsDir } from '../../src/prompts/dir.ts';
+import { resolvePromptsDir } from '../../src/prompts/dir';
 
 let tmpRoot: string;
 let exeDir: string;

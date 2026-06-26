@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { injectMcpConfig } from '../../src/mcp/inject-config.ts';
+import { injectMcpConfig } from '../../src/mcp/inject-config';
 
 describe('injectMcpConfig', () => {
   test('non-noop interactive → appends --mcp-config with mcp args', () => {

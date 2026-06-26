@@ -9,7 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseNdjsonStream } from "./event-parser.ts";
+import { parseNdjsonStream } from "./event-parser";
 import type {
   AssistantEvent,
   ContentBlock,
@@ -18,7 +18,7 @@ import type {
   TextBlock,
   ToolResultBlock,
   ToolUseBlock,
-} from "./types/events.ts";
+} from "./types/events";
 
 const fixtureDir = join(import.meta.dir, "__fixtures__");
 

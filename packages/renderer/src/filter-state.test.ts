@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { cyclePreset, defaultState, resolve, toggleElement } from "./filter-state.ts";
-import type { FilterState } from "./types/events.ts";
+import { cyclePreset, defaultState, resolve, toggleElement } from "./filter-state";
+import type { FilterState } from "./types/events";
 
 describe("defaultState", () => {
   test("starts on normal preset with no overrides", () => {

@@ -17,11 +17,11 @@
 
 import { type Instance, render } from "ink";
 import { Component, type ErrorInfo, type ReactElement, type ReactNode } from "react";
-import { App } from "./App.tsx";
-import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process.ts";
+import { App } from "./App";
+import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process";
 
-export type { AppProps } from "./App.tsx";
-export type { ClaudeSubscription, SpawnFn } from "./claude-process.ts";
+export type { AppProps } from "./App";
+export type { ClaudeSubscription, SpawnFn } from "./claude-process";
 
 /**
  * Options for {@link mountRenderer}. All optional: called bare (the

@@ -43,8 +43,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { encodeCWDForProjects } from '../../src/launch/live-permission-reader.ts';
-import { runWithFakeClaude } from '../fixtures/run-with-fake-claude.ts';
+import { encodeCWDForProjects } from '../../src/launch/live-permission-reader';
+import { runWithFakeClaude } from '../fixtures/run-with-fake-claude';
 
 const SKIP_WINDOWS = process.platform === 'win32';
 

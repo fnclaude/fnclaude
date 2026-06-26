@@ -16,7 +16,7 @@
  * compose this with side-effect code at the boundary.
  */
 
-import { EFFORTS, MODELS } from './classify.ts';
+import { EFFORTS, MODELS } from './classify';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Transfer denylists (consumed by §8.x — re-exported here so callers don't

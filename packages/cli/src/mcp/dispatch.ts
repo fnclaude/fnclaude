@@ -23,9 +23,9 @@
 
 import { readFileSync } from 'node:fs';
 
-import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server.ts';
-import { TOOL_SCHEMAS } from './tool-schemas.ts';
-import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire.ts';
+import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server';
+import { TOOL_SCHEMAS } from './tool-schemas';
+import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire';
 
 const SUBCOMMAND = 'mcp';
 const NOOP_FLAG = '--noop';

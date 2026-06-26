@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { TextRenderer } from "./TextRenderer.tsx";
+import { TextRenderer } from "./TextRenderer";
 
 const md = "# Heading\n\nSome *italic* text.";
 

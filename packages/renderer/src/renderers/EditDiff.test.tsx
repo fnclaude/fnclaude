@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { EditDiff } from "./EditDiff.tsx";
+import { EditDiff } from "./EditDiff";
 
 const oldStr = "old line 1\nold line 2";
 const newStr = "new line 1\nnew line 2\nnew line 3";

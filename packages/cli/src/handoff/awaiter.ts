@@ -18,9 +18,9 @@
  * exercise the wiring without actually killing or re-executing.
  */
 
-import { execImage } from './exec-image.ts';
-import { killAndExec, type KillAndExecArgs, type SignalName } from './kill-and-exec.ts';
-import type { HandoffTrigger } from './trigger.ts';
+import { execImage } from './exec-image';
+import { killAndExec, type KillAndExecArgs, type SignalName } from './kill-and-exec';
+import type { HandoffTrigger } from './trigger';
 
 export interface StartHandoffAwaiterArgs {
   trigger: HandoffTrigger;

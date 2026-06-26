@@ -15,7 +15,7 @@ import {
   chooseAndSpawn,
   renderSpawnCommand,
   type SpawnFn,
-} from '../../src/handoff/spawn-launcher.ts';
+} from '../../src/handoff/spawn-launcher';
 
 const noopSpawn: SpawnFn = () => ({ unref() {} });
 

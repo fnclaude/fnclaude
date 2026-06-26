@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { bootstrapRepo, type BootstrapDeps } from '../../src/repo/bootstrap.ts';
+import { bootstrapRepo, type BootstrapDeps } from '../../src/repo/bootstrap';
 
 interface Calls {
   confirms: string[];

@@ -17,7 +17,7 @@ import {
   createPtyWriterHolder,
   formatSlashCommand,
   type PtyWriter,
-} from '../../src/mcp/handlers/inject-slash.ts';
+} from '../../src/mcp/handlers/inject-slash';
 
 function spyWriter(): { write: PtyWriter; calls: string[] } {
   const calls: string[] = [];

@@ -21,9 +21,9 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { createSpawnHandler } from '../../src/mcp/handlers/spawn.ts';
-import type { SpawnFn } from '../../src/handoff/spawn-launcher.ts';
-import type { WireRequest, WireResponse } from '../../src/mcp/wire.ts';
+import { createSpawnHandler } from '../../src/mcp/handlers/spawn';
+import type { SpawnFn } from '../../src/handoff/spawn-launcher';
+import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 const noopSpawn: SpawnFn = () => ({ unref() {} });
 

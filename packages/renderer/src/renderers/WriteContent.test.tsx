@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { WriteContent } from "./WriteContent.tsx";
+import { WriteContent } from "./WriteContent";
 
 const body = Array.from({ length: 8 }, (_, i) => `body${i + 1}`).join("\n");
 

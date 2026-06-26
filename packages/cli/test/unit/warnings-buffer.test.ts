@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createWarningBuffer } from '../../src/warnings/buffer.ts';
+import { createWarningBuffer } from '../../src/warnings/buffer';
 
 /**
  * Minimal in-memory writable stream stand-in. We only need .write to land

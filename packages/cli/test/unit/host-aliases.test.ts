@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { loadHostAliases } from '../../src/repo/host-aliases.ts';
+import { loadHostAliases } from '../../src/repo/host-aliases';
 
 let tmpRoot: string;
 let systemPath: string;

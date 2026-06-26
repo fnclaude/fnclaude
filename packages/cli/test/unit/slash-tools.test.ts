@@ -14,15 +14,15 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { buildTools } from '../../src/mcp/dispatch.ts';
-import type { PtyWriter } from '../../src/mcp/handlers/inject-slash.ts';
+import { buildTools } from '../../src/mcp/dispatch';
+import type { PtyWriter } from '../../src/mcp/handlers/inject-slash';
 import {
   createRequestCompactHandler,
   createRunSlashCommandHandler,
   createSetEffortHandler,
   createSetModelHandler,
   slashToolEnabled,
-} from '../../src/mcp/handlers/slash-tools.ts';
+} from '../../src/mcp/handlers/slash-tools';
 
 function spyWriter(): { write: PtyWriter; calls: string[] } {
   const calls: string[] = [];

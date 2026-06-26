@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseYesNo } from '../../src/repo/confirm.ts';
+import { parseYesNo } from '../../src/repo/confirm';
 
 describe('parseYesNo', () => {
   test('y / yes (any case) → true', () => {

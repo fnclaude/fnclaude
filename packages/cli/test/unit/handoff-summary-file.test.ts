@@ -12,7 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { writeSummaryFile } from '../../src/handoff/summary-file.ts';
+import { writeSummaryFile } from '../../src/handoff/summary-file';
 
 const cleanupPaths: string[] = [];
 

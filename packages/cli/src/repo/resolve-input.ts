@@ -23,10 +23,10 @@
 import { statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
-import { expandTilde, noopDir } from '../path/resolve.ts';
-import { buildCloneUrl, computeCloneDestination } from './clone.ts';
-import { findLocalClones } from './local-clones.ts';
-import { effectiveHost, hasResolvedOwner, parseRepoRef } from './ref.ts';
+import { expandTilde, noopDir } from '../path/resolve';
+import { buildCloneUrl, computeCloneDestination } from './clone';
+import { findLocalClones } from './local-clones';
+import { effectiveHost, hasResolvedOwner, parseRepoRef } from './ref';
 
 export interface ResolveInputArgs {
   input: string | null;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isNotFoundNoiseLine } from '../../src/repo/gh-runner.ts';
+import { isNotFoundNoiseLine } from '../../src/repo/gh-runner';
 
 describe('isNotFoundNoiseLine', () => {
   test('true for the GraphQL not-found line', () => {

@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildCloneUrl,
   computeCloneDestination,
-} from '../../src/repo/clone.ts';
-import type { RepoRef } from '../../src/repo/ref.ts';
+} from '../../src/repo/clone';
+import type { RepoRef } from '../../src/repo/ref';
 
 function ref(partial: Partial<RepoRef> = {}): RepoRef {
   return {

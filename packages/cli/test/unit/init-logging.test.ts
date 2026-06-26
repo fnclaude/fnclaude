@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { initLogging } from '../../src/log/init.ts';
-import type { LogRecord } from '../../src/log/logger.ts';
+import { initLogging } from '../../src/log/init';
+import type { LogRecord } from '../../src/log/logger';
 
 const base = {
   platform: 'linux' as NodeJS.Platform,

@@ -15,8 +15,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch.ts';
-import type { WireRequest, WireResponse } from '../../src/mcp/wire.ts';
+import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch';
+import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 describe('MCP_TOOL_NAMES', () => {
   test('exposes the original four plus the Batch-2 slash tools and get_usage', () => {

@@ -1,10 +1,10 @@
-import type { ElementId, ToolUseBlock, Visibility } from "../types/events.ts";
-import { BashInput } from "./BashInput.tsx";
-import { EditDiff } from "./EditDiff.tsx";
-import { RawJson } from "./RawJson.tsx";
-import { ReadInput } from "./ReadInput.tsx";
-import { TaskNested } from "./TaskNested.tsx";
-import { WriteContent } from "./WriteContent.tsx";
+import type { ElementId, ToolUseBlock, Visibility } from "../types/events";
+import { BashInput } from "./BashInput";
+import { EditDiff } from "./EditDiff";
+import { RawJson } from "./RawJson";
+import { ReadInput } from "./ReadInput";
+import { TaskNested } from "./TaskNested";
+import { WriteContent } from "./WriteContent";
 
 export interface ToolUseRendererProps {
   block: ToolUseBlock;

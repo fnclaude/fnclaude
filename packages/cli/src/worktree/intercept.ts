@@ -32,7 +32,7 @@
 
 import { basename } from 'node:path';
 
-import { sanitizeForPath } from '../name/sanitize.ts';
+import { sanitizeForPath } from '../name/sanitize';
 
 export interface Worktree {
   path: string;

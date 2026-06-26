@@ -17,14 +17,14 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { createHandoffTrigger } from '../../src/handoff/trigger.ts';
+import { createHandoffTrigger } from '../../src/handoff/trigger';
 import {
   createSwitchHandler,
   type CopyToClipboardFn,
   type LivePermissionModeReader,
   type WriteSummaryFn,
-} from '../../src/mcp/handlers/switch.ts';
-import type { WireRequest, WireResponse } from '../../src/mcp/wire.ts';
+} from '../../src/mcp/handlers/switch';
+import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 interface SummarySpy {
   fn: WriteSummaryFn;

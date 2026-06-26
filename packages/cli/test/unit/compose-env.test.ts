@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { composeEnv } from '../../src/launch/compose-env.ts';
+import { composeEnv } from '../../src/launch/compose-env';
 
 describe('composeEnv', () => {
   test('no execEnv, no handoff/socket → process env passes through', () => {

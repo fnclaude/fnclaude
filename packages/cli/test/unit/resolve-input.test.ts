@@ -7,7 +7,7 @@ import {
   resolveInput,
   type ResolveInputArgs,
   type ResolveResult,
-} from '../../src/repo/resolve-input.ts';
+} from '../../src/repo/resolve-input';
 
 let tmpRoot: string;
 let HOME: string;

@@ -19,9 +19,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SpawnFn } from "./claude-process.ts";
-import { subscribeToClaude } from "./claude-process.ts";
-import type { AssistantEvent, ResultEvent, SystemEvent } from "./types/events.ts";
+import type { SpawnFn } from "./claude-process";
+import { subscribeToClaude } from "./claude-process";
+import type { AssistantEvent, ResultEvent, SystemEvent } from "./types/events";
 
 const fixtureDir = join(import.meta.dir, "__fixtures__");
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseCloneUrl } from '../../src/repo/clone-url.ts';
+import { parseCloneUrl } from '../../src/repo/clone-url';
 
 describe('parseCloneUrl', () => {
   test('parses the canonical https .git form', () => {

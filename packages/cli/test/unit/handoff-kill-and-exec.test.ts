@@ -18,7 +18,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { killAndExec, type KillAndExecArgs } from '../../src/handoff/kill-and-exec.ts';
+import { killAndExec, type KillAndExecArgs } from '../../src/handoff/kill-and-exec';
 
 interface FakeProc {
   killed: boolean;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import type { ToolUseBlock, Visibility } from "../types/events.ts";
-import { ToolUseRenderer } from "./ToolUseRenderer.tsx";
+import type { ToolUseBlock, Visibility } from "../types/events";
+import { ToolUseRenderer } from "./ToolUseRenderer";
 
 const visAll = (v: Visibility) => () => v;
 

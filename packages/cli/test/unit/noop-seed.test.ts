@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { seedNoopDir } from '../../src/noop/seed.ts';
+import { seedNoopDir } from '../../src/noop/seed';
 
 let tmpRoot: string;
 

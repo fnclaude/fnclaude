@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getVersion, helpText, wantsHelp, wantsVersion } from '../../src/help-version.ts';
+import { getVersion, helpText, wantsHelp, wantsVersion } from '../../src/help-version';
 
 describe('wantsHelp', () => {
   test('returns false for empty args', () => {

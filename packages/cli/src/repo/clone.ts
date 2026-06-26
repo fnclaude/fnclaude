@@ -11,9 +11,9 @@
  * `expandCloneTemplate` call site).
  */
 
-import { effectiveHost, hasResolvedOwner, type RepoRef } from './ref.ts';
-import { applyTemplate, cloneTemplateVars } from './template.ts';
-import { expandTilde } from '../path/resolve.ts';
+import { effectiveHost, hasResolvedOwner, type RepoRef } from './ref';
+import { applyTemplate, cloneTemplateVars } from './template';
+import { expandTilde } from '../path/resolve';
 
 export function buildCloneUrl(ref: RepoRef): string {
   if (!hasResolvedOwner(ref)) {
