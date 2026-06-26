@@ -1,6 +1,6 @@
 {
   "name": "@fnclaude/renderer",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "type": "module",
   "description": "Configurable TUI front-end for Claude Code with stream-json driving, toggleable visibility filters, and glow-piped markdown.",
   "license": "MIT",
