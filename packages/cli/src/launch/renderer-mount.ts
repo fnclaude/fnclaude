@@ -158,7 +158,7 @@ function hasMountRenderer(mod: unknown): mod is RendererModule {
  * stderr byte on the inherited fd corrupts the render; spawn-args.md §b.2),
  * draining it to the fnc logger.
  */
-function makeFncSpawn(deps: {
+export function makeFncSpawn(deps: {
   claudeBin: string;
   childEnv: Record<string, string>;
   spawnProc: SpawnProc;
@@ -212,10 +212,63 @@ export interface MaybeMountRendererArgs {
   exit?: (code: number) => never;
 }
 
+/**
+ * The subset of Bun's FileSink we drive for stdin. Crucially it has
+ * `.write()`/`.end()` and NO `.getWriter()` — it is NOT a WHATWG
+ * WritableStream.
+ */
+interface BunFileSink {
+  write(chunk: Uint8Array): number | Promise<number>;
+  end(): number | Promise<number>;
+}
+
+/** The subset of a Bun.spawn child we consume. */
+interface BunChildProc {
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+  stdin: BunFileSink;
+  exited: Promise<number>;
+  kill(): void;
+}
+
+/** Injectable low-level spawn (Bun.spawn in production; stubbed in tests). */
+export type LowLevelSpawn = (
+  cmd: string[],
+  opts: { cwd?: string; env: Record<string, string>; stdin: 'pipe'; stdout: 'pipe'; stderr: 'pipe' },
+) => BunChildProc;
+
+/**
+ * Wrap Bun's FileSink stdin in a WHATWG WritableStream.
+ *
+ * The SpawnResult contract declares `stdin: WritableStream<Uint8Array>`, and
+ * the renderer's `subscribeToClaude` immediately calls `proc.stdin.getWriter()`.
+ * But `Bun.spawn(..., { stdin: 'pipe' })` returns a FileSink — `.write()` /
+ * `.end()` / `.flush()`, NO `getWriter`. The old code cast the FileSink straight
+ * across the WritableStream boundary, so mounting combined mode crashed with
+ * `proc.stdin.getWriter is not a function`. This adapter makes the producer
+ * honor its declared type (mirrors defaultSpawn in renderer/claude-process.ts).
+ */
+function sinkToWritable(sink: BunFileSink): WritableStream<Uint8Array> {
+  return new WritableStream<Uint8Array>({
+    async write(chunk) {
+      await sink.write(chunk);
+    },
+    async close() {
+      await sink.end();
+    },
+    abort() {
+      void sink.end();
+    },
+  });
+}
+
 /** Production low-level spawn: Bun.spawn with piped stdio, draining stderr. */
-function makeProdSpawnProc(onStderr: (line: string) => void): SpawnProc {
+export function makeProdSpawnProc(
+  onStderr: (line: string) => void,
+  spawn: LowLevelSpawn = Bun.spawn as unknown as LowLevelSpawn,
+): SpawnProc {
   return (cmd, opts) => {
-    const proc = Bun.spawn(cmd, {
+    const proc = spawn(cmd, {
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
       env: opts.env,
       stdin: 'pipe',
@@ -225,15 +278,19 @@ function makeProdSpawnProc(onStderr: (line: string) => void): SpawnProc {
     // Drain claude's stderr to the logger — NEVER the TTY (Ink owns it).
     void (async () => {
       try {
-        const text = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
-        if (text.trim() !== '') onStderr(text.trimEnd());
+        const text = await new Response(proc.stderr).text();
+        if (text.trim() !== '') {
+          onStderr(text.trimEnd());
+        }
       } catch {
         // best-effort — a stderr drain failure must not break the session
       }
     })();
     return {
-      stdout: proc.stdout as ReadableStream<Uint8Array>,
-      stdin: proc.stdin as WritableStream<Uint8Array>,
+      stdout: proc.stdout,
+      // Bun's stdin is a FileSink, not a WritableStream — wrap it so the
+      // renderer's `proc.stdin.getWriter()` works. See sinkToWritable.
+      stdin: sinkToWritable(proc.stdin),
       exited: proc.exited,
       kill: () => proc.kill(),
     };
