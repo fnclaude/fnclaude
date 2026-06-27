@@ -56,12 +56,18 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
   switch (token.type) {
     case "heading": {
       const h = token as Tokens.Heading;
-      const { bold, underline, color, dimColor } = headingTextProps(h.depth);
+      const props = headingTextProps(h.depth);
+      // exactOptionalPropertyTypes forbids passing `undefined` for typed
+      // optional props, so spread only the keys that are actually set.
+      const textProps = {
+        ...(props.bold !== undefined ? { bold: props.bold } : {}),
+        ...(props.underline !== undefined ? { underline: props.underline } : {}),
+        ...(props.color !== undefined ? { color: props.color } : {}),
+        ...(props.dimColor !== undefined ? { dimColor: props.dimColor } : {}),
+      };
       return (
         <Box marginBottom={1}>
-          <Text bold={bold} underline={underline} color={color} dimColor={dimColor}>
-            {inline(h.tokens)}
-          </Text>
+          <Text {...textProps}>{inline(h.tokens)}</Text>
         </Box>
       );
     }
@@ -143,10 +149,13 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
         // GFM task-list items: render a checkbox glyph instead of the bullet.
         if (item.task) {
           const checkbox = item.checked ? "☑" : "☐";
-          const checkboxColor = item.checked ? "green" : undefined;
           return (
             <Box key={`li-${i}`} flexDirection="row">
-              <Text color={checkboxColor}>{`${checkbox} `}</Text>
+              {item.checked ? (
+                <Text color="green">{`${checkbox} `}</Text>
+              ) : (
+                <Text>{`${checkbox} `}</Text>
+              )}
               <Box flexDirection="column">
                 <ListItemBody item={item} />
               </Box>
