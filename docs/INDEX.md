@@ -17,6 +17,7 @@ Navigation index for the docs folder.
 | [design.md](design.md) | Locked-in technical requirements from the Go reference: wire formats, regexes, contracts |
 | [design.mcp.md](design.mcp.md) | OS-level narrative of how fnclaude, claude, and the MCP subprocess wire together |
 | [design.renderer.md](design.renderer.md) | Forward-looking design for renderer↔CLI in-process integration (not yet shipped) |
+| [design.renderer-images.md](design.renderer-images.md) | Implementation guide for inline images: Kitty protocol, `<Static>` foundation, `<img>`/pasted-image flows, security |
 
 ## Proposed Features
 
@@ -32,6 +33,8 @@ Navigation index for the docs folder.
 | [research/bun-pty-spawn.md](research/bun-pty-spawn.md) | Research on spawning interactive TUI children from Bun; recommends Bun.Terminal over node-pty |
 | [research/claude-code-agent-ui-internals.md](research/claude-code-agent-ui-internals.md) | Reverse-engineering reference for Claude Code's subagent UI, steering seams, and workflow tree |
 | [research/claude-code-binary-internals.md](research/claude-code-binary-internals.md) | Runbook for grepping Claude Code's Bun-compiled binary for embedded JS and prompt strings |
+| [research/claude-code-render-modes.md](research/claude-code-render-modes.md) | Reference for Claude Code's three terminal render modes, mode selection logic, and what they mean for fnclaude's subprocess model |
+| [research/renderer-graphics-interactivity.md](research/renderer-graphics-interactivity.md) | Feasibility memo for renderer graphics and interactivity: inline images, math, mermaid, mouse events, links, scroll |
 | [claude-code-compact-prompts.md](claude-code-compact-prompts.md) | Reverse-engineered compact/summary prompt strings extracted from Claude Code binary |
 | [claude-code-prompt-strings.md](claude-code-prompt-strings.md) | Heuristic bulk extraction of all instruction-like strings from Claude Code binary |
 
