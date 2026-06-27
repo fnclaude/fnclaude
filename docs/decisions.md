@@ -6,6 +6,30 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-06-26 — Renderer stays hybrid (text + targeted images), not full-canvas
+
+**Decision:** The transcript stays real selectable Ink `<Text>`; Kitty graphics images are used only for content that text cannot represent (math, mermaid diagrams, actual `<img>` content). Before any inline-image work, the transcript-history rendering should move to Ink's `<Static>` (finalized events) plus a dynamic live tail.
+
+**Context:** A full-canvas approach — rendering the entire transcript as a sequence of Kitty images for pixel-perfect fidelity — was considered. Separately, `packages/renderer/src/App.tsx` currently renders all events in a single dynamic column with no `<Static>`, which re-renders the full history on every keystroke; past viewport height this flickers and corrupts, and it would re-emit every inline image on every keypress. See [`docs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) for the full analysis.
+
+**Why this:** rendering the transcript as images breaks native terminal text-selection — selection grabs character cells, and images have no underlying text, so copy yields nothing. Recovering selection requires mouse tracking plus a pixel→text mapping plus an app-owned scroll viewport (since native scroll and mouse tracking are mutually exclusive), all of which is a large, fragile build with worse scroll smoothness than native. The `<Static>`-first approach gives the transcript native scroll, native selection on the real-text parts, and inline images that are emitted once and scrolled by the terminal — the best of both.
+
+**Revisit when:** a custom selection layer (such as the layered transparent-overlay approach described in the research doc) plus an alt-screen viewport are genuinely warranted by a feature need that text rendering cannot satisfy.
+
+---
+
+## 2026-06-26 — Renderer markdown links: no OSC 8; style http, plain non-clickable
+
+**Decision:** http/https/mailto links render blue+underline with no OSC 8 hyperlink escape (Ghostty's own URL matcher handles ctrl+click). Non-clickable hrefs (anchors `#…`, relative paths) render as plain text with no link styling.
+
+**Context:** PR #261 introduced OSC 8 wrapping for all markdown links. It shipped a regression: `string-width` — Ink's internal column measurer — strips CSI escape sequences but not OSC sequences, so OSC 8 bytes inflate the measured column width. Any table cell containing a link misaligned that column. The `TableBlock` added in PR #261 used a `visibleWidth` regex that consumed only the `ESC]` prefix, leaving `8;;<url>\x07` counted as visible characters. PR #263 removed OSC 8 to fix the regression. See [`docs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) for the `string-width` OSC 8 finding.
+
+**Why this:** preserves the existing good ctrl+click behavior (Ghostty's `link-url` regex matches raw URLs in the cell grid), avoids the string-width layout bug, and avoids styling as a link what the user cannot click (anchors, relative paths have no target in a terminal).
+
+**Revisit when:** `string-width` (or a custom measurer we own) reliably strips OSC 8 bytes, at which point OSC 8 buys reliable clicks on links whose display text differs from the raw URL.
+
+---
+
 ## 2026-06-18 — Renderer streaming: deltas are a preview, the `assistant` event is truth
 
 **Decision:** The renderer's token-level streaming (`--include-partial-messages`, `stream_event` lines) does NOT reconstruct canonical content blocks from the SSE deltas. Instead it accumulates them into a transient live preview (`src/live-message.ts`, keyed by `(message.id, index)`) and drops each live block the frame its consolidated `assistant` event lands — the consolidated event, which claude emits per content block mid-stream, is the source of truth and drives the existing committed-render path unchanged. Live text/thinking render RAW (glow disabled); `input_json_delta.partial_json` is accumulated raw and never `JSON.parse`d mid-stream (live tool view is a dim placeholder).
