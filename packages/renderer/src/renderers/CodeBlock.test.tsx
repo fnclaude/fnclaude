@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { CodeBlock } from "./CodeBlock.tsx";
 
-const pyCode = `def add(a, b):\n    return a + b`;
+const pyCode = "def add(a, b):\n    return a + b";
 
 describe("CodeBlock", () => {
   test("renders code text inside a framed box", () => {

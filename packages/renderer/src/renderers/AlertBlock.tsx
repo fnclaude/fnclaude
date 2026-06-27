@@ -1,12 +1,9 @@
 import { Box, Text } from "ink";
-import { type Token, type Tokens } from "marked";
+import type { Token, Tokens } from "marked";
 
 export type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 
-const ALERT_META: Record<
-  AlertKind,
-  { color: string; icon: string; label: string }
-> = {
+const ALERT_META: Record<AlertKind, { color: string; icon: string; label: string }> = {
   note: { color: "blue", icon: "ℹ", label: "Note" },
   tip: { color: "green", icon: "💡", label: "Tip" },
   important: { color: "magenta", icon: "❗", label: "Important" },
@@ -24,20 +21,20 @@ const ALERT_PATTERN = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
  * Returns `null` for plain blockquotes.
  */
 export function parseAlert(
-  token: Tokens.Blockquote
+  token: Tokens.Blockquote,
 ): { kind: AlertKind; bodyTokens: Token[] } | null {
   const tokens = token.tokens;
   if (tokens.length === 0) return null;
 
   const first = tokens[0];
-  if (first.type !== "paragraph") return null;
+  if (first === undefined || first.type !== "paragraph") return null;
 
   const para = first as Tokens.Paragraph;
   const text = para.text.trimStart();
   const match = text.match(ALERT_PATTERN);
   if (!match) return null;
 
-  const kind = match[1].toLowerCase() as AlertKind;
+  const kind = (match[1] ?? "note").toLowerCase() as AlertKind;
 
   // Strip the [!KIND] marker line from the first paragraph.
   // The text after the marker (same paragraph, separated by \n) becomes
@@ -82,11 +79,7 @@ export interface AlertBlockProps {
  * delegates body rendering to the injected `renderChildren` callback so the
  * component stays decoupled from MarkdownRenderer.
  */
-export function AlertBlock({
-  kind,
-  bodyTokens,
-  renderChildren,
-}: AlertBlockProps): JSX.Element {
+export function AlertBlock({ kind, bodyTokens, renderChildren }: AlertBlockProps): JSX.Element {
   const { color, icon, label } = ALERT_META[kind];
   return (
     <Box

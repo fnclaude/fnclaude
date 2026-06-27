@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { type Token, type Tokens } from "marked";
+import type { Token, Tokens } from "marked";
 import React from "react";
 
 export interface TableBlockProps {
@@ -8,7 +8,9 @@ export interface TableBlockProps {
 }
 
 /** ANSI escape sequence pattern — used to strip SGR codes before measuring visible width. */
-const ANSI_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+// biome-ignore lint/complexity/useRegexLiterals: regex literal form also triggers noControlCharactersInRegex
+// biome-ignore lint/suspicious/noControlCharactersInRegex: \x1b (ESC) is intentional in ANSI detection
+const ANSI_RE = new RegExp("\\x1b(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])", "g");
 
 /** Visible character width of a string, ignoring ANSI escape sequences. */
 function visibleWidth(s: string): number {
@@ -53,10 +55,7 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
   // Column widths: max of header and body plain-text widths (ignoring ANSI).
   const colWidths: number[] = Array.from({ length: numCols }, (_, ci) => {
     const hw = visibleWidth(header[ci]?.text ?? "");
-    const bw = rows.reduce(
-      (mx, row) => Math.max(mx, visibleWidth(row[ci]?.text ?? "")),
-      0,
-    );
+    const bw = rows.reduce((mx, row) => Math.max(mx, visibleWidth(row[ci]?.text ?? "")), 0);
     return Math.max(hw, bw, 1);
   });
 
@@ -65,9 +64,9 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
   const fillRow = (left: string, mid: string, right: string, fill: string): string =>
     left + colWidths.map((w) => fill.repeat(w + 2)).join(mid) + right;
 
-  const topBorder  = fillRow("┌", "┬", "┐", "─");
-  const headSep    = fillRow("├", "┼", "┤", "─");
-  const botBorder  = fillRow("└", "┴", "┘", "─");
+  const topBorder = fillRow("┌", "┬", "┐", "─");
+  const headSep = fillRow("├", "┼", "┤", "─");
+  const botBorder = fillRow("└", "┴", "┘", "─");
 
   /** Render a single data row (header or body). */
   function renderRow(cells: Tokens.TableCell[], bold: boolean): JSX.Element {
@@ -82,15 +81,18 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
           );
           // One space of margin inside the border, then alignment padding, then
           // the cell content, then trailing pad, then one space + the closing │.
+          // Column index is stable (columns don't reorder); use text as key
+          // to satisfy the noArrayIndexKey rule.
+          const cellKey = `${ci}:${cell.text}`;
           return (
-            <React.Fragment key={ci}>
-              <Text>{" " + lpad}</Text>
+            <React.Fragment key={cellKey}>
+              <Text>{` ${lpad}`}</Text>
               {bold ? (
                 <Text bold>{renderInline(cell.tokens)}</Text>
               ) : (
                 <Text>{renderInline(cell.tokens)}</Text>
               )}
-              <Text>{rpad + " │"}</Text>
+              <Text>{`${rpad} │`}</Text>
             </React.Fragment>
           );
         })}
@@ -103,9 +105,11 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
       <Text>{topBorder}</Text>
       {renderRow(header, true)}
       <Text>{headSep}</Text>
-      {rows.map((row, ri) => (
-        <React.Fragment key={ri}>{renderRow(row, false)}</React.Fragment>
-      ))}
+      {rows.map((row, ri) => {
+        // Use concatenated cell text as key to avoid array-index-as-key.
+        const rowKey = `${ri}:${row.map((c) => c.text).join("|")}`;
+        return <React.Fragment key={rowKey}>{renderRow(row, false)}</React.Fragment>;
+      })}
       <Text>{botBorder}</Text>
     </Box>
   );

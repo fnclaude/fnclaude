@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { render } from "ink-testing-library";
 import { Text } from "ink";
+import { render } from "ink-testing-library";
 import { type Token, type Tokens, marked } from "marked";
 import { TableBlock } from "./TableBlock.tsx";
 
@@ -15,9 +15,7 @@ import { TableBlock } from "./TableBlock.tsx";
  * content to be predictably present in the frame.
  */
 function fakeRenderInline(tokens: Token[]): React.ReactNode {
-  const text = tokens
-    .map((t) => ("text" in t ? (t as { text: string }).text : ""))
-    .join("");
+  const text = tokens.map((t) => ("text" in t ? (t as { text: string }).text : "")).join("");
   return <Text>{text}</Text>;
 }
 
@@ -44,8 +42,10 @@ const MIXED = lexTable("| Name | Score |\n|---:|:---:|\n| Alice | 42 |\n| Bob | 
 const SIMPLE = lexTable("| A | B |\n|---|---|\n| x | y |");
 
 // A table with inline markup in a cell (bold text in header, code in body).
-// We test this with a real renderInline-like shim that returns styled Text.
-const STYLED = lexTable("| **Name** | Value |\n|---|---|\n| `code` | plain |");
+// Retained as a reference fixture even though no test currently uses it
+// directly — inline-markup delegation is tested via the tracking-render test.
+const _STYLED = lexTable("| **Name** | Value |\n|---|---|\n| `code` | plain |");
+void _STYLED; // suppress unused-variable lint
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -55,27 +55,21 @@ describe("TableBlock", () => {
   // --- cell content ----------------------------------------------------------
 
   test("renders all header cell texts", () => {
-    const { lastFrame } = render(
-      <TableBlock token={SIMPLE} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={SIMPLE} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("A");
     expect(frame).toContain("B");
   });
 
   test("renders all body cell texts", () => {
-    const { lastFrame } = render(
-      <TableBlock token={SIMPLE} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={SIMPLE} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("x");
     expect(frame).toContain("y");
   });
 
   test("renders multiple body rows", () => {
-    const { lastFrame } = render(
-      <TableBlock token={MIXED} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={MIXED} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Alice");
     expect(frame).toContain("Bob");
@@ -86,9 +80,7 @@ describe("TableBlock", () => {
   // --- no literal pipe -------------------------------------------------------
 
   test("no literal ASCII pipe | characters in output", () => {
-    const { lastFrame } = render(
-      <TableBlock token={MIXED} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={MIXED} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     // Box-drawing │ (U+2502) is fine; raw markdown pipe | (U+007C) must not appear.
     expect(frame).not.toContain("|");
@@ -97,9 +89,7 @@ describe("TableBlock", () => {
   // --- bold header -----------------------------------------------------------
 
   test("header row emits bold SGR escape (\\x1B[1m)", () => {
-    const { lastFrame } = render(
-      <TableBlock token={SIMPLE} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={SIMPLE} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toMatch(/\x1B\[1m/);
   });
@@ -110,9 +100,7 @@ describe("TableBlock", () => {
     // Column "Name" is right-aligned (---:).
     // colWidth = max("Name".length=4, "Alice".length=5, "Bob".length=3) = 5
     // "Bob" (len 3) right-aligned in width 5 → 2 leading spaces: "  Bob"
-    const { lastFrame } = render(
-      <TableBlock token={MIXED} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={MIXED} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     // At minimum, "Bob" must be preceded by at least one space in the cell slot.
     // The exact form is: border space + padding spaces + "Bob".
@@ -123,9 +111,7 @@ describe("TableBlock", () => {
     // Column "A" is left-aligned.  Cell "x" (width 1) in column width 1 → no
     // extra padding.  We just confirm the text is there with no prefix spaces
     // beyond the mandatory single border margin.
-    const { lastFrame } = render(
-      <TableBlock token={SIMPLE} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={SIMPLE} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("x");
   });
@@ -133,9 +119,7 @@ describe("TableBlock", () => {
   // --- borders ---------------------------------------------------------------
 
   test("output contains box-drawing border characters", () => {
-    const { lastFrame } = render(
-      <TableBlock token={SIMPLE} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={SIMPLE} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     // At least top-left and horizontal fill should appear.
     expect(frame).toMatch(/[┌┬┐├┼┤└┴┘]/);
@@ -145,9 +129,7 @@ describe("TableBlock", () => {
   });
 
   test("header and body are visually separated (header separator row)", () => {
-    const { lastFrame } = render(
-      <TableBlock token={MIXED} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={MIXED} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     // The header separator uses ├ ┼ ┤ characters.
     expect(frame).toMatch(/├/);
@@ -160,9 +142,7 @@ describe("TableBlock", () => {
   test("calls renderInline with each cell's tokens", () => {
     const seen: string[] = [];
     const trackingRender = (tokens: Token[]): React.ReactNode => {
-      const text = tokens
-        .map((t) => ("text" in t ? (t as { text: string }).text : ""))
-        .join("");
+      const text = tokens.map((t) => ("text" in t ? (t as { text: string }).text : "")).join("");
       seen.push(text);
       return <Text>{text}</Text>;
     };
@@ -183,9 +163,7 @@ describe("TableBlock", () => {
     const headerOnly = lexTable("| Col |\n|---|\n");
     // marked may not produce a table with truly empty rows — just check it renders
     // without throwing and the header text is present.
-    const { lastFrame } = render(
-      <TableBlock token={headerOnly} renderInline={fakeRenderInline} />,
-    );
+    const { lastFrame } = render(<TableBlock token={headerOnly} renderInline={fakeRenderInline} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Col");
     expect(frame).not.toContain("|");

@@ -126,9 +126,7 @@ describe("MarkdownRenderer", () => {
   // -------------------------------------------------------------------------
 
   test("blockquote: GitHub [!NOTE] alert renders the 'Note' label and body via AlertBlock", () => {
-    const { lastFrame } = render(
-      <MarkdownRenderer text={"> [!NOTE]\n> pay attention"} />,
-    );
+    const { lastFrame } = render(<MarkdownRenderer text={"> [!NOTE]\n> pay attention"} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Note");
     expect(frame).toContain("pay attention");
@@ -174,9 +172,7 @@ describe("MarkdownRenderer", () => {
   // -------------------------------------------------------------------------
 
   test("task list: checked item renders ☑, unchecked renders ☐, no literal [x]/[ ]", () => {
-    const { lastFrame } = render(
-      <MarkdownRenderer text={"- [x] done\n- [ ] todo"} />,
-    );
+    const { lastFrame } = render(<MarkdownRenderer text={"- [x] done\n- [ ] todo"} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("☑");
     expect(frame).toContain("☐");
@@ -212,21 +208,19 @@ describe("MarkdownRenderer", () => {
   // -------------------------------------------------------------------------
 
   test("link: http href — emits OSC 8 hyperlink escape and blue+underline styling", () => {
-    const { lastFrame } = render(
-      <MarkdownRenderer text="[click](https://example.com)" />,
-    );
+    const { lastFrame } = render(<MarkdownRenderer text="[click](https://example.com)" />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("click");
     expect(frame).toContain("\x1b]8;;https://example.com\x07"); // OSC 8 open
-    expect(frame).toContain("\x1b]8;;\x07");                    // OSC 8 close
-    expect(frame).toMatch(/\x1B\[4m/);                          // underline SGR
+    expect(frame).toContain("\x1b]8;;\x07"); // OSC 8 close
+    expect(frame).toMatch(/\x1B\[4m/); // underline SGR
   });
 
   test("link: anchor href (#section) — renders text plain, no underline, no OSC 8", () => {
     const { lastFrame } = render(<MarkdownRenderer text="[section](#section)" />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("section");
-    expect(frame).not.toMatch(/\x1B\[4m/);     // no underline
-    expect(frame).not.toContain("\x1b]8;;");   // no OSC 8
+    expect(frame).not.toMatch(/\x1B\[4m/); // no underline
+    expect(frame).not.toContain("\x1b]8;;"); // no OSC 8
   });
 });
