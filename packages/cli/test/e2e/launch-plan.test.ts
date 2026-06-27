@@ -269,10 +269,24 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — prompt fragment injection', () =>
     expect(value.toLowerCase()).not.toContain('noop-router');
   });
 
-  test('print mode (-p) → no --append-system-prompt', async () => {
+  test('one-shot print mode (-p) → --append-system-prompt contains one-shot content', async () => {
     const { plan, exitCode } = await runPlan(['-p', '--', 'hello'], {
       extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS },
     });
+    expect(exitCode).toBe(0);
+    const flagIdx = plan!.claudeArgs.indexOf('--append-system-prompt');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    const value = plan!.claudeArgs[flagIdx + 1]!;
+    expect(value.toLowerCase()).toContain('one-shot');
+    // Interactive-only fragments stay out of the one-shot run.
+    expect(value.toLowerCase()).not.toContain('noop-router');
+  });
+
+  test('print + stream-json (program-driven) → no --append-system-prompt', async () => {
+    const { plan, exitCode } = await runPlan(
+      ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json'],
+      { extraEnv: { FNC_PROMPTS_DIR: REAL_PROMPTS } },
+    );
     expect(exitCode).toBe(0);
     expect(plan!.claudeArgs).not.toContain('--append-system-prompt');
   });
