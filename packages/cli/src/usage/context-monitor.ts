@@ -355,7 +355,9 @@ function listSessionJsonls(launchCWD: string): SessionCandidate[] {
  * notice per rung, citing a STABLE file — not today's unbounded flapping
  * between two files.
  */
-export function createPinnedContextReader(): (launchCWD: string) => number | null {
+export function createPinnedContextReader(
+  resolveOwnSessionFile?: () => string | null,
+): (launchCWD: string) => number | null {
   let baseline: Set<string> | null = null; // basenames present at first call
   let pinnedPath: string | null = null;
 
@@ -375,14 +377,40 @@ export function createPinnedContextReader(): (launchCWD: string) => number | nul
       try {
         raw = readFileSync(pinnedPath, 'utf8');
       } catch {
-        // Pinned file vanished — unpin (baseline stays as snapshotted) and
-        // let the next tick rescan.
+        // Pinned file vanished — unpin and let the next tick re-resolve.
         pinnedPath = null;
         return null;
       }
       return computeSessionUsage(raw).context?.tokens ?? null;
     }
 
+    // ── Identity path (no guessing) ──────────────────────────────────────
+    // When the caller can name THIS session's own JSONL (claude spawned with a
+    // known `--session-id`, or the file discovered via a pre-spawn snapshot
+    // diff), pin to that exact file and never look at any sibling. This is
+    // what closes the cross-session race: a second session in the same cwd no
+    // longer mis-pins the first session's (fatter) file and cites its token
+    // curve. Until the own file is known/exists, stay silent (null) — better
+    // no notice than a notice about another session's context.
+    if (resolveOwnSessionFile !== undefined) {
+      const own = resolveOwnSessionFile();
+      if (own === null || own === '') return null;
+      const dir = join(resolveHome(), '.claude', 'projects', encodeCWDForProjects(launchCWD));
+      const path = join(dir, own);
+      pinnedPath = path;
+      return readTokens(path);
+    }
+
+    // ── Legacy heuristic path (no identity available) ────────────────────
+    // Used when the caller can't name its own session file. Pins the oldest
+    // post-baseline candidate, which is racy when two sessions start near-
+    // simultaneously in one cwd (see the class doc's "Residual race").
+    // Production reaches this path for the session shapes whose id isn't
+    // knowable up front — `--continue`, `--fork-session`, and a bare
+    // `--resume` picker — where `planOwnSession` returns no id. Fresh /
+    // `--resume <uuid>` / user-supplied `--session-id` sessions supply a
+    // resolver above and never get here. Closing the `--continue` residual
+    // race (e.g. via pre-spawn snapshot-diff discovery) is a follow-up.
     const candidates = listSessionJsonls(launchCWD);
 
     if (baseline === null) {
@@ -474,6 +502,15 @@ export interface StartContextMonitorArgs {
    * context-token count, or `null`.
    */
   readContextTokens?: (launchCWD: string) => number | null;
+  /**
+   * Resolver for THIS session's own JSONL basename (e.g. `<session-id>.jsonl`),
+   * threaded into the default {@link createPinnedContextReader}. Returns the
+   * basename once known, else `null` (monitor stays silent until then). Supply
+   * this in production so the reader pins by identity instead of guessing
+   * oldest-mtime — the fix for the cross-session mis-pin. Ignored when
+   * `readContextTokens` is injected directly.
+   */
+  ownSessionFile?: () => string | null;
   /** Timer seam — defaults to global `setInterval`. */
   setIntervalFn?: typeof setInterval;
   /**
@@ -502,7 +539,7 @@ export interface RunningContextMonitor {
  */
 export function startContextMonitor(args: StartContextMonitorArgs): RunningContextMonitor {
   const intervalMs = args.intervalMs ?? 4000;
-  const read = args.readContextTokens ?? createPinnedContextReader();
+  const read = args.readContextTokens ?? createPinnedContextReader(args.ownSessionFile);
   const setIntervalImpl = args.setIntervalFn ?? setInterval;
 
   const monitor = createContextMonitor({

@@ -5,6 +5,7 @@
 // feature transforms live in their own modules under src/; main composes
 // them in order.
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -69,6 +70,7 @@ import { findOwner, formatOwnerLookupError } from './repo/owner-lookup';
 import { loadRepoSettings } from './repo/repo-settings';
 import { resolveInput } from './repo/resolve-input';
 import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
+import { planOwnSession } from './usage/own-session';
 import { createWarningBuffer } from './warnings/buffer';
 import { shouldInjectTmux } from './worktree/auto-tmux';
 import { listWorktrees } from './worktree/git-list';
@@ -387,6 +389,32 @@ if (process.env.FNC_INTERNAL_DISABLE_AUTONAME !== '1' && shouldAutoName(parsedWi
   const final = san.kind === 'invalid' ? generated : san.value;
   claudeArgs = insertFlagsBeforeSentinel(claudeArgs, '--name', final);
 }
+
+// Own-session pin: the context-size monitor must read THIS session's own
+// JSONL, not guess the oldest post-baseline `*.jsonl` (which mis-pins a
+// sibling's file when two sessions share a cwd — the second session then
+// reports the first's token curve and is blind to its own growth). Since fnc
+// spawns claude, it can KNOW the id: for a fresh interactive session it mints
+// a UUID and injects `--session-id <uuid>`; for a resume / user-supplied id it
+// parses the id; for --continue/fork/print it declines (monitor falls back to
+// the legacy heuristic). The resolved id is threaded into the monitor below.
+// See usage/own-session.ts for the full decision table.
+//
+// FNC_INTERNAL_DISABLE_SESSION_ID=1 is an internal test escape (mirrors
+// FNC_INTERNAL_DISABLE_AUTONAME) — when set, no id is minted/injected so e2e
+// arg-shape assertions don't see a random `--session-id <uuid>` pollute them.
+const ownSessionPlan =
+  process.env.FNC_INTERNAL_DISABLE_SESSION_ID === '1'
+    ? { sessionId: null, inject: [] as readonly string[] }
+    : planOwnSession(claudeArgs, () => randomUUID());
+if (ownSessionPlan.inject.length === 2) {
+  claudeArgs = insertFlagsBeforeSentinel(
+    claudeArgs,
+    ownSessionPlan.inject[0]!,
+    ownSessionPlan.inject[1]!,
+  );
+}
+const ownSessionId = ownSessionPlan.sessionId;
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on
 // noop fallback + interactive (non-print) state of the session.
@@ -756,6 +784,10 @@ try {
       write: (payload) => {
         term.write(payload);
       },
+      // Pin the monitor to THIS session's own JSONL by id (no oldest-mtime
+      // guess). `null` when the id isn't knowable up front (--continue/fork) —
+      // the reader then falls back to its legacy heuristic.
+      ownSessionFile: ownSessionId !== null ? () => `${ownSessionId}.jsonl` : undefined,
     }).stop;
   } else {
     proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
