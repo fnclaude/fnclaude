@@ -121,6 +121,36 @@ describe("MarkdownRenderer", () => {
     expect(frame).toMatch(/[┌┬┐├┼┤└┴┘]/); // box-drawing top/sep/bot borders
   });
 
+  test("table: styled-cell rows stay column-aligned with header (width from rendered tokens)", () => {
+    const md = [
+      "| Left | Center | Right |",
+      "| :--- | :----: | ----: |",
+      "| a | b | c |",
+      "| `x` | **y** | ~~z~~ |",
+    ].join("\n");
+    const { lastFrame } = render(<MarkdownRenderer text={md} />);
+    const frame = stripAnsi(lastFrame() ?? "");
+
+    // Both data rows present.
+    for (const cell of ["a", "b", "c", "x", "y", "z"]) {
+      expect(frame).toContain(cell);
+    }
+    // Box-drawing, not raw pipes.
+    expect(frame).not.toContain("|");
+
+    // Every table line must share one identical visible width. The bug measures
+    // styled cells from raw cell.text (e.g. "`x`" len 3) but renders the stripped
+    // token text ("x" len 1), so the styled row + bottom border come out shorter.
+    const boxChars = /[┌┬┐├┼┤└┴┘│─]/;
+    const tableLines = frame
+      .split("\n")
+      .filter((line) => boxChars.test(line))
+      .map((line) => line.length);
+    expect(tableLines.length).toBeGreaterThan(0);
+    const widths = new Set(tableLines);
+    expect(widths.size).toBe(1);
+  });
+
   // -------------------------------------------------------------------------
   // AlertBlock wiring
   // -------------------------------------------------------------------------
