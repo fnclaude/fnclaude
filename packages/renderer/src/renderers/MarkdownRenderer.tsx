@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
+import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
 
@@ -61,6 +62,18 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     }
     case "blockquote": {
       const bq = token as Tokens.Blockquote;
+      const alert = parseAlert(bq);
+      if (alert) {
+        return (
+          <AlertBlock
+            kind={alert.kind}
+            bodyTokens={alert.bodyTokens}
+            renderChildren={(toks) =>
+              toks.map((t, i) => <BlockToken key={i} token={t} />)
+            }
+          />
+        );
+      }
       return (
         <Box
           borderStyle="single"
