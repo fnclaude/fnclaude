@@ -33,19 +33,37 @@ export function MarkdownRenderer({ text }: MarkdownRendererProps): JSX.Element {
   );
 }
 
-const HEADING_COLOR = "cyan";
+/** Per-depth heading style: H1 most prominent, H6 least. */
+function headingTextProps(depth: number): {
+  bold?: boolean;
+  underline?: boolean;
+  color?: string;
+  dimColor?: boolean;
+} {
+  switch (depth) {
+    case 1: return { bold: true, underline: true, color: "cyan" };
+    case 2: return { bold: true, color: "cyan" };
+    case 3: return { bold: true, color: "blue" };
+    case 4: return { bold: true, color: "white" };
+    case 5: return { bold: true, dimColor: true };
+    default: return { dimColor: true }; // H6+
+  }
+}
 
 /** A single block-level token → its block element (or null for whitespace). */
 function BlockToken({ token }: { token: Token }): JSX.Element | null {
   switch (token.type) {
-    case "heading":
+    case "heading": {
+      const h = token as Tokens.Heading;
+      const { bold, underline, color, dimColor } = headingTextProps(h.depth);
       return (
         <Box marginBottom={1}>
-          <Text bold color={HEADING_COLOR}>
-            {inline((token as Tokens.Heading).tokens)}
+          <Text bold={bold} underline={underline} color={color} dimColor={dimColor}>
+            {inline(h.tokens)}
           </Text>
         </Box>
       );
+    }
     case "paragraph":
       return (
         <Box marginBottom={1}>
