@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { TableBlock } from "./TableBlock.tsx";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
@@ -87,6 +88,13 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
       );
     case "space":
       return null;
+    case "table":
+      return (
+        <TableBlock
+          token={token as Tokens.Table}
+          renderInline={(toks) => inline(toks)}
+        />
+      );
     case "html":
       // Raw HTML is rare in assistant output; show its text plainly rather
       // than dropping it.
