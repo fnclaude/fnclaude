@@ -1,7 +1,7 @@
+import { decodeHTML } from "entities";
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
-import { decodeHTML } from "entities";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
@@ -42,12 +42,18 @@ function headingTextProps(depth: number): {
   dimColor?: boolean;
 } {
   switch (depth) {
-    case 1: return { bold: true, underline: true, color: "cyan" };
-    case 2: return { bold: true, color: "cyan" };
-    case 3: return { bold: true, color: "blue" };
-    case 4: return { bold: true, color: "white" };
-    case 5: return { bold: true, dimColor: true };
-    default: return { dimColor: true }; // H6+
+    case 1:
+      return { bold: true, underline: true, color: "cyan" };
+    case 2:
+      return { bold: true, color: "cyan" };
+    case 3:
+      return { bold: true, color: "blue" };
+    case 4:
+      return { bold: true, color: "white" };
+    case 5:
+      return { bold: true, dimColor: true };
+    default:
+      return { dimColor: true }; // H6+
   }
 }
 
@@ -93,9 +99,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
           <AlertBlock
             kind={alert.kind}
             bodyTokens={alert.bodyTokens}
-            renderChildren={(toks) =>
-              toks.map((t, i) => <BlockToken key={i} token={t} />)
-            }
+            renderChildren={(toks) => toks.map((t, i) => <BlockToken key={i} token={t} />)}
           />
         );
       }
@@ -127,12 +131,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     case "space":
       return null;
     case "table":
-      return (
-        <TableBlock
-          token={token as Tokens.Table}
-          renderInline={(toks) => inline(toks)}
-        />
-      );
+      return <TableBlock token={token as Tokens.Table} renderInline={(toks) => inline(toks)} />;
     case "html":
       // Raw HTML is rare in assistant output; show its text plainly rather
       // than dropping it.
@@ -245,7 +244,7 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
         if (/^https?:\/\//.test(href)) {
           return (
             <Text key={`in-${i}`}>
-              {"\x1b]8;;" + href + "\x07"}
+              {`\x1b]8;;${href}\x07`}
               <Text color="blue" underline>
                 {inline(link.tokens)}
               </Text>
