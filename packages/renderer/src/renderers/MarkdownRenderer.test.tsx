@@ -204,16 +204,32 @@ describe("MarkdownRenderer", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Link clickability (OSC 8 hyperlinks)
+  // Link rendering (no OSC 8 — Ghostty's built-in URL matcher handles clicks)
   // -------------------------------------------------------------------------
 
-  test("link: http href — emits OSC 8 hyperlink escape and blue+underline styling", () => {
+  test("link: http href — blue+underline styled, NO OSC 8 escapes", () => {
     const { lastFrame } = render(<MarkdownRenderer text="[click](https://example.com)" />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("click");
-    expect(frame).toContain("\x1b]8;;https://example.com\x07"); // OSC 8 open
-    expect(frame).toContain("\x1b]8;;\x07"); // OSC 8 close
-    expect(frame).toMatch(/\x1B\[4m/); // underline SGR
+    expect(frame).toMatch(/\x1B\[4m/); // underline SGR present
+    expect(frame).toMatch(/\x1B\[34m/); // blue SGR present
+    expect(frame).not.toContain("\x1b]8;;"); // NO OSC 8 sequences
+  });
+
+  test("link: https href — blue+underline styled, NO OSC 8 escapes", () => {
+    const { lastFrame } = render(<MarkdownRenderer text="[go](http://example.org)" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("go");
+    expect(frame).toMatch(/\x1B\[4m/); // underline SGR present
+    expect(frame).not.toContain("\x1b]8;;"); // NO OSC 8 sequences
+  });
+
+  test("link: mailto href — blue+underline styled, NO OSC 8 escapes", () => {
+    const { lastFrame } = render(<MarkdownRenderer text="[email](mailto:user@example.com)" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("email");
+    expect(frame).toMatch(/\x1B\[4m/); // underline SGR present
+    expect(frame).not.toContain("\x1b]8;;"); // NO OSC 8 sequences
   });
 
   test("link: anchor href (#section) — renders text plain, no underline, no OSC 8", () => {
@@ -222,5 +238,22 @@ describe("MarkdownRenderer", () => {
     expect(frame).toContain("section");
     expect(frame).not.toMatch(/\x1B\[4m/); // no underline
     expect(frame).not.toContain("\x1b]8;;"); // no OSC 8
+  });
+
+  test("link: relative path href — renders text plain, no underline, no OSC 8", () => {
+    const { lastFrame } = render(<MarkdownRenderer text="[doc](./readme.md)" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("doc");
+    expect(frame).not.toMatch(/\x1B\[4m/); // no underline
+    expect(frame).not.toMatch(/\x1B\[34m/); // no blue
+    expect(frame).not.toContain("\x1b]8;;"); // no OSC 8
+  });
+
+  test("link in table cell — no OSC 8 bytes leak into measured cell content", () => {
+    const md = "| Link |\n|---|\n| [visit](https://example.com) |";
+    const { lastFrame } = render(<MarkdownRenderer text={md} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("visit");
+    expect(frame).not.toContain("8;;"); // OSC 8 URL bytes must not appear
   });
 });
