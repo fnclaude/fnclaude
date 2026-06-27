@@ -303,6 +303,63 @@ describe("<App /> injected subscription", () => {
     instance.unmount();
   });
 
+  test("Shift+Enter inserts a newline instead of submitting", async () => {
+    const fake = fakeSubscription();
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    send("a", { ...baseKey });
+    // Shift+Enter: newline into the draft, NOT a submit.
+    send("", { ...baseKey, return: true, shift: true });
+    await flush();
+    expect(fake.sendUserTurn).not.toHaveBeenCalled();
+
+    send("b", { ...baseKey });
+    // Plain Enter submits the whole multi-line draft.
+    send("", { ...baseKey, return: true });
+    await flush();
+    expect(fake.sendUserTurn).toHaveBeenCalledWith("a\nb");
+    instance.unmount();
+  });
+
+  test("Backslash+Enter inserts a newline (line continuation) instead of submitting", async () => {
+    const fake = fakeSubscription();
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    send("a", { ...baseKey });
+    send("\\", { ...baseKey });
+    // A trailing backslash turns Enter into a line break (terminal-agnostic
+    // fallback for shift+enter); the backslash itself is consumed.
+    send("", { ...baseKey, return: true });
+    await flush();
+    expect(fake.sendUserTurn).not.toHaveBeenCalled();
+
+    send("b", { ...baseKey });
+    send("", { ...baseKey, return: true });
+    await flush();
+    expect(fake.sendUserTurn).toHaveBeenCalledWith("a\nb");
+    instance.unmount();
+  });
+
   test("does NOT close the subscription on unmount (handle owns close)", async () => {
     const fake = fakeSubscription();
     const instance = render(<App subscription={fake.sub} />);
