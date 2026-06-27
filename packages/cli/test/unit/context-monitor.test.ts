@@ -733,4 +733,81 @@ describe('startContextMonitor — on-disk session pinning (real discovery)', () 
     );
     expect(spy.calls.some((c) => c.includes('[now]') || c.includes('250k'))).toBe(false);
   });
+
+  // ── Cross-session mis-pin (Tom's report): two sessions in one cwd ────────
+  // Session A is already running and at 150k. Session B (us) starts in the
+  // SAME cwd and is at 200k+. The legacy reader guesses "oldest post-baseline
+  // *.jsonl = mine", so B pins A's (older, fatter) JSONL and fires A's
+  // [consider] 150k — while B's own 200k growth goes unwatched, so B never
+  // sees its own [plan]. The fix gives the monitor B's own session file by
+  // name (the `ownSessionFile` resolver), so it reads B's file, never A's.
+  //
+  // CRITICAL for a faithful repro: the foreign file must appear AFTER the
+  // monitor's first tick (its baseline snapshot). Files present at baseline
+  // are foreign-by-definition and the legacy path would never pin them — so a
+  // pre-baseline fixture goes silent on BOTH code paths (a tautology). With a
+  // POST-baseline A, the unfixed legacy path actively pins A and fires its
+  // value, exactly reproducing the bug.
+  function startWithResolver(
+    spy: { write: PtyWriter; calls: string[] },
+    ownSessionFile: () => string | null,
+  ): { tick: () => void; stop: () => void } {
+    let cb: (() => void) | null = null;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    const running = startContextMonitor({
+      launchCWD: CWD,
+      ladder: defaultLadder,
+      write: spy.write,
+      intervalMs: 10,
+      schedule: syncSchedule,
+      setIntervalFn: fakeSetInterval,
+      ownSessionFile,
+    });
+    return { tick: () => cb?.(), stop: running.stop };
+  }
+
+  test('B reads its OWN 200k file, never sibling A’s older fatter 150k', () => {
+    const spy = spyWriter();
+    const m = startWithResolver(spy, () => 'sessB-own.jsonl');
+
+    m.tick(); // baseline snapshot over an empty dir
+
+    // Both files appear AFTER baseline. A is older (the legacy path's oldest
+    // pick) AND fatter (150k); B (ours) is younger and at 200k.
+    writeSession('sessA.jsonl', 150_000, 1_000);
+    writeSession('sessB-own.jsonl', 200_000, 2_000);
+    for (let i = 0; i < 4; i += 1) m.tick();
+
+    // Fixed: cites B's own 200k → [plan]. Unfixed: legacy pins the older A and
+    // fires [consider] 150k (Tom's exact symptom) — so all three go red.
+    expect(spy.calls.some((c) => c.includes('[plan]') && c.includes('200k'))).toBe(true);
+    expect(spy.calls.some((c) => c.includes('150k'))).toBe(false);
+    expect(spy.calls.some((c) => c.includes('[consider]'))).toBe(false);
+  });
+
+  test('never fires a foreign sibling’s notice while our own file is absent', () => {
+    const spy = spyWriter();
+    let ownPresent = false;
+    const m = startWithResolver(spy, () => (ownPresent ? 'sessB-own.jsonl' : null));
+
+    m.tick(); // baseline snapshot over an empty dir
+
+    // Foreign fat session appears AFTER baseline; the legacy path would pin it
+    // (only fresh candidate) and fire its 165k. The fix keeps the resolver at
+    // null until our own file exists, so nothing is pinned and nothing fires.
+    writeSession('sessA.jsonl', 165_000, 1_000);
+    for (let i = 0; i < 3; i += 1) m.tick();
+    expect(spy.calls.some((c) => c.includes('165k'))).toBe(false);
+    expect(spy.calls).toEqual([]);
+
+    // Our own file appears at 54k (below the first tier) → still nothing.
+    writeSession('sessB-own.jsonl', 54_000, 2_000);
+    ownPresent = true;
+    for (let i = 0; i < 3; i += 1) m.tick();
+    expect(spy.calls).toEqual([]);
+  });
 });

@@ -72,6 +72,7 @@ async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<
       FNC_INTERNAL_DUMP_PLAN: '1',
       FNC_PROMPTS_DIR: EMPTY_PROMPTS_DIR,
       FNC_INTERNAL_DISABLE_AUTONAME: '1',
+      FNC_INTERNAL_DISABLE_SESSION_ID: '1',
       ...(opts.extraEnv ?? {}),
     },
     stdin: 'ignore',
@@ -530,6 +531,38 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — auto-name (§5.2)', () => {
     } finally {
       rmSync(shimDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('launch plan — own-session id injection (cross-session pin)', () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  test('fresh interactive session → --session-id <uuid> injected', async () => {
+    const { plan, exitCode } = await runPlan([], {
+      extraEnv: { FNC_INTERNAL_DISABLE_SESSION_ID: '' }, // re-enable real behavior
+    });
+    expect(exitCode).toBe(0);
+    const idx = plan!.claudeArgs.indexOf('--session-id');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(plan!.claudeArgs[idx + 1]).toMatch(UUID_RE);
+  });
+
+  test('--resume <uuid> → no minted --session-id injected', async () => {
+    const resumeUuid = 'abcdef01-2345-4678-9abc-def012345678';
+    const { plan, exitCode } = await runPlan(['--resume', resumeUuid], {
+      extraEnv: { FNC_INTERNAL_DISABLE_SESSION_ID: '' },
+    });
+    expect(exitCode).toBe(0);
+    // claude reuses the resume id and its file — fnc must not add a session-id.
+    expect(plan!.claudeArgs).not.toContain('--session-id');
+  });
+
+  test('--print session → no --session-id injected', async () => {
+    const { plan, exitCode } = await runPlan(['--print', '--', 'q'], {
+      extraEnv: { FNC_INTERNAL_DISABLE_SESSION_ID: '' },
+    });
+    expect(exitCode).toBe(0);
+    expect(plan!.claudeArgs).not.toContain('--session-id');
   });
 });
 
