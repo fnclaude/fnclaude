@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { useMemo } from "react";
 import { highlightCode } from "./highlight.ts";
 
 export interface CodeBlockProps {
@@ -11,6 +12,9 @@ export interface CodeBlockProps {
  * syntax highlighting via cli-highlight.
  */
 export function CodeBlock({ code, lang }: CodeBlockProps): JSX.Element {
+  // Memoize syntax highlighting so a top-level re-render (e.g. a keystroke)
+  // doesn't re-run cli-highlight over every committed code block.
+  const highlighted = useMemo(() => highlightCode(code, lang), [code, lang]);
   return (
     <Box
       borderStyle="round"
@@ -19,7 +23,7 @@ export function CodeBlock({ code, lang }: CodeBlockProps): JSX.Element {
       marginBottom={1}
       flexDirection="column"
     >
-      <Text>{highlightCode(code, lang)}</Text>
+      <Text>{highlighted}</Text>
     </Box>
   );
 }

@@ -1,6 +1,7 @@
 import { decodeHTML } from "entities";
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
+import { useMemo } from "react";
 import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
@@ -23,8 +24,11 @@ export interface MarkdownRendererProps {
  * `text`), nothing markup-ish ever reaches a `<Text>`.
  */
 export function MarkdownRenderer({ text }: MarkdownRendererProps): JSX.Element {
-  const healed = remend(text);
-  const tokens = marked.lexer(healed);
+  // Memoize the heal+lex on `text` so a top-level re-render (e.g. every
+  // keystroke mutating the draft) doesn't re-parse already-committed
+  // transcript markdown. Parse cost then stays flat per keystroke instead
+  // of scaling with conversation length.
+  const tokens = useMemo(() => marked.lexer(remend(text)), [text]);
   return (
     <Box flexDirection="column">
       {tokens.map((token, i) => (
