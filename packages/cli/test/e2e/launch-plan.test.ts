@@ -15,6 +15,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
+import { cleanEnvForSpawn } from '../../src/handoff/clean-env';
+
 const SKIP_WINDOWS = process.platform === 'win32';
 const CLI_ROOT = resolve(__dirname, '..', '..');
 const BIN = resolve(CLI_ROOT, 'bin', 'fnc.js');
@@ -58,8 +60,15 @@ function stripMcpConfig(claudeArgs: readonly string[]): string[] {
 async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
   const proc = Bun.spawn(['node', BIN, ...args], {
     cwd: opts.cwd ?? tmpdir(),
+    // Scrub fnclaude session-scoped vars (FNCLAUDE_HANDOFF, FNC_SOCKET,
+    // CLAUDE_CODE_SESSION_ID) from the inherited env. When the suite runs
+    // *inside* a live fnc session those are already exported, and the
+    // env-composition assertions below would otherwise see the developer's
+    // FNCLAUDE_HANDOFF leak through `...process.env` (#214). config.toml is
+    // isolated via XDG_CONFIG_HOME; the inherited process env is the second
+    // leak vector this closes. The launcher recomputes its own FNC_SOCKET.
     env: {
-      ...process.env,
+      ...cleanEnvForSpawn(process.env),
       FNC_INTERNAL_DUMP_PLAN: '1',
       FNC_PROMPTS_DIR: EMPTY_PROMPTS_DIR,
       FNC_INTERNAL_DISABLE_AUTONAME: '1',
@@ -539,6 +548,33 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — env composition (§6.1)', () => {
       // Sanity: path looks like the §7.1 formula (base/fnclaude-mcp-<pid>.sock).
       expect(plan!.env.FNC_SOCKET).toMatch(/\/fnclaude-mcp-\d+\.sock$/);
     } finally {
+      rmSync(emptyXdg, { recursive: true, force: true });
+    }
+  });
+
+  // Regression for #214: when the suite runs *inside* a live fnc session,
+  // the parent has already exported FNCLAUDE_HANDOFF into the environment.
+  // runPlan inherits process.env, so without scrubbing that value leaks
+  // into the composed child env and contaminates the assertion above —
+  // green on clean CI, red on the maintainer's machine. Simulate the
+  // in-session run by exporting FNCLAUDE_HANDOFF before the launch; the
+  // scrub must keep it out of the plan regardless of XDG-isolated config.
+  test('inherited FNCLAUDE_HANDOFF (in-session run) does not leak into the plan', async () => {
+    const emptyXdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-inherit-xdg-'));
+    const prev = process.env.FNCLAUDE_HANDOFF;
+    process.env.FNCLAUDE_HANDOFF = '3';
+    try {
+      const { plan, exitCode } = await runPlan([], {
+        extraEnv: { XDG_CONFIG_HOME: emptyXdg },
+      });
+      expect(exitCode).toBe(0);
+      expect(Object.keys(plan!.env).sort()).toEqual(['FNC_SOCKET']);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.FNCLAUDE_HANDOFF;
+      } else {
+        process.env.FNCLAUDE_HANDOFF = prev;
+      }
       rmSync(emptyXdg, { recursive: true, force: true });
     }
   });
