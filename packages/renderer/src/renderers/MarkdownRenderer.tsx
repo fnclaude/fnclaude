@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
+import { decodeHTML } from "entities";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
@@ -240,7 +241,9 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
         const tt = t as Tokens.Text;
         if (tt.tokens && tt.tokens.length > 0)
           return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
-        return <Text key={`in-${i}`}>{tt.text}</Text>;
+        // marked leaves HTML entities as-is in GFM mode; decode them here so
+        // &copy; → ©, &mdash; → —, &rarr; → →, etc.
+        return <Text key={`in-${i}`}>{decodeHTML(tt.text)}</Text>;
       }
       default:
         return <Text key={`in-${i}`}>{"text" in t ? (t as { text: string }).text : ""}</Text>;
