@@ -382,6 +382,19 @@ export function App(props: AppProps): React.ReactElement {
     }
     // Text input: typed chars go into the draft; Enter submits.
     if (key.return) {
+      // Shift+Enter inserts a line break instead of submitting — but only
+      // where the terminal sends a distinct sequence for it (many emit a bare
+      // CR indistinguishable from Enter, so this silently won't fire there).
+      if (key.shift) {
+        setDraft((d) => `${d}\n`);
+        return;
+      }
+      // Backslash-continuation: a trailing "\" turns Enter into a newline and
+      // is itself consumed. Terminal-agnostic fallback for shift+enter.
+      if (draft.endsWith("\\")) {
+        setDraft((d) => `${d.slice(0, -1)}\n`);
+        return;
+      }
       if (draft.length > 0) {
         // Append the prompt to the transcript — claude never echoes user turns
         // back, so without this the submitted text would vanish.
@@ -484,7 +497,9 @@ export function App(props: AppProps): React.ReactElement {
       </Box>
       <LiveRegion live={live} visibilityFor={visibilityFor} />
       {draft.length > 0 ? (
-        <Text>{`> ${draft}`}</Text>
+        // Indent continuation lines under the "> " prompt so a multi-line
+        // draft (shift+enter / backslash-continuation) reads cleanly.
+        <Text>{`> ${draft.replace(/\n/g, "\n  ")}`}</Text>
       ) : (
         <Text>
           {"> "}
