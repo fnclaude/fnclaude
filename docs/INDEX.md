@@ -15,6 +15,7 @@ Navigation index for the fnclaude documentation.
 ## Proposals
 
 - [proposals/design.renderer.md](proposals/design.renderer.md) — Forward-looking design for renderer↔CLI in-process integration (not yet shipped) — created 2026-05-30
+- [proposals/design.renderer-images.md](proposals/design.renderer-images.md) — Implementation guide for inline images: Kitty graphics protocol, `<Static>` foundation, `<img>`/pasted-image flows, security — created 2026-06-26
 - [proposals/multipane-orchestration-proposal.md](proposals/multipane-orchestration-proposal.md) — Design exploration for a TUI hosting Ink chrome, Neovim, and transcript side-by-side — created 2026-06-26
 - [proposals/subagent-panes-idea.md](proposals/subagent-panes-idea.md) — Design for a multi-agent cockpit: per-subagent panes for watching and steering in-flight agents — created 2026-06-18, updated 2026-06-26
 
