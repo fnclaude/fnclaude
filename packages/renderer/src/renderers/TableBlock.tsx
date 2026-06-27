@@ -18,6 +18,31 @@ function visibleWidth(s: string): number {
 }
 
 /**
+ * The visible text a cell will actually render: the concatenation of its inline
+ * tokens' text, with markdown syntax characters already consumed into the token
+ * tree. Measuring `cell.text` instead would count raw syntax (e.g. "`x`" len 3)
+ * against content that renders stripped ("x" len 1), misaligning styled rows.
+ */
+function inlineVisibleText(tokens: Token[] | undefined): string {
+  if (!tokens) return "";
+  return tokens
+    .map((t) => {
+      const tt = t as { tokens?: Token[]; text?: string };
+      if (Array.isArray(tt.tokens) && tt.tokens.length > 0) return inlineVisibleText(tt.tokens);
+      if (t.type === "br") return "\n";
+      return typeof tt.text === "string" ? tt.text : "";
+    })
+    .join("");
+}
+
+/** Visible width of a cell, measured from its rendered inline tokens. */
+function cellVisibleWidth(cell: Tokens.TableCell | undefined): number {
+  if (!cell) return 0;
+  const tokenText = inlineVisibleText(cell.tokens);
+  return visibleWidth(tokenText !== "" ? tokenText : (cell.text ?? ""));
+}
+
+/**
  * Compute leading/trailing padding strings for a cell whose plain-text length
  * is `textLen`, filling a column of `colWidth`, with the given alignment.
  *
@@ -54,8 +79,8 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
 
   // Column widths: max of header and body plain-text widths (ignoring ANSI).
   const colWidths: number[] = Array.from({ length: numCols }, (_, ci) => {
-    const hw = visibleWidth(header[ci]?.text ?? "");
-    const bw = rows.reduce((mx, row) => Math.max(mx, visibleWidth(row[ci]?.text ?? "")), 0);
+    const hw = cellVisibleWidth(header[ci]);
+    const bw = rows.reduce((mx, row) => Math.max(mx, cellVisibleWidth(row[ci])), 0);
     return Math.max(hw, bw, 1);
   });
 
@@ -75,7 +100,7 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
         <Text>│</Text>
         {cells.map((cell, ci) => {
           const [lpad, rpad] = cellPad(
-            visibleWidth(cell.text),
+            cellVisibleWidth(cell),
             colWidths[ci] ?? 1,
             align[ci] ?? null,
           );
