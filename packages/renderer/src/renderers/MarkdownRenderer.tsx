@@ -1,6 +1,10 @@
+import { decodeHTML } from "entities";
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
+import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
+import { CodeBlock } from "./CodeBlock.tsx";
+import { TableBlock } from "./TableBlock.tsx";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
@@ -30,19 +34,49 @@ export function MarkdownRenderer({ text }: MarkdownRendererProps): JSX.Element {
   );
 }
 
-const HEADING_COLOR = "cyan";
+/** Per-depth heading style: H1 most prominent, H6 least. */
+function headingTextProps(depth: number): {
+  bold?: boolean;
+  underline?: boolean;
+  color?: string;
+  dimColor?: boolean;
+} {
+  switch (depth) {
+    case 1:
+      return { bold: true, underline: true, color: "cyan" };
+    case 2:
+      return { bold: true, color: "cyan" };
+    case 3:
+      return { bold: true, color: "blue" };
+    case 4:
+      return { bold: true, color: "white" };
+    case 5:
+      return { bold: true, dimColor: true };
+    default:
+      return { dimColor: true }; // H6+
+  }
+}
 
 /** A single block-level token → its block element (or null for whitespace). */
 function BlockToken({ token }: { token: Token }): JSX.Element | null {
   switch (token.type) {
-    case "heading":
+    case "heading": {
+      const h = token as Tokens.Heading;
+      const props = headingTextProps(h.depth);
+      // exactOptionalPropertyTypes forbids passing `undefined` for typed
+      // optional props, so spread only the keys that are actually set.
+      const textProps = {
+        ...(props.bold !== undefined ? { bold: props.bold } : {}),
+        ...(props.underline !== undefined ? { underline: props.underline } : {}),
+        ...(props.color !== undefined ? { color: props.color } : {}),
+        ...(props.dimColor !== undefined ? { dimColor: props.dimColor } : {}),
+      };
       return (
         <Box marginBottom={1}>
-          <Text bold color={HEADING_COLOR}>
-            {inline((token as Tokens.Heading).tokens)}
-          </Text>
+          <Text {...textProps}>{inline(h.tokens)}</Text>
         </Box>
       );
+    }
     case "paragraph":
       return (
         <Box marginBottom={1}>
@@ -55,20 +89,20 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     }
     case "code": {
       const code = token as Tokens.Code;
-      return (
-        <Box
-          borderStyle="round"
-          borderColor="gray"
-          paddingX={1}
-          marginBottom={1}
-          flexDirection="column"
-        >
-          <Text color="green">{code.text}</Text>
-        </Box>
-      );
+      return <CodeBlock code={code.text} lang={code.lang ?? undefined} />;
     }
     case "blockquote": {
       const bq = token as Tokens.Blockquote;
+      const alert = parseAlert(bq);
+      if (alert) {
+        return (
+          <AlertBlock
+            kind={alert.kind}
+            bodyTokens={alert.bodyTokens}
+            renderChildren={(toks) => toks.map((t, i) => <BlockToken key={i} token={t} />)}
+          />
+        );
+      }
       return (
         <Box
           borderStyle="single"
@@ -96,6 +130,8 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
       );
     case "space":
       return null;
+    case "table":
+      return <TableBlock token={token as Tokens.Table} renderInline={(toks) => inline(toks)} />;
     case "html":
       // Raw HTML is rare in assistant output; show its text plainly rather
       // than dropping it.
@@ -109,6 +145,22 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
   return (
     <Box flexDirection="column" marginBottom={1}>
       {token.items.map((item, i) => {
+        // GFM task-list items: render a checkbox glyph instead of the bullet.
+        if (item.task) {
+          const checkbox = item.checked ? "☑" : "☐";
+          return (
+            <Box key={`li-${i}`} flexDirection="row">
+              {item.checked ? (
+                <Text color="green">{`${checkbox} `}</Text>
+              ) : (
+                <Text>{`${checkbox} `}</Text>
+              )}
+              <Box flexDirection="column">
+                <ListItemBody item={item} />
+              </Box>
+            </Box>
+          );
+        }
         const marker = token.ordered
           ? `${(typeof token.start === "number" ? token.start : 1) + i}.`
           : "●";
@@ -133,6 +185,9 @@ function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
   return (
     <>
       {item.tokens.map((t, i) => {
+        // The `checkbox` token is the marker already rendered as the bullet;
+        // skip it so we don't produce a spurious empty element.
+        if (t.type === "checkbox") return null;
         if (t.type === "list") return <ListBlock key={`l-${i}`} token={t as Tokens.List} />;
         if (t.type === "text") {
           const tt = t as Tokens.Text;
@@ -180,12 +235,26 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
             {(t as Tokens.Codespan).text}
           </Text>
         );
-      case "link":
-        return (
-          <Text key={`in-${i}`} color="blue" underline>
-            {inline((t as Tokens.Link).tokens)}
-          </Text>
-        );
+      case "link": {
+        const link = t as Tokens.Link;
+        const href = link.href ?? "";
+        // Only style and OSC-8-wrap http/https links; they are the only ones
+        // a terminal can open. Anchors (#id), mailto, and relative paths are
+        // rendered plain so they don't look clickable when they aren't.
+        if (/^https?:\/\//.test(href)) {
+          return (
+            <Text key={`in-${i}`}>
+              {`\x1b]8;;${href}\x07`}
+              <Text color="blue" underline>
+                {inline(link.tokens)}
+              </Text>
+              {"\x1b]8;;\x07"}
+            </Text>
+          );
+        }
+        // Non-http link: render its text without any link styling.
+        return <Text key={`in-${i}`}>{inline(link.tokens)}</Text>;
+      }
       case "br":
         return <Text key={`in-${i}`}>{"\n"}</Text>;
       case "escape":
@@ -194,7 +263,9 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
         const tt = t as Tokens.Text;
         if (tt.tokens && tt.tokens.length > 0)
           return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
-        return <Text key={`in-${i}`}>{tt.text}</Text>;
+        // marked leaves HTML entities as-is in GFM mode; decode them here so
+        // &copy; → ©, &mdash; → —, &rarr; → →, etc.
+        return <Text key={`in-${i}`}>{decodeHTML(tt.text)}</Text>;
       }
       default:
         return <Text key={`in-${i}`}>{"text" in t ? (t as { text: string }).text : ""}</Text>;
