@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import remend from "remend";
+import { CodeBlock } from "./CodeBlock.tsx";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
@@ -55,17 +56,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     }
     case "code": {
       const code = token as Tokens.Code;
-      return (
-        <Box
-          borderStyle="round"
-          borderColor="gray"
-          paddingX={1}
-          marginBottom={1}
-          flexDirection="column"
-        >
-          <Text color="green">{code.text}</Text>
-        </Box>
-      );
+      return <CodeBlock code={code.text} lang={code.lang ?? undefined} />;
     }
     case "blockquote": {
       const bq = token as Tokens.Blockquote;
