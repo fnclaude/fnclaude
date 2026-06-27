@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   isInteractiveSession,
+  isOneShotPrint,
   selectFragments,
+  usesStreamJson,
 } from '../../src/prompts/select';
 
 describe('isInteractiveSession', () => {
@@ -20,6 +22,45 @@ describe('isInteractiveSession', () => {
   });
   test('-p anywhere in passthrough → not interactive', () => {
     expect(isInteractiveSession(['--verbose', '-p', '--'])).toBe(false);
+  });
+});
+
+describe('usesStreamJson', () => {
+  test('--output-format stream-json (separate tokens) → true', () => {
+    expect(usesStreamJson(['--output-format', 'stream-json'])).toBe(true);
+  });
+  test('--input-format stream-json (separate tokens) → true', () => {
+    expect(usesStreamJson(['--input-format', 'stream-json'])).toBe(true);
+  });
+  test('--output-format=stream-json (inline) → true', () => {
+    expect(usesStreamJson(['--output-format=stream-json'])).toBe(true);
+  });
+  test('--input-format=stream-json (inline) → true', () => {
+    expect(usesStreamJson(['--input-format=stream-json'])).toBe(true);
+  });
+  test('empty → false', () => {
+    expect(usesStreamJson([])).toBe(false);
+  });
+  test('--output-format text → false', () => {
+    expect(usesStreamJson(['--output-format', 'text'])).toBe(false);
+  });
+  test('--verbose → false', () => {
+    expect(usesStreamJson(['--verbose'])).toBe(false);
+  });
+});
+
+describe('isOneShotPrint', () => {
+  test('-p → true', () => {
+    expect(isOneShotPrint(['-p'])).toBe(true);
+  });
+  test('--print → true', () => {
+    expect(isOneShotPrint(['--print'])).toBe(true);
+  });
+  test('empty (interactive) → false', () => {
+    expect(isOneShotPrint([])).toBe(false);
+  });
+  test('-p with stream-json → false', () => {
+    expect(isOneShotPrint(['-p', '--output-format', 'stream-json'])).toBe(false);
   });
 });
 
@@ -52,22 +93,41 @@ describe('selectFragments — budget.md always-on interactive (#171)', () => {
   test('budget.md present in noop interactive session', () => {
     expect(selectFragments({ usedNoopFallback: true, passthrough: [] })).toContain('budget.md');
   });
-  test('budget.md absent in print mode (no fragments at all)', () => {
+  test('budget.md absent in one-shot print mode', () => {
     expect(selectFragments({ usedNoopFallback: false, passthrough: ['-p'] })).not.toContain(
       'budget.md',
     );
   });
 });
 
-describe('selectFragments — print mode (no fragments)', () => {
-  test('-p in passthrough, non-noop → no fragments', () => {
+describe('selectFragments — one-shot print mode', () => {
+  test('-p in passthrough, non-noop → one-shot.md', () => {
     expect(
       selectFragments({ usedNoopFallback: false, passthrough: ['-p'] }),
-    ).toEqual([]);
+    ).toEqual(['one-shot.md']);
   });
-  test('--print in passthrough, noop → no fragments', () => {
+  test('--print in passthrough, noop → one-shot.md', () => {
     expect(
       selectFragments({ usedNoopFallback: true, passthrough: ['--print'] }),
+    ).toEqual(['one-shot.md']);
+  });
+});
+
+describe('selectFragments — print + stream-json (program-driven)', () => {
+  test('-p with input+output stream-json → no fragments', () => {
+    expect(
+      selectFragments({
+        usedNoopFallback: false,
+        passthrough: ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json'],
+      }),
+    ).toEqual([]);
+  });
+  test('-p with inline --output-format=stream-json → no fragments', () => {
+    expect(
+      selectFragments({
+        usedNoopFallback: false,
+        passthrough: ['-p', '--output-format=stream-json'],
+      }),
     ).toEqual([]);
   });
 });

@@ -12,8 +12,11 @@
  *   project-switch.md — non-noop interactive
  *   restart.md        — non-noop interactive
  *
- * Print mode (-p / --print anywhere in passthrough): no fragments
- * injected — claude is being driven non-interactively.
+ * Print mode (-p / --print anywhere in passthrough) splits in two:
+ *   - program-driven streaming (--input-format/--output-format carries
+ *     stream-json): no fragments — the driving program owns interaction.
+ *   - one-shot non-streaming print: one-shot.md, telling claude it gets a
+ *     single non-interactive turn (no clarifying-question-and-wait).
  *
  * Returns fragment FILE NAMES (not contents). Loading is a separate
  * concern in `prompts/load.ts`.
@@ -31,8 +34,40 @@ export function isInteractiveSession(passthrough: readonly string[]): boolean {
   return true;
 }
 
+/**
+ * True when `--input-format` or `--output-format` carries the value
+ * `stream-json`, in either separate-token (`--output-format stream-json`)
+ * or inline (`--output-format=stream-json`) form.
+ */
+export function usesStreamJson(passthrough: readonly string[]): boolean {
+  for (let i = 0; i < passthrough.length; i++) {
+    const tok = passthrough[i];
+    if (tok === '--input-format' || tok === '--output-format') {
+      if (passthrough[i + 1] === 'stream-json') return true;
+    } else if (
+      tok === '--input-format=stream-json'
+      || tok === '--output-format=stream-json'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True for a one-shot, non-interactive print run: print mode (`-p`/`--print`)
+ * without the streaming-JSON flags. The stream-json case is program-driven
+ * and excluded.
+ */
+export function isOneShotPrint(passthrough: readonly string[]): boolean {
+  return !isInteractiveSession(passthrough) && !usesStreamJson(passthrough);
+}
+
 export function selectFragments(args: SelectFragmentsArgs): string[] {
-  if (!isInteractiveSession(args.passthrough)) return [];
+  if (!isInteractiveSession(args.passthrough)) {
+    if (usesStreamJson(args.passthrough)) return [];
+    return ['one-shot.md'];
+  }
 
   const out: string[] = ['agent-pitfall.md', 'spawn.md', 'budget.md'];
   if (args.usedNoopFallback) {
