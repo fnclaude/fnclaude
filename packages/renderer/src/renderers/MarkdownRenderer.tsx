@@ -227,12 +227,26 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
             {(t as Tokens.Codespan).text}
           </Text>
         );
-      case "link":
-        return (
-          <Text key={`in-${i}`} color="blue" underline>
-            {inline((t as Tokens.Link).tokens)}
-          </Text>
-        );
+      case "link": {
+        const link = t as Tokens.Link;
+        const href = link.href ?? "";
+        // Only style and OSC-8-wrap http/https links; they are the only ones
+        // a terminal can open. Anchors (#id), mailto, and relative paths are
+        // rendered plain so they don't look clickable when they aren't.
+        if (/^https?:\/\//.test(href)) {
+          return (
+            <Text key={`in-${i}`}>
+              {"\x1b]8;;" + href + "\x07"}
+              <Text color="blue" underline>
+                {inline(link.tokens)}
+              </Text>
+              {"\x1b]8;;\x07"}
+            </Text>
+          );
+        }
+        // Non-http link: render its text without any link styling.
+        return <Text key={`in-${i}`}>{inline(link.tokens)}</Text>;
+      }
       case "br":
         return <Text key={`in-${i}`}>{"\n"}</Text>;
       case "escape":
