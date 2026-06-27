@@ -139,6 +139,19 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
   return (
     <Box flexDirection="column" marginBottom={1}>
       {token.items.map((item, i) => {
+        // GFM task-list items: render a checkbox glyph instead of the bullet.
+        if (item.task) {
+          const checkbox = item.checked ? "☑" : "☐";
+          const checkboxColor = item.checked ? "green" : undefined;
+          return (
+            <Box key={`li-${i}`} flexDirection="row">
+              <Text color={checkboxColor}>{`${checkbox} `}</Text>
+              <Box flexDirection="column">
+                <ListItemBody item={item} />
+              </Box>
+            </Box>
+          );
+        }
         const marker = token.ordered
           ? `${(typeof token.start === "number" ? token.start : 1) + i}.`
           : "●";
@@ -163,6 +176,9 @@ function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
   return (
     <>
       {item.tokens.map((t, i) => {
+        // The `checkbox` token is the marker already rendered as the bullet;
+        // skip it so we don't produce a spurious empty element.
+        if (t.type === "checkbox") return null;
         if (t.type === "list") return <ListBlock key={`l-${i}`} token={t as Tokens.List} />;
         if (t.type === "text") {
           const tt = t as Tokens.Text;
