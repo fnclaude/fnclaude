@@ -2,7 +2,7 @@
 
 A reverse-engineering reference for the subagent list, transcript view, steering delivery, agent teams, and workflow progress tree. Written against **v2.1.149** of the Bun-compiled ELF at `~/.local/share/mise/installs/npm-anthropic-ai-claude-code/2.1.149/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`; official-docs and GitHub-issue findings reflect behavior through ~v2.1.186.
 
-> Minified symbol names (`QJ8`, `B$4`, `WX5`, `AO`, `SM`, …) are build-specific. Byte offsets likewise. **Anchor on string literals, not names.** See the sibling doc [`claude-code-binary-internals.md`](claude-code-binary-internals.md) for the `grep -aboF` + `dd`-window grep technique — this doc cites offsets but does not restate the method.
+> Minified symbol names and byte offsets are build-specific — they change every release and are meaningless across builds. **Anchor on string literals, not names or offsets.** This doc describes behavior functionally and cites only durable anchors (telemetry event names, config keys, mode strings, env vars, on-disk paths). See the sibling doc [`claude-code-binary-internals.md`](claude-code-binary-internals.md) for the `grep -aboF` + `dd`-window grep technique.
 
 ## Why this exists
 
@@ -38,8 +38,8 @@ The list is a pure projection of an Ink app-state `tasks` map. Rendered only whe
 
 Bundle internals (v2.1.149):
 
-- **List container component:** minified `QJ8` (~byte 230,053,350). Props: `{selectedIndex, isInSelectionMode, allIdle, leaderVerb, leaderIdleText, leaderTokenCount}`. Renders a `team-lead` header row then `tasks.map(...)` of per-teammate rows.
-- **Per-teammate row component:** minified `B$4` (~byte 230,050,152).
+- **List container component:** Props: `{selectedIndex, isInSelectionMode, allIdle, leaderVerb, leaderIdleText, leaderTokenCount}`. Renders a `team-lead` header row then `tasks.map(...)` of per-teammate rows.
+- **Per-teammate row component:** renders the per-teammate row (see shape below).
 - **Tree glyphs:** `┌─` / `├─` / `└─` for standard rows; `╒═` / `╞═` / `╘═` for the selected/foregrounded row. Selection cursor from a `pointer` glyph.
 
 ### Per-row teammate object shape
@@ -141,15 +141,15 @@ Relevant state keys: `viewingAgentTaskId`, `viewSelectionMode`, `selectedIPAgent
 
 > **Open gap:** the exact keybinding that enters `"selecting-agent"` mode is not confirmed in the v2.1.149 bundle. Official docs document select→view once already selecting; the keybind that first activates selection mode was not found. Flag this for anyone reimplementing — it may be document-only or gated behind another UI state.
 
-### Enter — `iv(taskId, setState)` (~byte 233,069,700)
+### Enter — foreground-transcript action
 
 Sets `viewingAgentTaskId`, transitions `viewSelectionMode` → `"viewing-agent"`, and flips the task `retain: true, evictAfter: undefined` so the transcript is not evicted while being viewed. Emits telemetry `tengu_transcript_view_enter`.
 
-### Exit — `rv(setState)` 
+### Exit — transcript-exit action
 
 Clears `viewingAgentTaskId`, transitions `viewSelectionMode` → `"none"`, re-arms eviction. Emits `tengu_transcript_view_exit`.
 
-Guard hook `uK9` (~byte 234,862,343) auto-exits if the viewed task vanishes or its status reaches `killed` / `failed` / `errored`.
+A guard hook auto-exits if the viewed task vanishes or its status reaches `killed` / `failed` / `errored`.
 
 ### Transcript persistence
 
@@ -165,10 +165,10 @@ This is the "never consumed until too late" mechanism. The timing is precise and
 
 ### The command queue
 
-One **global module-level priority command queue**. Factory `WX5` (~byte 225,873,498) builds a singleton exposed as **`AO`**, with bound free functions:
+One **global module-level priority command queue** — a single module-level singleton. Bound free functions:
 
-- **`SM`** — enqueue a command
-- **`mA`** — enqueue a pending notification
+- **enqueue** — enqueue a command
+- **enqueue-notification** — enqueue a pending notification
 
 A command object shape: `{ mode, value, priority?, agentId?, uuid?, isMeta? }`. Default priority: `"next"`.
 
@@ -182,7 +182,7 @@ Priority values and `getCommandsByMaxPriority("next")` behavior:
 
 ### The single drain point
 
-~Byte 231,766,102, inside the main agentic-loop generator. Runs **once per loop iteration**, after the assistant message has fully streamed AND all tool calls in that turn have executed (`query_tool_execution_end`) AND PostToolBatch hooks have run.
+Inside the main agentic-loop generator. Runs **once per loop iteration**, after the assistant message has fully streamed AND all tool calls in that turn have executed (`query_tool_execution_end`) AND PostToolBatch hooks have run.
 
 Targeting: the main thread consumes commands where `agentId === undefined`; a subagent consumes only `mode === "task-notification" && agentId === <self>`. Drained commands are turned into user messages, appended to the message array for the **next** model call, then removed from the queue (`command_lifecycle: started`).
 
@@ -202,7 +202,7 @@ There is **no mid-stream injection seam**. This is the documented design, not a 
 
 ### Producer call sites
 
-All via `SM({ mode, value, priority })`:
+All via the enqueue function (`{ mode, value, priority }`):
 
 | Producer | mode | priority |
 |---|---|---|
@@ -224,7 +224,7 @@ These confirm the timing behavior is observable and user-reported, not just infe
 
 ### Separate task-notification channel
 
-A per-session ring buffer `PX6` (capacity 1000) pushes `{ type: "system", subtype: "task_notification", task_id, tool_use_id, status, output_file, summary, usage }`. This is the channel that produces the `<task-notification>` system-reminder blocks in the context. The drain filters for `mode: "task-notification"` addressed to the receiving agent.
+A per-session ring buffer (capacity 1000) pushes `{ type: "system", subtype: "task_notification", task_id, tool_use_id, status, output_file, summary, usage }`. This is the channel that produces the `<task-notification>` system-reminder blocks in the context. The drain filters for `mode: "task-notification"` addressed to the receiving agent.
 
 ---
 
@@ -276,7 +276,7 @@ The keyword `ultrawork` injects `{ type: "ultrawork_request" }` plus an immediat
 
 Telemetry confirms a phased model: `workflow_agent`, `workflow_phase`, `tengu_workflow_completed`, `tengu_workflow_phase_completed`, `workflow_log`. Agent row states: `running` / `completed` / `skipped by user` / `error`.
 
-The progress tree reuses the same teammate-row primitives (`QJ8` / `B$4`) driven by `tasks`, grouped by `workflow_phase`.
+The progress tree reuses the same agent-list container and per-teammate row components driven by `tasks`, grouped by `workflow_phase`.
 
 ### What a workflow is (official docs)
 
@@ -352,15 +352,15 @@ Transcripts are local and resumable via `claude --resume` / `claude attach`. (Tr
 
 React + Ink, custom React host via `createReconciler`, Yoga flexbox layout, output-builder → screen-buffer → diff-engine → ANSI pipeline.
 
-Community codenames (from BrightCoding / xugj520 / PromptLayer RE writeups — mark as community-RE, not Anthropic-confirmed):
+Functional roles identified by community reverse-engineering (BrightCoding / xugj520 / PromptLayer — not Anthropic-confirmed; codenames are build-specific and omitted):
 
-| Codename | Role |
+| Component | Role |
 |---|---|
-| `nO` | Main agent loop — single-threaded async-generator master loop |
-| `h2A` | Async input queue — dual-buffer RingBuffer between keyboard and agent loop. Reportedly supports pause/resume + mid-stream injection at the plumbing level; the gap is that interactive user messages are not wired into that path, consistent with §c's findings |
-| `I2A` | Subagent runner — privilege-isolated; returns final result as a `tool_result` to the parent context |
+| Main async-generator agent loop | Single-threaded async-generator master loop |
+| Async input queue | Dual-buffer RingBuffer between keyboard and agent loop. Reportedly supports pause/resume + mid-stream injection at the plumbing level; the gap is that interactive user messages are not wired into that path, consistent with §c's findings |
+| Subagent runner | Privilege-isolated; returns final result as a `tool_result` to the parent context |
 
-The `h2A` plumbing gap is notable: the infrastructure would support mid-stream delivery, but the interactive steering path does not use it. The official issues in §c are a direct consequence of this wiring choice.
+The async input queue plumbing gap is notable: the infrastructure would support mid-stream delivery, but the interactive steering path does not use it. The official issues in §c are a direct consequence of this wiring choice.
 
 ---
 
@@ -387,7 +387,7 @@ Agent count + token total + elapsed per phase, with phase → agent → detail d
 
 | Source | Confidence | Notes |
 |---|---|---|
-| Direct bundle grep: v2.1.149 ELF | High | Symbols `WX5`/`AO`/`SM`/`QJ8`/`B$4`/`iv`/`rv`/`uK9`/`PX6`; offsets listed inline; all version-specific |
+| Direct bundle grep: v2.1.149 ELF | High | Minified symbols and byte offsets are build-specific and omitted from this doc; durable string literals (telemetry event names, config keys, mode strings) are cited instead |
 | `code.claude.com/docs/en/agents` | High | Subagents panel |
 | `code.claude.com/docs/en/agent-view` | High | Agent view (`claude agents`) |
 | `code.claude.com/docs/en/agent-teams` | High | Agent panel + teams |
