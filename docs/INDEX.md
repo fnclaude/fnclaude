@@ -25,7 +25,6 @@ Navigation index for the fnclaude documentation.
 ## Research
 
 - [bun-pty-spawn.md](bun-pty-spawn.md) — Research on spawning interactive TUI children from Bun; recommends Bun.Terminal over node-pty — created 2026-05-27
-- [research/claude-code-render-modes.md](research/claude-code-render-modes.md) — Reference for the three terminal render modes Claude Code supports, mode selection mechanics, and implications for fnclaude — created 2026-06-26
 - [research/renderer-graphics-interactivity.md](research/renderer-graphics-interactivity.md) — Feasibility memo on inline images, math, Mermaid, mouse/link interactivity, and scrolling architecture for the renderer — created 2026-06-26
 
 ## Reverse Engineering
@@ -34,6 +33,7 @@ Navigation index for the fnclaude documentation.
 - [reverse-engineering/claude-code-binary-internals.md](reverse-engineering/claude-code-binary-internals.md) — Runbook for grepping Claude Code's Bun-compiled binary for embedded JS and prompt strings — created 2026-06-17
 - [reverse-engineering/claude-code-compact-prompts.md](reverse-engineering/claude-code-compact-prompts.md) — Reverse-engineered compact/summary prompt strings extracted from Claude Code binary — created 2026-06-18
 - [reverse-engineering/claude-code-prompt-strings.md](reverse-engineering/claude-code-prompt-strings.md) — Heuristic bulk extraction of all instruction-like strings from Claude Code binary — created 2026-06-18
+- [reverse-engineering/claude-code-render-modes.md](reverse-engineering/claude-code-render-modes.md) — Reference for Claude Code's three terminal render modes, escape-sequence mechanics, and implications for fnclaude — created 2026-06-26
 - [reverse-engineering/extract-claude-code-prompts.sh](reverse-engineering/extract-claude-code-prompts.sh) — Shell script used to extract prompt strings from the Claude Code binary
 
 ## Archive
