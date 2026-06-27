@@ -4,13 +4,13 @@
 
 ## Why this exists
 
-[`docs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) is the broad feasibility survey — images, math, mermaid, mouse, links, scroll. This doc goes deep on **images only** and is scoped to production implementation: exact integration points, concrete data flows, security requirements, and a milestone ordering. Math and mermaid reuse the same PNG→Kitty core described here; see the research doc for their content-specific adapters.
+[`docs/research/renderer-graphics-interactivity.md`](../research/renderer-graphics-interactivity.md) is the broad feasibility survey — images, math, mermaid, mouse, links, scroll. This doc goes deep on **images only** and is scoped to production implementation: exact integration points, concrete data flows, security requirements, and a milestone ordering. Math and mermaid reuse the same PNG→Kitty core described here; see the research doc for their content-specific adapters.
 
 Cross-references:
 
 - [`docs/design.renderer.md`](design.renderer.md) — renderer↔CLI in-process integration architecture; where this feature lands.
-- [`docs/decisions.md`](decisions.md) — dated log of technical decisions that flow from this design.
-- [`docs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) — feasibility findings, protocol comparison table, library survey, mouse/links/scroll analysis.
+- [`docs/decisions.md`](../decisions.md) — dated log of technical decisions that flow from this design.
+- [`docs/research/renderer-graphics-interactivity.md`](../research/renderer-graphics-interactivity.md) — feasibility findings, protocol comparison table, library survey, mouse/links/scroll analysis.
 
 ---
 
@@ -436,6 +436,6 @@ Real pixel verification is manual / local — CI cannot render a Ghostty frame. 
 | [sharp](https://www.npmjs.com/package/sharp) | Raster image downscale before Kitty transmission |
 | [Anthropic vision docs](https://docs.anthropic.com/en/docs/build-with-claude/vision) | Image content block format; base64 encoding; supported media types |
 | [Anthropic image content block](https://docs.anthropic.com/en/api/messages) | `source.type: "base64"`, `media_type`, size limits |
-| [`research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) | Broad feasibility survey; math/mermaid adapters; mouse/links/scroll findings |
+| [`research/renderer-graphics-interactivity.md`](../research/renderer-graphics-interactivity.md) | Broad feasibility survey; math/mermaid adapters; mouse/links/scroll findings |
 | [`design.renderer.md`](design.renderer.md) | Renderer↔CLI integration architecture |
-| [`decisions.md`](decisions.md) | Dated technical decisions |
+| [`decisions.md`](../decisions.md) | Dated technical decisions |
