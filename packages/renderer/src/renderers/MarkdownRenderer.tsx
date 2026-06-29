@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
 import { TableBlock } from "./TableBlock.tsx";
 
 export interface MarkdownRendererProps {
@@ -242,13 +243,26 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
       case "link": {
         const link = t as Tokens.Link;
         const href = link.href ?? "";
-        // Style http/https/mailto links blue+underline. Ghostty's built-in URL
-        // matcher handles click — no OSC 8 escapes needed, and omitting them
-        // keeps the OSC bytes out of cell-width measurement (which only strips
-        // CSI, not OSC), preventing table column misalignment.
+        // Style http/https/mailto links blue+underline. When the terminal
+        // supports OSC 8 hyperlinks, wrap the (possibly titled) display text in
+        // an OSC 8 sequence so `[text](url)` is clickable even when the visible
+        // text isn't the URL — the terminal's URL auto-matcher can't handle
+        // those. The BEL-form OSC bytes tokenize as zero-width (see osc8.ts),
+        // so they don't perturb table cell-width measurement.
+        // When hyperlinks aren't supported, fall back to plain blue+underline
+        // and rely on the terminal's own URL matcher.
         // Anchors (#id), relative paths, and other non-clickable hrefs render
         // plain so they don't look interactive when they aren't.
         if (/^(https?:\/\/|mailto:)/.test(href)) {
+          if (supportsHyperlinkOutput()) {
+            return (
+              <Text key={`in-${i}`} color="blue" underline>
+                {osc8Start(href)}
+                {inline(link.tokens)}
+                {osc8End()}
+              </Text>
+            );
+          }
           return (
             <Text key={`in-${i}`} color="blue" underline>
               {inline(link.tokens)}
