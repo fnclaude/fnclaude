@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 
 export interface ReadInputProps {
   filePath: string;

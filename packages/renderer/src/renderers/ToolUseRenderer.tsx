@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import type { ElementId, ToolUseBlock, Visibility } from "../types/events";
 import { BashInput } from "./BashInput";
 import { EditDiff } from "./EditDiff";

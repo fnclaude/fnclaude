@@ -158,7 +158,9 @@ export function mountRenderer(
   const instance = guardedRender(renderFn, sub, opts.githubRepo);
 
   return {
-    waitUntilExit: () => instance.waitUntilExit(),
+    // Ink 7 types waitUntilExit as Promise<unknown>; normalize to the
+    // handle's Promise<void> contract.
+    waitUntilExit: () => instance.waitUntilExit().then(() => undefined),
     unmount: () => instance.unmount(),
     sendUserTurn: sub.sendUserTurn,
     interrupt: sub.interrupt,

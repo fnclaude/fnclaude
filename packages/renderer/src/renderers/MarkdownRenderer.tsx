@@ -1,7 +1,7 @@
 import { decodeHTML } from "entities";
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
-import { useContext, useMemo } from "react";
+import { type JSX, useContext, useMemo } from "react";
 import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";

@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 import type { ResultEvent } from "../types/events";
 import { ErrorRenderer } from "./ErrorRenderer";
 

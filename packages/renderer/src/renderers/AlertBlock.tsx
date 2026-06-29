@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import type { Token, Tokens } from "marked";
+import type { JSX } from "react";
 
 export type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 

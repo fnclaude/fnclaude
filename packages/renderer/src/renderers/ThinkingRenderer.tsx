@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 import type { Visibility } from "../types/events";
 
 export interface ThinkingRendererProps {

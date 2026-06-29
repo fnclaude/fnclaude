@@ -73,7 +73,7 @@ function cellPad(
  * - Each cell rendered via the injected renderInline so bold/italic/code/strike
  *   inside cells work transparently
  */
-export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Element {
+export function TableBlock({ token, renderInline }: TableBlockProps): React.JSX.Element {
   const { header, rows, align } = token;
   const numCols = header.length;
 
@@ -94,7 +94,7 @@ export function TableBlock({ token, renderInline }: TableBlockProps): JSX.Elemen
   const botBorder = fillRow("└", "┴", "┘", "─");
 
   /** Render a single data row (header or body). */
-  function renderRow(cells: Tokens.TableCell[], bold: boolean): JSX.Element {
+  function renderRow(cells: Tokens.TableCell[], bold: boolean): React.JSX.Element {
     return (
       <Box flexDirection="row">
         <Text>│</Text>

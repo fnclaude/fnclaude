@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 import type { SystemEvent } from "../types/events";
 
 export interface SystemInitProps {

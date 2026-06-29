@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import type { JSX } from "react";
 import type { Visibility } from "../types/events";
 import { countLines } from "./summarize";
 

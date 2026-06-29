@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { useMemo } from "react";
+import { type JSX, useMemo } from "react";
 import { highlightCode } from "./highlight.ts";
 
 export interface CodeBlockProps {

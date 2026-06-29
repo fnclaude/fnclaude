@@ -31,6 +31,16 @@ export interface Key {
   backspace: boolean;
   delete: boolean;
   meta: boolean;
+  // Fields added by Ink 7's input parser. Optional here so existing
+  // partial Key literals (tests) stay valid; App passes ink's real Key
+  // via `key as unknown as Key`.
+  home?: boolean;
+  end?: boolean;
+  super?: boolean;
+  hyper?: boolean;
+  capsLock?: boolean;
+  numLock?: boolean;
+  eventType?: "press" | "repeat" | "release";
 }
 
 export type KeybindAction =
