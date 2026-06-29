@@ -41,6 +41,14 @@ export interface SubscribeOptions {
 export interface ClaudeSubscription {
   events: AsyncIterable<ClaudeEvent>;
   sendUserTurn: (text: string) => void;
+  /**
+   * Cancel the in-flight turn without ending the session. Writes a
+   * `control_request`/`interrupt` line to claude's stdin (the same pipe
+   * `sendUserTurn` uses); claude aborts the current turn, replies with a
+   * `control_response`, and stays alive for further user turns. No-op if
+   * stdin is already closed.
+   */
+  interrupt: () => void;
   close: () => Promise<number>;
 }
 
@@ -67,6 +75,9 @@ export function subscribeToClaude(opts: SubscribeOptions = {}): ClaudeSubscripti
 
   const encoder = new TextEncoder();
   let stdinWriter: WritableStreamDefaultWriter<Uint8Array> | null = proc.stdin.getWriter();
+  // Monotonic counter for interrupt request ids. A counter (not Date.now/
+  // Math.random) keeps ids unique, deterministic, and trivially testable.
+  let interruptSeq = 0;
 
   function sendUserTurn(text: string): void {
     if (stdinWriter === null) return;
@@ -81,6 +92,18 @@ export function subscribeToClaude(opts: SubscribeOptions = {}): ClaudeSubscripti
     // Fire-and-forget write; errors surface as unhandled promise rejections
     // which is acceptable for a stream writer (the process exiting will close
     // the stream cleanly).
+    stdinWriter.write(encoder.encode(line)).catch(() => undefined);
+  }
+
+  function interrupt(): void {
+    if (stdinWriter === null) return;
+    const msg = {
+      type: "control_request",
+      request_id: `interrupt-${interruptSeq++}`,
+      request: { subtype: "interrupt" },
+    };
+    const line = `${JSON.stringify(msg)}\n`;
+    // Fire-and-forget, same rationale as sendUserTurn.
     stdinWriter.write(encoder.encode(line)).catch(() => undefined);
   }
 
@@ -99,6 +122,7 @@ export function subscribeToClaude(opts: SubscribeOptions = {}): ClaudeSubscripti
   return {
     events: parseNdjsonStream(proc.stdout),
     sendUserTurn,
+    interrupt,
     close,
   };
 }

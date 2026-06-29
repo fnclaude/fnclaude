@@ -62,6 +62,8 @@ export interface RendererHandle {
   unmount(): void;
   /** Send a user turn to claude over the subscription's stdin pipe. */
   sendUserTurn(text: string): void;
+  /** Cancel the in-flight turn without ending the session (Ctrl+C). */
+  interrupt(): void;
   /** Close claude's stdin (EOF) and resolve with its exit code. */
   close(): Promise<number>;
 }
@@ -74,6 +76,16 @@ export interface RendererHandle {
  * test files. Mirrors `App`'s own injection seams (`testInputBus`).
  */
 export type RenderFn = (node: ReactElement) => Pick<Instance, "waitUntilExit" | "unmount">;
+
+/**
+ * Production render: Ink's `render` with `exitOnCtrlC` disabled. Ink defaults
+ * to tearing the whole app (and thus the host fnc process) down on Ctrl+C;
+ * the renderer owns Ctrl+C itself — it interrupts claude's in-flight turn and
+ * only exits on an idle double-tap (see App's `interrupt` handler). The
+ * injectable `RenderFn` seam stays single-arg so tests need not know about
+ * Ink's options.
+ */
+const defaultRenderFn: RenderFn = (node) => render(node, { exitOnCtrlC: false });
 
 /**
  * React error boundary so a render-time throw in the transcript tree is
@@ -123,7 +135,7 @@ class RenderErrorBoundary extends Component<{ children: ReactNode }, { error: Er
  */
 export function mountRenderer(
   opts: MountOptions = {},
-  renderFn: RenderFn = render,
+  renderFn: RenderFn = defaultRenderFn,
 ): RendererHandle {
   const sub: ClaudeSubscription = subscribeToClaude({
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
@@ -139,6 +151,7 @@ export function mountRenderer(
     waitUntilExit: () => instance.waitUntilExit(),
     unmount: () => instance.unmount(),
     sendUserTurn: sub.sendUserTurn,
+    interrupt: sub.interrupt,
     close: sub.close,
   };
 }
