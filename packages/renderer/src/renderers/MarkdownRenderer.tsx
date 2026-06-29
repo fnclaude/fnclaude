@@ -8,7 +8,20 @@ import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
 import { tokenizeGithubAutolinks } from "./github-autolink.ts";
 import { GithubRepoContext } from "./github-repo-context.ts";
+import {
+  INTERPRETED_CONTAINERS,
+  type ParsedHtmlTag,
+  isInterpretedVoid,
+  parseHtmlTag,
+} from "./html-inline.ts";
+import { kbdToGlyphs } from "./kbd-glyphs.ts";
 import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
+
+/** Horizontal-rule glyph run, shared by the block `hr` and inline `<hr>`. */
+const HR_RULE = "─".repeat(40);
+
+/** Dim/secondary color for literal raw markup that has no terminal analog. */
+const RAW_MARKUP_COLOR = "magenta";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
@@ -132,17 +145,36 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     case "hr":
       return (
         <Box marginBottom={1}>
-          <Text dimColor>{"─".repeat(40)}</Text>
+          <Text dimColor>{HR_RULE}</Text>
         </Box>
       );
     case "space":
       return null;
     case "table":
       return <TableBlock token={token as Tokens.Table} renderInline={(toks) => inline(toks)} />;
-    case "html":
-      // Raw HTML is rare in assistant output; show its text plainly rather
-      // than dropping it.
-      return <Text>{(token as Tokens.HTML).text}</Text>;
+    case "html": {
+      // Block-level raw HTML arrives as one token (the whole `<div>…</div>`),
+      // not the split open/text/close stream inline HTML produces. Interpret a
+      // lone void tag (`<br>`/`<hr>`); otherwise surface the literal markup in
+      // the raw-markup color rather than dropping it.
+      const html = (token as Tokens.HTML).text;
+      const tag = parseHtmlTag(html);
+      if (tag && tag.kind === "void" && tag.name === "hr") {
+        return (
+          <Box marginBottom={1}>
+            <Text dimColor>{HR_RULE}</Text>
+          </Box>
+        );
+      }
+      if (tag && tag.kind === "void" && tag.name === "br") {
+        return <Text>{"\n"}</Text>;
+      }
+      return (
+        <Text color={RAW_MARKUP_COLOR} dimColor>
+          {html}
+        </Text>
+      );
+    }
     default:
       return <Text>{"text" in token ? (token as { text: string }).text : ""}</Text>;
   }
@@ -213,84 +245,290 @@ function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
  * Render inline tokens (the children of a block) into nestable <Text> nodes.
  * Every styled span is a real <Text> with bold/italic/color/underline — no
  * syntax characters, because marked already stripped them into `raw`.
+ *
+ * A grouping pass runs first: `marked` emits inline raw HTML as a SPLIT token
+ * stream (`<kbd>` / `Ctrl` / `</kbd>` → three tokens), so consecutive tokens
+ * between a recognized open tag and its matching close are gathered back into a
+ * single styled span. See {@link renderInlineTokens}.
  */
 function inline(tokens: Token[] | undefined): React.ReactNode {
   if (tokens === undefined) return null;
-  return tokens.map((t, i) => {
-    switch (t.type) {
-      case "strong":
-        return (
-          <Text key={`in-${i}`} bold>
-            {inline((t as Tokens.Strong).tokens)}
-          </Text>
-        );
-      case "em":
-        return (
-          <Text key={`in-${i}`} italic>
-            {inline((t as Tokens.Em).tokens)}
-          </Text>
-        );
-      case "del":
-        return (
-          <Text key={`in-${i}`} strikethrough>
-            {inline((t as Tokens.Del).tokens)}
-          </Text>
-        );
-      case "codespan":
-        return (
-          <Text key={`in-${i}`} color="cyan">
-            {(t as Tokens.Codespan).text}
-          </Text>
-        );
-      case "link": {
-        const link = t as Tokens.Link;
-        const href = link.href ?? "";
-        // Style http/https/mailto links blue+underline. When the terminal
-        // supports OSC 8 hyperlinks, wrap the (possibly titled) display text in
-        // an OSC 8 sequence so `[text](url)` is clickable even when the visible
-        // text isn't the URL — the terminal's URL auto-matcher can't handle
-        // those. The BEL-form OSC bytes tokenize as zero-width (see osc8.ts),
-        // so they don't perturb table cell-width measurement.
-        // When hyperlinks aren't supported, fall back to plain blue+underline
-        // and rely on the terminal's own URL matcher.
-        // Anchors (#id), relative paths, and other non-clickable hrefs render
-        // plain so they don't look interactive when they aren't.
-        if (/^(https?:\/\/|mailto:)/.test(href)) {
-          if (supportsHyperlinkOutput()) {
-            return (
-              <Text key={`in-${i}`} color="blue" underline>
-                {osc8Start(href)}
-                {inline(link.tokens)}
-                {osc8End()}
-              </Text>
-            );
+  return renderInlineTokens(tokens);
+}
+
+/**
+ * Walk an inline token stream, grouping split raw-HTML tokens into styled spans
+ * and mapping every other token to its inline element. Non-HTML tokens go
+ * through {@link renderInlineToken}.
+ */
+function renderInlineTokens(tokens: Token[]): React.ReactNode {
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (t.type === "html") {
+      const html = (t as Tokens.HTML).text;
+      const tag = parseHtmlTag(html);
+      if (tag) {
+        if (tag.kind === "void" && isInterpretedVoid(tag.name)) {
+          out.push(renderVoidHtml(tag.name, key++));
+          i++;
+          continue;
+        }
+        if (tag.kind === "open" && INTERPRETED_CONTAINERS.has(tag.name)) {
+          const close = findMatchingClose(tokens, i, tag.name);
+          if (close !== -1) {
+            const inner = tokens.slice(i + 1, close);
+            out.push(renderHtmlContainer(tag, inner, key++));
+            i = close + 1;
+            continue;
           }
+        }
+      }
+      // Any tag we don't interpret — unknown pseudo-XML (`<Foo>`), an
+      // allowlisted-but-no-analog tag (`<div>`), a self-closing `<img/>`, a
+      // stray close tag, or an open tag with no matching close — surfaces as
+      // colored literal markup rather than being silently dropped.
+      out.push(rawMarkup(html, key++));
+      i++;
+      continue;
+    }
+    out.push(renderInlineToken(t, key++));
+    i++;
+  }
+  return out;
+}
+
+/** Literal raw HTML text, colored so it's visibly unhandled markup. */
+function rawMarkup(text: string, key: number): React.ReactNode {
+  return (
+    <Text key={`raw-${key}`} color={RAW_MARKUP_COLOR} dimColor>
+      {text}
+    </Text>
+  );
+}
+
+/** Interpret a void HTML tag (`<br>` → newline, `<hr>` → rule). */
+function renderVoidHtml(name: string, key: number): React.ReactNode {
+  if (name === "br") return <Text key={`br-${key}`}>{"\n"}</Text>;
+  // hr
+  return (
+    <Text key={`hr-${key}`} dimColor>
+      {`\n${HR_RULE}\n`}
+    </Text>
+  );
+}
+
+/** Find the index of the close tag matching the open at `openIdx`, or -1. */
+function findMatchingClose(tokens: Token[], openIdx: number, name: string): number {
+  let depth = 0;
+  for (let j = openIdx + 1; j < tokens.length; j++) {
+    const tok = tokens[j];
+    if (tok.type !== "html") continue;
+    const tag = parseHtmlTag((tok as Tokens.HTML).text);
+    if (!tag || tag.name !== name) continue;
+    if (tag.kind === "open") depth++;
+    else if (tag.kind === "close") {
+      if (depth === 0) return j;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+/** Concatenate the plain text of a token run (used for `<kbd>` key parsing). */
+function plainText(tokens: Token[]): string {
+  return tokens.map((t) => ("text" in t ? (t as { text: string }).text : t.raw)).join("");
+}
+
+/** Render an interpreted raw-HTML container by wrapping its grouped children. */
+function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): React.ReactNode {
+  const k = `html-${key}`;
+  switch (tag.name) {
+    case "b":
+    case "strong":
+      return (
+        <Text key={k} bold>
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "i":
+    case "em":
+      return (
+        <Text key={k} italic>
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "s":
+    case "strike":
+    case "del":
+      return (
+        <Text key={k} strikethrough>
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "ins":
+      return (
+        <Text key={k} underline>
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "code":
+    case "tt":
+    case "samp":
+    case "var":
+      return (
+        <Text key={k} color="cyan">
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "q":
+      return (
+        <Text key={k}>
+          {'"'}
+          {renderInlineTokens(inner)}
+          {'"'}
+        </Text>
+      );
+    case "mark":
+      return (
+        <Text key={k} inverse>
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "kbd":
+      // Render keys as NerdFont glyph(s). Unknown keys fall back to their
+      // literal text inside the same kbd style, so nothing crashes or is lost.
+      return (
+        <Text key={k} bold color="yellow">
+          {kbdToGlyphs(plainText(inner))}
+        </Text>
+      );
+    case "sub":
+      // ASCII prefix (Tom's call): H<sub>2</sub>O → H_2O, not a Unicode glyph.
+      return (
+        <Text key={k}>
+          {"_"}
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "sup":
+      return (
+        <Text key={k}>
+          {"^"}
+          {renderInlineTokens(inner)}
+        </Text>
+      );
+    case "a":
+      return renderHtmlAnchor(tag, inner, key);
+    default:
+      return rawMarkup(tag.raw, key);
+  }
+}
+
+/** Render a raw `<a href>` as an OSC 8 hyperlink (same policy as markdown links). */
+function renderHtmlAnchor(tag: ParsedHtmlTag, inner: Token[], key: number): React.ReactNode {
+  const k = `a-${key}`;
+  const href = tag.href ?? "";
+  // Mirror the markdown `link` policy: only http/https/mailto are clickable;
+  // wrap in OSC 8 when supported, else plain blue+underline.
+  if (/^(https?:\/\/|mailto:)/.test(href)) {
+    if (supportsHyperlinkOutput()) {
+      return (
+        <Text key={k} color="blue" underline>
+          {osc8Start(href)}
+          {renderInlineTokens(inner)}
+          {osc8End()}
+        </Text>
+      );
+    }
+    return (
+      <Text key={k} color="blue" underline>
+        {renderInlineTokens(inner)}
+      </Text>
+    );
+  }
+  // Non-clickable href (anchor, relative): render text without link styling.
+  return <Text key={k}>{renderInlineTokens(inner)}</Text>;
+}
+
+/** Map a single non-HTML inline token to its Ink element. */
+function renderInlineToken(t: Token, key: number): React.ReactNode {
+  const i = key;
+  switch (t.type) {
+    case "strong":
+      return (
+        <Text key={`in-${i}`} bold>
+          {inline((t as Tokens.Strong).tokens)}
+        </Text>
+      );
+    case "em":
+      return (
+        <Text key={`in-${i}`} italic>
+          {inline((t as Tokens.Em).tokens)}
+        </Text>
+      );
+    case "del":
+      return (
+        <Text key={`in-${i}`} strikethrough>
+          {inline((t as Tokens.Del).tokens)}
+        </Text>
+      );
+    case "codespan":
+      return (
+        <Text key={`in-${i}`} color="cyan">
+          {(t as Tokens.Codespan).text}
+        </Text>
+      );
+    case "link": {
+      const link = t as Tokens.Link;
+      const href = link.href ?? "";
+      // Style http/https/mailto links blue+underline. When the terminal
+      // supports OSC 8 hyperlinks, wrap the (possibly titled) display text in
+      // an OSC 8 sequence so `[text](url)` is clickable even when the visible
+      // text isn't the URL — the terminal's URL auto-matcher can't handle
+      // those. The BEL-form OSC bytes tokenize as zero-width (see osc8.ts),
+      // so they don't perturb table cell-width measurement.
+      // When hyperlinks aren't supported, fall back to plain blue+underline
+      // and rely on the terminal's own URL matcher.
+      // Anchors (#id), relative paths, and other non-clickable hrefs render
+      // plain so they don't look interactive when they aren't.
+      if (/^(https?:\/\/|mailto:)/.test(href)) {
+        if (supportsHyperlinkOutput()) {
           return (
             <Text key={`in-${i}`} color="blue" underline>
+              {osc8Start(href)}
               {inline(link.tokens)}
+              {osc8End()}
             </Text>
           );
         }
-        // Non-clickable link: render its text without any link styling.
-        return <Text key={`in-${i}`}>{inline(link.tokens)}</Text>;
+        return (
+          <Text key={`in-${i}`} color="blue" underline>
+            {inline(link.tokens)}
+          </Text>
+        );
       }
-      case "br":
-        return <Text key={`in-${i}`}>{"\n"}</Text>;
-      case "escape":
-        return <Text key={`in-${i}`}>{(t as Tokens.Escape).text}</Text>;
-      case "text": {
-        const tt = t as Tokens.Text;
-        if (tt.tokens && tt.tokens.length > 0)
-          return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
-        // marked leaves HTML entities as-is in GFM mode; AutolinkedText decodes
-        // them (&copy; → ©, …) and links any GitHub @mention/#ref/SHA forms.
-        // Codespans never reach here, so code is never autolinked.
-        return <AutolinkedText key={`in-${i}`} text={tt.text} />;
-      }
-      default:
-        return <Text key={`in-${i}`}>{"text" in t ? (t as { text: string }).text : ""}</Text>;
+      // Non-clickable link: render its text without any link styling.
+      return <Text key={`in-${i}`}>{inline(link.tokens)}</Text>;
     }
-  });
+    case "br":
+      return <Text key={`in-${i}`}>{"\n"}</Text>;
+    case "escape":
+      return <Text key={`in-${i}`}>{(t as Tokens.Escape).text}</Text>;
+    case "text": {
+      const tt = t as Tokens.Text;
+      if (tt.tokens && tt.tokens.length > 0)
+        return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
+      // marked leaves HTML entities as-is in GFM mode; AutolinkedText decodes
+      // them (&copy; → ©, …) and links any GitHub @mention/#ref/SHA forms.
+      // Codespans never reach here, so code is never autolinked.
+      return <AutolinkedText key={`in-${i}`} text={tt.text} />;
+    }
+    default:
+      return <Text key={`in-${i}`}>{"text" in t ? (t as { text: string }).text : ""}</Text>;
+  }
 }
 
 /**
