@@ -81,6 +81,14 @@ describe("resolve — preset defaults", () => {
     expect(resolve("errors", p.verbose)).toBe("show");
     expect(resolve("errors", p.debug)).toBe("show");
   });
+
+  test("token-burn: hide / hide / hide / show (mirrors meta)", () => {
+    const p = presets();
+    expect(resolve("token-burn", p.quiet)).toBe("hide");
+    expect(resolve("token-burn", p.normal)).toBe("hide");
+    expect(resolve("token-burn", p.verbose)).toBe("hide");
+    expect(resolve("token-burn", p.debug)).toBe("show");
+  });
 });
 
 describe("resolve — overrides take precedence", () => {
@@ -116,6 +124,16 @@ describe("toggleElement", () => {
     const next = toggleElement(state, "Bash.output");
     expect(next.overrides["Bash.output"]).toBe("show");
     expect(resolve("Bash.output", next)).toBe("show");
+  });
+
+  test("token-burn (hidden in normal) → flips to show, toggles back", () => {
+    const state = defaultState(); // normal, token-burn default "hide"
+    const shown = toggleElement(state, "token-burn");
+    expect(shown.overrides["token-burn"]).toBe("show");
+    expect(resolve("token-burn", shown)).toBe("show");
+    const reverted = toggleElement(shown, "token-burn");
+    expect(reverted.overrides["token-burn"]).toBeUndefined();
+    expect(resolve("token-burn", reverted)).toBe("hide");
   });
 
   test("dim default → flips to hide (opposite-of-shown)", () => {

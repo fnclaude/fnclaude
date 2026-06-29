@@ -81,6 +81,12 @@ export function dispatchKey(input: string, key: Key): KeybindAction | null {
     return { kind: "toggleElement", element: "meta" };
   }
 
+  // Alt + u → toggle the per-turn token-usage one-liner (the "usage" POC).
+  // Same letter-bind rationale as Alt+m: the digit table is full.
+  if (key.meta && input === "u") {
+    return { kind: "toggleElement", element: "token-burn" };
+  }
+
   // Ctrl combos
   if (key.ctrl && !key.meta) {
     if (input === "l") return { kind: "repaint" };

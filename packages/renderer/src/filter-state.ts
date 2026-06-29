@@ -23,6 +23,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Task.nested": "summary",
     errors: "show",
     meta: "hide",
+    "token-burn": "hide",
   },
   normal: {
     thinking: "dim",
@@ -34,6 +35,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Task.nested": "summary",
     errors: "show",
     meta: "hide",
+    "token-burn": "hide",
   },
   verbose: {
     thinking: "dim",
@@ -45,6 +47,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Task.nested": "show",
     errors: "show",
     meta: "hide",
+    "token-burn": "hide",
   },
   debug: {
     thinking: "show",
@@ -56,6 +59,7 @@ const PRESET_DEFAULTS: Record<Preset, Record<ElementId, Visibility>> = {
     "Task.nested": "show",
     errors: "show",
     meta: "show",
+    "token-burn": "show",
   },
 };
 

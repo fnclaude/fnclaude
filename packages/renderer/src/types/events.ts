@@ -212,7 +212,12 @@ export type ElementId =
    * events (e.g. thinking_tokens), and rate-limit events. Hidden in
    * quiet/normal/verbose; shown only in `debug`. Toggle with Alt+m.
    */
-  | "meta";
+  | "meta"
+  /**
+   * Per-turn token-usage one-liner (the Alt+u POC). Hidden in
+   * quiet/normal/verbose; shown only in `debug`. Toggle with Alt+u.
+   */
+  | "token-burn";
 
 export interface FilterState {
   preset: Preset;
