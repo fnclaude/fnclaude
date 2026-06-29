@@ -88,14 +88,23 @@ export interface RendererHandle {
 export type RenderFn = (node: ReactElement) => Pick<Instance, "waitUntilExit" | "unmount">;
 
 /**
- * Production render: Ink's `render` with `exitOnCtrlC` disabled. Ink defaults
- * to tearing the whole app (and thus the host fnc process) down on Ctrl+C;
- * the renderer owns Ctrl+C itself — it interrupts claude's in-flight turn and
- * only exits on an idle double-tap (see App's `interrupt` handler). The
- * injectable `RenderFn` seam stays single-arg so tests need not know about
+ * Production render: Ink's `render` with `exitOnCtrlC` disabled and the
+ * alternate screen buffer enabled. Ink defaults to tearing the whole app (and
+ * thus the host fnc process) down on Ctrl+C; the renderer owns Ctrl+C itself —
+ * it interrupts claude's in-flight turn and only exits on an idle double-tap
+ * (see App's `interrupt` handler).
+ *
+ * `alternateScreen: true` gives the renderer its own full screen (restored on
+ * exit), which the app-owned scroll viewport requires. Ink 7's interactive mode
+ * already wraps every frame paint in DEC private mode 2026 synchronized output
+ * (`ESC[?2026h … ESC[?2026l`, see ink's `write-synchronized`), so the flicker
+ * fix is handled natively — no manual frame wrapping here.
+ *
+ * The injectable `RenderFn` seam stays single-arg so tests need not know about
  * Ink's options.
  */
-const defaultRenderFn: RenderFn = (node) => render(node, { exitOnCtrlC: false });
+const defaultRenderFn: RenderFn = (node) =>
+  render(node, { exitOnCtrlC: false, alternateScreen: true });
 
 /**
  * React error boundary so a render-time throw in the transcript tree is
