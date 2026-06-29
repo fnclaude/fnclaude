@@ -64,3 +64,27 @@ export const fixtureSession: ClaudeEvent[] = [
     total_cost_usd: 0.001,
   },
 ];
+
+/**
+ * An assistant event carrying per-turn `usage`, for the token-burn (Alt+u)
+ * POC tests. The text marker is distinct so a frame assertion can locate the
+ * turn, and the usage numbers cross the 1000 threshold so the `fmt` "k"
+ * abbreviation is exercised. Cache fields present so the `[cache …]` section
+ * renders.
+ */
+export const fixtureAssistantWithUsage: ClaudeEvent = {
+  type: "assistant",
+  session_id: "fixture-session",
+  uuid: "u-asst-usage",
+  message: {
+    role: "assistant",
+    model: "claude-opus-4-8",
+    content: [{ type: "text", text: "Answer with usage." }],
+    usage: {
+      input_tokens: 1500,
+      output_tokens: 320,
+      cache_creation_input_tokens: 2048,
+      cache_read_input_tokens: 4096,
+    },
+  },
+};

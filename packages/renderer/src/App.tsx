@@ -20,7 +20,7 @@
  * stubbed locally until that slice merges).
  */
 
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClaudeSubscription } from "./claude-process.ts";
 import {
@@ -38,6 +38,7 @@ import {
   inFlightBlocks,
   liveReducer,
 } from "./live-message.ts";
+import { TokenBurn } from "./renderers/TokenBurn.tsx";
 import {
   ErrorRenderer,
   MarkdownRenderer,
@@ -48,6 +49,9 @@ import {
   ToolResultRenderer,
   ToolUseRenderer,
 } from "./renderers/index.ts";
+import { MeasuredRow } from "./scroll/MeasuredRow.tsx";
+import { ScrollViewport } from "./scroll/ScrollViewport.tsx";
+import { type AnchoredScroll, useAnchoredScroll } from "./scroll/useAnchoredScroll.ts";
 import type {
   AssistantEvent,
   ClaudeEvent,
@@ -72,6 +76,12 @@ export type StreamFeed = (emit: {
 }) => () => void;
 
 const TOAST_DURATION_MS = 2000;
+
+/**
+ * Rows reserved below the scroll viewport for the input control (draft line +
+ * status line). The transcript viewport gets `terminalRows - CHROME_ROWS`.
+ */
+const CHROME_ROWS = 2;
 
 /**
  * Idle Ctrl+C double-tap window. A single Ctrl+C while nothing is generating
@@ -114,6 +124,13 @@ export interface AppProps {
    * they can assert the exit path without tearing down the test renderer.
    */
   exit?: () => void;
+  /**
+   * Test seam: fix the scroll viewport height in rows. Production omits it and
+   * the viewport is sized to `useWindowSize().rows - CHROME_ROWS`. Tests pass a
+   * large value so legacy frame assertions see the full (unclipped) transcript,
+   * or a small value to exercise clipping/anchoring deterministically.
+   */
+  viewportHeight?: number;
 }
 
 interface ToolCallInfo {
@@ -149,6 +166,12 @@ function AssistantRender({
         }
         return null;
       })}
+      {event.message.usage !== undefined && visibilityFor("token-burn") !== "hide" && (
+        // Per-turn token-usage one-liner (Alt+u POC). INSIDE the turn's Box so
+        // its height is part of the measured row — toggling it is what proves
+        // the scroll anchoring keeps visible rows put.
+        <TokenBurn usage={event.message.usage} />
+      )}
     </Box>
   );
 }
@@ -378,6 +401,13 @@ export function App(props: AppProps): React.ReactElement {
 
   const visibilityFor = useMemo(() => (id: ElementId) => resolve(id, filter), [filter]);
 
+  // App-owned scroll viewport. The transcript is a top-level control sized to
+  // the terminal (minus the input chrome); the controller owns scroll state and
+  // anchoring. Tests fix the height via `viewportHeight` for determinism.
+  const windowSize = useWindowSize();
+  const viewportHeight = props.viewportHeight ?? Math.max(1, windowSize.rows - CHROME_ROWS);
+  const ctl = useAnchoredScroll({ viewportHeight });
+
   const flashToast = (msg: string) => {
     setToast(msg);
     if (toastTimer.current !== null) clearTimeout(toastTimer.current);
@@ -409,6 +439,11 @@ export function App(props: AppProps): React.ReactElement {
           // walks it again on any state change.
           setFilter((f) => ({ ...f }));
           flashToast("repaint");
+          return;
+        case "scroll":
+          // Move the app-owned viewport; releases/resumes sticky-follow per the
+          // controller's bottom rule.
+          ctl.onScroll(action.delta);
           return;
         case "closeStdin":
           subRef.current?.close().catch(() => undefined);
@@ -523,57 +558,138 @@ export function App(props: AppProps): React.ReactElement {
 
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column">
-        {events.map((event, idx) => {
-          const key = "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`;
-          if (event.type === "assistant") {
-            return <AssistantRender key={key} event={event} visibilityFor={visibilityFor} />;
-          }
-          if (event.type === "user_prompt") {
-            return <UserPromptRender key={key} text={event.text} />;
-          }
-          if (event.type === "user") {
-            return (
-              <UserRender
-                key={key}
-                event={event}
-                toolCallById={toolCallById}
-                visibilityFor={visibilityFor}
-              />
-            );
-          }
-          if (event.type === "result") {
-            const dup = !event.is_error && event.result === lastAssistantText;
-            return <ResultRender key={key} event={event} suppressBody={dup} />;
-          }
-          if (event.type === "system") {
-            return <SystemRender key={key} event={event} visibilityFor={visibilityFor} />;
-          }
-          if (event.type === "rate_limit_event") {
-            return <RateLimitRender key={key} event={event} visibilityFor={visibilityFor} />;
-          }
-          if (event.type === "parse_error") {
-            return <RawJson key={key} value={event.raw} label="parse_error" />;
-          }
-          // Any unmodeled top-level event (image/document/error/compact_boundary
-          // /…): surface raw rather than silently drop.
-          return <RawJson key={key} value={event} label="event" />;
-        })}
+      {/* TRANSCRIPT — a top-level control. Wrapped in the app-owned scroll
+          viewport; the input is a SEPARATE sibling below (not nested), so the
+          transcript can clip independently. */}
+      <Box flexDirection="column" flexGrow={1}>
+        <ScrollViewport
+          height={viewportHeight}
+          scrollOffset={ctl.scrollOffset}
+          onContentHeight={ctl.setContentHeight}
+        >
+          <Transcript
+            events={events}
+            live={live}
+            visibilityFor={visibilityFor}
+            ctl={ctl}
+            toolCallById={toolCallById}
+            lastAssistantText={lastAssistantText}
+          />
+        </ScrollViewport>
       </Box>
-      <LiveRegion live={live} visibilityFor={visibilityFor} />
-      {draft.length > 0 ? (
-        // Indent continuation lines under the "> " prompt so a multi-line
-        // draft (shift+enter / backslash-continuation) reads cleanly.
-        <Text>{`> ${draft.replace(/\n/g, "\n  ")}`}</Text>
-      ) : (
-        <Text>
-          {"> "}
-          <Text dimColor>type a message and press Enter</Text>
-        </Text>
-      )}
-      <Text>{statusLine}</Text>
+      {/* INPUT — a separate top-level control (draft + status). */}
+      <Box flexDirection="column">
+        {draft.length > 0 ? (
+          // Indent continuation lines under the "> " prompt so a multi-line
+          // draft (shift+enter / backslash-continuation) reads cleanly.
+          <Text>{`> ${draft.replace(/\n/g, "\n  ")}`}</Text>
+        ) : (
+          <Text>
+            {"> "}
+            <Text dimColor>type a message and press Enter</Text>
+          </Text>
+        )}
+        <Text>{statusLine}</Text>
+      </Box>
     </Box>
   );
+}
+
+/**
+ * The transcript control: maps the committed event log (plus the in-flight live
+ * preview) to measured rows inside the scroll viewport. Each row is wrapped in
+ * a {@link MeasuredRow} that reports its unclipped height to the controller, and
+ * the render order is declared via `ctl.setOrderedIds` so the anchoring math can
+ * keep visible rows put across filter toggles. Holds NO scroll state itself.
+ */
+function Transcript({
+  events,
+  live,
+  visibilityFor,
+  ctl,
+  toolCallById,
+  lastAssistantText,
+}: {
+  events: ClaudeEvent[];
+  live: LiveState;
+  visibilityFor: (id: ElementId) => Visibility;
+  ctl: AnchoredScroll;
+  toolCallById: Map<string, ToolCallInfo>;
+  lastAssistantText: string | null;
+}): React.ReactElement {
+  const liveBlocks = inFlightBlocks(live);
+  const hasLive = liveBlocks.length > 0;
+
+  const rows = events.map((event, idx) => ({
+    key: "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`,
+    node: renderEventNode(event, { visibilityFor, toolCallById, lastAssistantText }),
+  }));
+
+  const orderKey = `${rows.map((r) => r.key).join(" ")}|${hasLive ? "live" : ""}`;
+  const { setOrderedIds } = ctl;
+  const orderedIds = hasLive ? [...rows.map((r) => r.key), "live-region"] : rows.map((r) => r.key);
+  // `orderKey` is the stable serialization of `orderedIds`; depending on the
+  // array directly would re-run the effect every render on new identity.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: orderKey encodes orderedIds
+  useEffect(() => {
+    setOrderedIds(orderedIds);
+  }, [orderKey, setOrderedIds]);
+
+  return (
+    <>
+      {rows.map((r) => (
+        <MeasuredRow key={r.key} id={r.key} onHeight={ctl.reportRowHeight}>
+          {r.node}
+        </MeasuredRow>
+      ))}
+      {hasLive && (
+        <MeasuredRow id="live-region" onHeight={ctl.reportRowHeight}>
+          <LiveRegion live={live} visibilityFor={visibilityFor} />
+        </MeasuredRow>
+      )}
+    </>
+  );
+}
+
+/**
+ * Maps a single committed event to its renderer node. Pure dispatch — extracted
+ * so {@link Transcript} can wrap each in a {@link MeasuredRow} while keeping the
+ * per-event branching in one place.
+ */
+function renderEventNode(
+  event: ClaudeEvent,
+  ctx: {
+    visibilityFor: (id: ElementId) => Visibility;
+    toolCallById: Map<string, ToolCallInfo>;
+    lastAssistantText: string | null;
+  },
+): React.ReactElement | null {
+  const { visibilityFor, toolCallById, lastAssistantText } = ctx;
+  if (event.type === "assistant") {
+    return <AssistantRender event={event} visibilityFor={visibilityFor} />;
+  }
+  if (event.type === "user_prompt") {
+    return <UserPromptRender text={event.text} />;
+  }
+  if (event.type === "user") {
+    return <UserRender event={event} toolCallById={toolCallById} visibilityFor={visibilityFor} />;
+  }
+  if (event.type === "result") {
+    const dup = !event.is_error && event.result === lastAssistantText;
+    return <ResultRender event={event} suppressBody={dup} />;
+  }
+  if (event.type === "system") {
+    return <SystemRender event={event} visibilityFor={visibilityFor} />;
+  }
+  if (event.type === "rate_limit_event") {
+    return <RateLimitRender event={event} visibilityFor={visibilityFor} />;
+  }
+  if (event.type === "parse_error") {
+    return <RawJson value={event.raw} label="parse_error" />;
+  }
+  // Any unmodeled top-level event (image/document/error/compact_boundary/…):
+  // surface raw rather than silently drop.
+  return <RawJson value={event} label="event" />;
 }
 
 /**
