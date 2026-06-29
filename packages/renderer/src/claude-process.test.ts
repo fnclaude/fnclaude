@@ -136,6 +136,33 @@ describe("subscribeToClaude — sendUserTurn", () => {
   });
 });
 
+describe("subscribeToClaude — interrupt", () => {
+  test("interrupt() writes a control_request interrupt JSON line", async () => {
+    const { spawnFn, getStdinWrites } = makeFixtureSpawn("text-turn.ndjson");
+    const { events, interrupt } = subscribeToClaude({ spawnFn });
+
+    interrupt();
+
+    // Drain events so the mock finishes and the write settles.
+    for await (const _ev of events) {
+      /* drain */
+    }
+
+    const writes = getStdinWrites();
+    expect(writes.length).toBeGreaterThan(0);
+    const allWritten = writes.join("");
+    // Must end with a newline.
+    expect(allWritten.endsWith("\n")).toBe(true);
+    // Must parse as the control_request interrupt shape, with a request_id.
+    const parsed = JSON.parse(allWritten.trim()) as Record<string, unknown>;
+    expect(parsed.type).toBe("control_request");
+    expect(typeof parsed.request_id).toBe("string");
+    expect((parsed.request_id as string).length).toBeGreaterThan(0);
+    const request = parsed.request as Record<string, unknown>;
+    expect(request.subtype).toBe("interrupt");
+  });
+});
+
 describe("subscribeToClaude — close", () => {
   test("close() resolves and process exits cleanly", async () => {
     const { spawnFn } = makeFixtureSpawn("text-turn.ndjson");

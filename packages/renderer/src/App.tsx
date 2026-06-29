@@ -20,7 +20,7 @@
  * stubbed locally until that slice merges).
  */
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClaudeSubscription } from "./claude-process.ts";
 import {
@@ -73,6 +73,13 @@ export type StreamFeed = (emit: {
 
 const TOAST_DURATION_MS = 2000;
 
+/**
+ * Idle Ctrl+C double-tap window. A single Ctrl+C while nothing is generating
+ * flashes a hint; a second within this window exits. Mirrors native claude's
+ * "press Ctrl+C again to exit" affordance.
+ */
+const CTRL_C_EXIT_WINDOW_MS = 1000;
+
 export interface AppProps {
   /**
    * Live claude subscription, created and owned by `mountRenderer` (§7). When
@@ -101,6 +108,12 @@ export interface AppProps {
    * never passes this — Ink wires real stdin.
    */
   testInputBus?: (handler: (input: string, key: Key) => void) => void;
+  /**
+   * Test seam: an injectable exit. Production omits it and the idle Ctrl+C
+   * double-tap routes through Ink's `useApp().exit()`. Tests pass a spy so
+   * they can assert the exit path without tearing down the test renderer.
+   */
+  exit?: () => void;
 }
 
 interface ToolCallInfo {
@@ -258,6 +271,12 @@ function RateLimitRender({
 export function App(props: AppProps): React.ReactElement {
   const { subscription, initialEvents, streamFeed, testInputBus } = props;
   const [events, setEvents] = useState<ClaudeEvent[]>(() => initialEvents ?? []);
+  // Whether a turn is in flight: set when a user turn is submitted or an
+  // assistant turn starts, cleared on the terminal `result` event. Drives
+  // Ctrl+C's behavior (interrupt the turn vs. the idle exit double-tap).
+  const [busy, setBusy] = useState<boolean>(false);
+  // Timestamp of the last idle Ctrl+C, for the double-tap-to-exit window.
+  const lastCtrlCRef = useRef<number | null>(null);
   // Transient token-streaming state: an in-progress assistant message built
   // from `stream_event` deltas, rendered below the committed transcript and
   // self-clearing as each block's consolidated `assistant` event lands.
@@ -267,6 +286,10 @@ export function App(props: AppProps): React.ReactElement {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
+
+  // Exit path: the injected test seam if present, else Ink's app exit.
+  const inkApp = useApp();
+  const exitApp = props.exit ?? (() => inkApp.exit());
 
   // Single ingest point for any event source. `stream_event` lines drive the
   // transient live reducer; `assistant` events finalize the matching live
@@ -280,7 +303,13 @@ export function App(props: AppProps): React.ReactElement {
         return;
       }
       if (event.type === "assistant") {
+        // An assistant turn is being produced — mark busy so Ctrl+C interrupts.
+        setBusy(true);
         setLive((prev) => finalizeForAssistant(prev, event));
+      }
+      if (event.type === "result") {
+        // Terminal event for the turn — nothing is generating anymore.
+        setBusy(false);
       }
       setEvents((prev) => [...prev, event]);
     },
@@ -375,7 +404,28 @@ export function App(props: AppProps): React.ReactElement {
           flashToast("close stdin");
           return;
         case "interrupt":
-          flashToast("interrupt");
+          if (busy) {
+            // A turn is in flight: cancel it without ending the session. claude
+            // aborts the current turn and stays alive for further user turns.
+            subRef.current?.interrupt();
+            flashToast("interrupt");
+            lastCtrlCRef.current = null;
+            return;
+          }
+          // Idle: first Ctrl+C hints, a second within the window exits — native
+          // claude's double-tap-to-exit. (Easily switched to Ctrl+D-only.)
+          {
+            const now = Date.now();
+            if (
+              lastCtrlCRef.current !== null &&
+              now - lastCtrlCRef.current < CTRL_C_EXIT_WINDOW_MS
+            ) {
+              exitApp();
+              return;
+            }
+            lastCtrlCRef.current = now;
+            flashToast("press Ctrl+C again to exit");
+          }
           return;
       }
       return;
@@ -400,6 +450,8 @@ export function App(props: AppProps): React.ReactElement {
         // back, so without this the submitted text would vanish.
         setEvents((prev) => [...prev, { type: "user_prompt", text: draft }]);
         subRef.current?.sendUserTurn(draft);
+        // A turn is now in flight — Ctrl+C should interrupt, not exit.
+        setBusy(true);
         setDraft("");
       }
       return;

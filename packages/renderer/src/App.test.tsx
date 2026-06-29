@@ -77,11 +77,13 @@ function fakeSubscription() {
     },
   };
   const sendUserTurn = mock((_text: string) => undefined);
+  const interrupt = mock(() => undefined);
   const close = mock(() => Promise.resolve(0));
-  const sub: ClaudeSubscription = { events, sendUserTurn, close };
+  const sub: ClaudeSubscription = { events, sendUserTurn, interrupt, close };
   return {
     sub,
     sendUserTurn,
+    interrupt,
     close,
     push: (e: ClaudeEvent) => pushImpl?.(e),
     endStream: () => endImpl?.(),
@@ -388,6 +390,75 @@ describe("<App /> injected subscription", () => {
     await flush();
 
     expect(fake.close).toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  test("Ctrl+C while BUSY interrupts claude's turn (no exit)", async () => {
+    const fake = fakeSubscription();
+    const exit = mock(() => undefined);
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        exit={exit}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    // A turn is in flight: an assistant event arrived but no terminal result.
+    fake.push({
+      type: "assistant",
+      session_id: "s",
+      uuid: "a1",
+      message: {
+        id: "m1",
+        model: "claude-opus-4-8",
+        role: "assistant",
+        content: [{ type: "text", text: "working on it" }],
+      },
+    });
+    await flush();
+
+    // Ctrl+C → interrupt the in-flight turn, do not exit.
+    send("c", { ...baseKey, ctrl: true });
+    await flush();
+
+    expect(fake.interrupt).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  test("Ctrl+C while IDLE: first taps a hint, second within the window exits", async () => {
+    const fake = fakeSubscription();
+    const exit = mock(() => undefined);
+    let dispatch: ((input: string, key: Key) => void) | null = null;
+    const instance = render(
+      <App
+        subscription={fake.sub}
+        exit={exit}
+        testInputBus={(handler) => {
+          dispatch = handler;
+        }}
+      />,
+    );
+    await flush();
+    const send = dispatch as unknown as (i: string, k: Key) => void;
+
+    // First Ctrl+C while idle: does NOT exit (and does not interrupt — nothing
+    // is generating).
+    send("c", { ...baseKey, ctrl: true });
+    await flush();
+    expect(exit).not.toHaveBeenCalled();
+    expect(fake.interrupt).not.toHaveBeenCalled();
+
+    // Second Ctrl+C within the window: exits.
+    send("c", { ...baseKey, ctrl: true });
+    await flush();
+    expect(exit).toHaveBeenCalledTimes(1);
     instance.unmount();
   });
 
