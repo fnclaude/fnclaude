@@ -12,6 +12,8 @@
 // renderer must degrade to the normal PTY launch, never crash, and an old
 // mountRenderer that ignores opts / lacks close() must still mount cleanly.
 
+import { resolveGithubRepo } from '../repo/github-origin';
+
 // --- Structural contract types ------------------------------------------
 //
 // These mirror the renderer's exported shapes but are defined LOCALLY: the
@@ -33,6 +35,12 @@ export interface SpawnResult {
  */
 export type SpawnFn = (cmd: string[], opts: { cwd?: string }) => SpawnResult;
 
+/** GitHub owner/repo backing the launch cwd's origin, for renderer autolinks. */
+export interface GithubRepo {
+  owner: string;
+  name: string;
+}
+
 /** Options fnc threads into `mountRenderer`. */
 export interface MountOptions {
   /** Launch cwd for the claude child (fnc's resolved cwd, not process.cwd). */
@@ -43,6 +51,12 @@ export interface MountOptions {
   spawnFn?: SpawnFn;
   /** Delivered as the renderer's first sendUserTurn (prompt / ultracode seed). */
   initialPrompt?: string;
+  /**
+   * GitHub repo context (resolved from the cwd's origin remote). When set, the
+   * renderer autolinks `#123`/`GH-123`/bare-SHA refs against it; absent, those
+   * forms stay plain. `@mentions` and explicit `owner/repo#n` need no context.
+   */
+  githubRepo?: GithubRepo;
 }
 
 /**
@@ -204,6 +218,13 @@ export interface MaybeMountRendererArgs {
   importRenderer?: () => Promise<unknown>;
   /** Low-level spawn seam. Defaults to a Bun.spawn-backed proc. */
   spawnProc?: SpawnProc;
+  /**
+   * Resolves the cwd's origin remote to a GitHub owner/repo for renderer
+   * autolinks. Defaults to the real `git remote get-url origin` reader; a
+   * non-github / non-git cwd resolves to null (refs stay plain). Injectable
+   * for tests.
+   */
+  resolveGithubRepo?: (cwd: string) => Promise<GithubRepo | null>;
   /** Diagnostic sink for the one-line degrade notice. Defaults to stderr. */
   warn?: (line: string) => void;
   /** Sink for drained claude stderr. Defaults to the degrade `warn`. */
@@ -345,6 +366,16 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
     spawnProc,
   });
 
+  // Resolve the cwd's GitHub origin so the renderer can autolink refs. A
+  // failure here must never break the launch — degrade to no autolinking.
+  const resolveRepo = args.resolveGithubRepo ?? resolveGithubRepo;
+  let githubRepo: GithubRepo | null = null;
+  try {
+    githubRepo = await resolveRepo(args.cwd);
+  } catch {
+    githubRepo = null;
+  }
+
   const opts: MountOptions = {
     cwd: args.cwd,
     extraArgs: args.rendererArgs,
@@ -352,6 +383,7 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
     ...(args.initialPrompt !== undefined && args.initialPrompt !== ''
       ? { initialPrompt: args.initialPrompt }
       : {}),
+    ...(githubRepo !== null ? { githubRepo } : {}),
   };
 
   const handle = mod.mountRenderer(opts);
