@@ -19,9 +19,12 @@ import { type Instance, render } from "ink";
 import { Component, type ErrorInfo, type ReactElement, type ReactNode } from "react";
 import { App } from "./App";
 import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process";
+import type { GithubRepo } from "./renderers/github-autolink.ts";
+import { GithubRepoContext } from "./renderers/github-repo-context.ts";
 
 export type { AppProps } from "./App";
 export type { ClaudeSubscription, SpawnFn } from "./claude-process";
+export type { GithubRepo } from "./renderers/github-autolink.ts";
 
 /**
  * Options for {@link mountRenderer}. All optional: called bare (the
@@ -47,6 +50,13 @@ export interface MountOptions {
    * ultracode `/effort` seed). See spawn-args.md §(a)/§(c).
    */
   initialPrompt?: string;
+  /**
+   * GitHub repo context (from the launch cwd's origin remote). When set, the
+   * transcript autolinks `#123`/`GH-123`/bare-SHA refs against it; absent,
+   * those forms stay plain. `@mentions` and explicit `owner/repo#n` link
+   * regardless. Provided to the tree via {@link GithubRepoContext}.
+   */
+  githubRepo?: GithubRepo;
 }
 
 /**
@@ -145,7 +155,7 @@ export function mountRenderer(
 
   if (opts.initialPrompt) sub.sendUserTurn(opts.initialPrompt);
 
-  const instance = guardedRender(renderFn, sub);
+  const instance = guardedRender(renderFn, sub, opts.githubRepo);
 
   return {
     waitUntilExit: () => instance.waitUntilExit(),
@@ -165,12 +175,15 @@ export function mountRenderer(
 function guardedRender(
   renderFn: RenderFn,
   sub: ClaudeSubscription,
+  githubRepo?: GithubRepo,
 ): Pick<Instance, "waitUntilExit" | "unmount"> {
   try {
     return renderFn(
-      <RenderErrorBoundary>
-        <App subscription={sub} />
-      </RenderErrorBoundary>,
+      <GithubRepoContext.Provider value={githubRepo}>
+        <RenderErrorBoundary>
+          <App subscription={sub} />
+        </RenderErrorBoundary>
+      </GithubRepoContext.Provider>,
     );
   } catch {
     return {

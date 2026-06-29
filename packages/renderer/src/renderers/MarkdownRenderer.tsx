@@ -1,11 +1,13 @@
 import { decodeHTML } from "entities";
 import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
+import { tokenizeGithubAutolinks } from "./github-autolink.ts";
+import { GithubRepoContext } from "./github-repo-context.ts";
 import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
 
 export interface MarkdownRendererProps {
@@ -280,12 +282,50 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
         const tt = t as Tokens.Text;
         if (tt.tokens && tt.tokens.length > 0)
           return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
-        // marked leaves HTML entities as-is in GFM mode; decode them here so
-        // &copy; → ©, &mdash; → —, &rarr; → →, etc.
-        return <Text key={`in-${i}`}>{decodeHTML(tt.text)}</Text>;
+        // marked leaves HTML entities as-is in GFM mode; AutolinkedText decodes
+        // them (&copy; → ©, …) and links any GitHub @mention/#ref/SHA forms.
+        // Codespans never reach here, so code is never autolinked.
+        return <AutolinkedText key={`in-${i}`} text={tt.text} />;
       }
       default:
         return <Text key={`in-${i}`}>{"text" in t ? (t as { text: string }).text : ""}</Text>;
     }
   });
+}
+
+/**
+ * Render a leaf text run, decoding HTML entities and linking GitHub autolink
+ * forms (@mentions, #refs, GH-refs, commit SHAs) against the ambient repo
+ * context. Each linked segment styles blue+underline and, when the terminal
+ * supports OSC 8, wraps in a clickable hyperlink — consistent with how titled
+ * markdown links render. When hyperlinks aren't supported the link is colored
+ * but NOT underlined (visible, not clickable). Plain http/https/mailto links
+ * are unaffected — they're handled by the `link` case, never reaching here.
+ */
+function AutolinkedText({ text }: { text: string }): JSX.Element {
+  const repo = useContext(GithubRepoContext);
+  const decoded = decodeHTML(text);
+  const segments = tokenizeGithubAutolinks(decoded, repo);
+  const linkable = supportsHyperlinkOutput();
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.url === undefined) return seg.text;
+        if (linkable) {
+          return (
+            <Text key={`gl-${i}`} color="blue" underline>
+              {osc8Start(seg.url)}
+              {seg.text}
+              {osc8End()}
+            </Text>
+          );
+        }
+        return (
+          <Text key={`gl-${i}`} color="blue">
+            {seg.text}
+          </Text>
+        );
+      })}
+    </>
+  );
 }
