@@ -6,6 +6,7 @@ import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
+import { emojify } from "./emoji.ts";
 import { tokenizeGithubAutolinks } from "./github-autolink.ts";
 import { GithubRepoContext } from "./github-repo-context.ts";
 import {
@@ -548,7 +549,10 @@ function AutolinkedText({ text }: { text: string }): JSX.Element {
   return (
     <>
       {segments.map((seg, i) => {
-        if (seg.url === undefined) return seg.text;
+        // Non-link plain text: render emoji shortcodes (`:rocket:` → 🚀).
+        // Linked segments are left untouched so we never emojify inside URLs or
+        // autolink display text. Codespans/code blocks never reach this path.
+        if (seg.url === undefined) return emojify(seg.text);
         if (linkable) {
           return (
             <Text key={`gl-${i}`} color="blue" underline>
