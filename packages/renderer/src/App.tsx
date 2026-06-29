@@ -283,6 +283,17 @@ export function App(props: AppProps): React.ReactElement {
   const [live, setLive] = useState<LiveState>(emptyLive);
   const [filter, setFilter] = useState<FilterState>(defaultState);
   const [draft, setDraft] = useState<string>("");
+  // Live mirror of `draft`. React 19's automatic batching means several
+  // synchronously-dispatched keystrokes (typed char, then Enter) are
+  // processed before a re-render refreshes the handler's closure — so the
+  // submit/continuation paths can't read `draft` directly without seeing a
+  // stale value. The ref is the source of truth updated inside the handler;
+  // `setDraft` only drives the render.
+  const draftRef = useRef<string>("");
+  const writeDraft = (next: string) => {
+    draftRef.current = next;
+    setDraft(next);
+  };
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
@@ -436,34 +447,36 @@ export function App(props: AppProps): React.ReactElement {
       // where the terminal sends a distinct sequence for it (many emit a bare
       // CR indistinguishable from Enter, so this silently won't fire there).
       if (key.shift) {
-        setDraft((d) => `${d}\n`);
+        writeDraft(`${draftRef.current}\n`);
         return;
       }
       // Backslash-continuation: a trailing "\" turns Enter into a newline and
       // is itself consumed. Terminal-agnostic fallback for shift+enter.
-      if (draft.endsWith("\\")) {
-        setDraft((d) => `${d.slice(0, -1)}\n`);
+      if (draftRef.current.endsWith("\\")) {
+        writeDraft(`${draftRef.current.slice(0, -1)}\n`);
         return;
       }
-      if (draft.length > 0) {
+      if (draftRef.current.length > 0) {
+        const text = draftRef.current;
         // Append the prompt to the transcript — claude never echoes user turns
         // back, so without this the submitted text would vanish.
-        setEvents((prev) => [...prev, { type: "user_prompt", text: draft }]);
-        subRef.current?.sendUserTurn(draft);
+        setEvents((prev) => [...prev, { type: "user_prompt", text }]);
+        subRef.current?.sendUserTurn(text);
         // A turn is now in flight — Ctrl+C should interrupt, not exit.
         setBusy(true);
-        setDraft("");
+        writeDraft("");
       }
       return;
     }
     if (key.backspace || key.delete) {
-      setDraft((d) => d.slice(0, -1));
+      writeDraft(draftRef.current.slice(0, -1));
       return;
     }
-    // Ignore control/meta-only inputs that didn't match a bind.
-    if (key.ctrl || key.meta) return;
+    // Ignore control/meta-only inputs that didn't match a bind. In Ink 7
+    // a bare Escape sets key.escape (not key.meta), so guard it explicitly.
+    if (key.ctrl || key.meta || key.escape) return;
     if (input.length > 0) {
-      setDraft((d) => d + input);
+      writeDraft(draftRef.current + input);
     }
   };
 

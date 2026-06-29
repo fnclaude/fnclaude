@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 
 export interface RawJsonProps {
   /** The value to render — serialized with JSON.stringify, 2-space indent. */

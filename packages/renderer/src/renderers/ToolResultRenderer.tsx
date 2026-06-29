@@ -1,4 +1,5 @@
 import { Text } from "ink";
+import type { JSX } from "react";
 import type { ElementId, ToolResultBlock, Visibility } from "../types/events";
 import { BashOutput } from "./BashOutput";
 import { ErrorRenderer } from "./ErrorRenderer";
