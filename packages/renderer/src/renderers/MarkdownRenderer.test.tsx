@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { setHyperlinkSupportOverride } from "./osc8";
 
 /** Strip ANSI SGR escape sequences for plain-text content assertions. */
 function stripAnsi(s: string): string {
@@ -285,5 +286,89 @@ describe("MarkdownRenderer", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("visit");
     expect(frame).not.toContain("8;;"); // OSC 8 URL bytes must not appear
+  });
+
+  // -------------------------------------------------------------------------
+  // OSC 8 clickable hyperlinks (terminal supports them)
+  // -------------------------------------------------------------------------
+
+  describe("OSC 8 hyperlinks", () => {
+    // Detection reads the (non-TTY) test stream and reports unsupported by
+    // default; force it explicitly per test and restore after each.
+    afterEach(() => setHyperlinkSupportOverride(undefined));
+
+    test("hyperlinks ON: titled link emits BEL-form OSC 8 with the url and text", () => {
+      setHyperlinkSupportOverride(true);
+      const { lastFrame } = render(
+        <MarkdownRenderer text="[the docs](https://example.com/page)" />,
+      );
+      const frame = lastFrame() ?? "";
+      // Opener: ESC ] 8 ; ; <url> BEL — exact BEL terminator, not ESC-backslash.
+      expect(frame).toContain("\x1b]8;;https://example.com/page\x07");
+      // Closer: ESC ] 8 ; ; BEL.
+      expect(frame).toContain("\x1b]8;;\x07");
+      // The display text (not the url) is what's visible.
+      expect(frame).toContain("the docs");
+      // Still styled blue+underline.
+      expect(frame).toMatch(/\x1B\[4m/);
+      expect(frame).toMatch(/\x1B\[34m/);
+      // No ESC-backslash (ST) terminator form — Ink only parses BEL.
+      expect(frame).not.toContain("\x1b]8;;https://example.com/page\x1b\\");
+    });
+
+    test("hyperlinks ON: mailto link is wrapped in OSC 8", () => {
+      setHyperlinkSupportOverride(true);
+      const { lastFrame } = render(<MarkdownRenderer text="[mail me](mailto:a@b.com)" />);
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("\x1b]8;;mailto:a@b.com\x07");
+      expect(frame).toContain("mail me");
+    });
+
+    test("hyperlinks OFF: no OSC 8 bytes, falls back to blue+underline", () => {
+      setHyperlinkSupportOverride(false);
+      const { lastFrame } = render(<MarkdownRenderer text="[the docs](https://example.com)" />);
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("the docs");
+      expect(frame).not.toContain("\x1b]8"); // no OSC 8 at all
+      expect(frame).toMatch(/\x1B\[4m/); // still underlined
+      expect(frame).toMatch(/\x1B\[34m/); // still blue
+    });
+
+    test("hyperlinks ON: anchor/relative hrefs stay plain (no OSC 8)", () => {
+      setHyperlinkSupportOverride(true);
+      const anchor = render(<MarkdownRenderer text="[s](#section)" />).lastFrame() ?? "";
+      const rel = render(<MarkdownRenderer text="[d](./readme.md)" />).lastFrame() ?? "";
+      for (const frame of [anchor, rel]) {
+        expect(frame).not.toContain("\x1b]8");
+      }
+    });
+
+    test("hyperlinks ON: link inside a table cell keeps columns aligned", () => {
+      setHyperlinkSupportOverride(true);
+      const md = [
+        "| Site | Note |",
+        "|---|---|",
+        "| [visit](https://example.com) | ok |",
+        "| plain | yep |",
+      ].join("\n");
+      const { lastFrame } = render(<MarkdownRenderer text={md} />);
+      const frame = lastFrame() ?? "";
+      // OSC 8 is actually present (clickable) in the cell...
+      expect(frame).toContain("\x1b]8;;https://example.com\x07");
+      expect(frame).toContain("visit");
+      // ...yet every bordered table line shares one identical visible width,
+      // proving the zero-width OSC bytes didn't perturb measurement. Strip
+      // BOTH the SGR (CSI) codes and the OSC 8 sequences — neither occupies a
+      // terminal cell — before comparing line lengths.
+      const stripOsc8 = (s: string): string => s.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
+      const boxChars = /[┌┬┐├┼┤└┴┘│─]/;
+      const widths = new Set(
+        stripOsc8(stripAnsi(frame))
+          .split("\n")
+          .filter((line) => boxChars.test(line))
+          .map((line) => line.length),
+      );
+      expect(widths.size).toBe(1);
+    });
   });
 });
