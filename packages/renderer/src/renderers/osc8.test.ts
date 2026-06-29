@@ -19,7 +19,7 @@ describe("osc8", () => {
   });
 
   test("osc8Start / osc8End compose to the same sequence as osc8", () => {
-    expect(osc8Start("u") + "txt" + osc8End()).toBe(osc8("u", "txt"));
+    expect(`${osc8Start("u")}txt${osc8End()}`).toBe(osc8("u", "txt"));
   });
 
   describe("support detection seam", () => {

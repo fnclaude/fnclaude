@@ -5,8 +5,8 @@ import { useMemo } from "react";
 import remend from "remend";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
-import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
 import { TableBlock } from "./TableBlock.tsx";
+import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
