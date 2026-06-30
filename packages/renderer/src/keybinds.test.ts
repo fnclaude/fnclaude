@@ -100,6 +100,22 @@ describe("dispatchKey — Alt+1-8 element toggles", () => {
       element: "meta",
     });
   });
+
+  test("Alt+u → toggle token-burn (per-turn usage POC)", () => {
+    const { input, key } = meta("u");
+    expect(dispatchKey(input, key)).toEqual({
+      kind: "toggleElement",
+      element: "token-burn",
+    });
+  });
+
+  test("Alt+1 still toggles thinking (digit table untouched by Alt+u)", () => {
+    const { input, key } = meta("1");
+    expect(dispatchKey(input, key)).toEqual({
+      kind: "toggleElement",
+      element: "thinking",
+    });
+  });
 });
 
 describe("dispatchKey — preset cycle", () => {
@@ -134,6 +150,24 @@ describe("dispatchKey — control combos", () => {
   test("Ctrl+C → interrupt", () => {
     const { input, key } = ctrl("c");
     expect(dispatchKey(input, key)).toEqual({ kind: "interrupt" });
+  });
+});
+
+describe("dispatchKey — prompt history", () => {
+  test("Up arrow → historyPrev", () => {
+    expect(dispatchKey("", { ...baseKey, upArrow: true })).toEqual({
+      kind: "historyPrev",
+    });
+  });
+
+  test("Down arrow → historyNext", () => {
+    expect(dispatchKey("", { ...baseKey, downArrow: true })).toEqual({
+      kind: "historyNext",
+    });
+  });
+
+  test("Ctrl+Up is null (still guarded)", () => {
+    expect(dispatchKey("", { ...baseKey, upArrow: true, ctrl: true })).toBeNull();
   });
 });
 

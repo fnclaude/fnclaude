@@ -43,12 +43,17 @@ export interface Key {
   eventType?: "press" | "repeat" | "release";
 }
 
+export type ScrollDelta = "lineUp" | "lineDown" | "pageUp" | "pageDown" | "top" | "bottom";
+
 export type KeybindAction =
   | { kind: "toggleElement"; element: ElementId }
   | { kind: "cyclePreset"; direction: 1 | -1 }
+  | { kind: "scroll"; delta: ScrollDelta }
   | { kind: "repaint" }
   | { kind: "closeStdin" }
-  | { kind: "interrupt" };
+  | { kind: "interrupt" }
+  | { kind: "historyPrev" }
+  | { kind: "historyNext" };
 
 /**
  * Element order matches `Alt+1` … `Alt+8` exactly (docs/keybind-spec.md).
@@ -79,6 +84,27 @@ export function dispatchKey(input: string, key: Key): KeybindAction | null {
   // mnemonic letter bind instead of an out-of-range digit.
   if (key.meta && input === "m") {
     return { kind: "toggleElement", element: "meta" };
+  }
+
+  // Alt + u → toggle the per-turn token-usage one-liner (the "usage" POC).
+  // Same letter-bind rationale as Alt+m: the digit table is full.
+  if (key.meta && input === "u") {
+    return { kind: "toggleElement", element: "token-burn" };
+  }
+
+  // Scroll the app-owned viewport. PageUp/PageDown page; Home/End jump to the
+  // top/bottom. These are navigation keys, not text — they take precedence over
+  // the draft input. Guarded behind no-modifier so Ctrl/Alt combos still pass.
+  if (!key.ctrl && !key.meta) {
+    if (key.pageUp) return { kind: "scroll", delta: "pageUp" };
+    if (key.pageDown) return { kind: "scroll", delta: "pageDown" };
+    if (key.home) return { kind: "scroll", delta: "top" };
+    if (key.end) return { kind: "scroll", delta: "bottom" };
+    // Up/Down walk the submitted-prompt history into the draft (shell-style
+    // recall). Guarded with the navigation keys above so Ctrl+Up / Alt+Up still
+    // fall through to null.
+    if (key.upArrow) return { kind: "historyPrev" };
+    if (key.downArrow) return { kind: "historyNext" };
   }
 
   // Ctrl combos
