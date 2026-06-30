@@ -350,7 +350,8 @@ describe("MarkdownRenderer", () => {
     // With OSC 8 OFF, every clickable path must still emit the underline SGR.
     test("hyperlinks OFF: markdown link, raw <a>, and autolink all underline", () => {
       setHyperlinkSupportOverride(false);
-      const mdLink = render(<MarkdownRenderer text="[click](https://example.com)" />).lastFrame() ?? "";
+      const mdLink =
+        render(<MarkdownRenderer text="[click](https://example.com)" />).lastFrame() ?? "";
       const rawAnchor =
         render(<MarkdownRenderer text={'<a href="https://x.com">site</a>'} />).lastFrame() ?? "";
       const autolink = render(<MarkdownRenderer text="thanks @octocat" />).lastFrame() ?? "";
