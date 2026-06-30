@@ -249,9 +249,15 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
 
   return {
     tick: (tokens: number | null): boolean => {
-      // A null reading (no assistant turn yet / unreadable JSONL) is a
-      // no-op — it must NOT move the watermark.
-      if (tokens === null) return false;
+      // A null reading (no assistant turn yet / unreadable JSONL) is a no-op —
+      // it must NOT move the watermark. A non-positive reading is treated the
+      // same: a transient `0` (a synthetic / interrupted assistant record whose
+      // usage is all zeros — issue #283) must never re-arm the watermark the
+      // way a real /compact drop would, or the next real turn re-crosses the
+      // same rung and fires a duplicate notice.
+      if (tokens === null || tokens <= 0) {
+        return false;
+      }
 
       const point = highestCrossedPoint(ladder, tokens);
       const currentPoint = point?.at ?? 0;

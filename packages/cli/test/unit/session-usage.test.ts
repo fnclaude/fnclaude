@@ -208,6 +208,54 @@ describe('computeSessionUsage — context size', () => {
     );
     expect(u.context).toBeNull();
   });
+
+  test('a trailing synthetic all-zero record does NOT clobber context', () => {
+    // Claude writes a `model: "<synthetic>"` assistant record (all-zero usage)
+    // for interrupted / partial turns. Letting one overwrite `context` would
+    // drop the running size to 0 and make the context monitor re-arm its
+    // watermark as if a /compact had happened (issue #283). Context must stay
+    // the latest REAL turn's value.
+    const content = [
+      assistantTurn(OPUS, {
+        input_tokens: 150_000,
+        output_tokens: 10,
+        cache_creation_input_tokens: 5_000,
+        cache_read_input_tokens: 3_800,
+      }),
+      assistantTurn('<synthetic>', {
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      }),
+    ].join('\n');
+    const u = computeSessionUsage(content);
+    expect(u.context!.tokens).toBe(150_000 + 5_000 + 3_800);
+    expect(u.context!.model).toBe(OPUS);
+  });
+
+  test('a trailing real-model all-zero record does NOT clobber context', () => {
+    // The guard isn't keyed on the `<synthetic>` model alone: any record whose
+    // effective context tokens (input + cacheCreation + cacheRead) sum to 0
+    // carries no usable reading and must not overwrite the real turn.
+    const content = [
+      assistantTurn(OPUS, {
+        input_tokens: 160_000,
+        output_tokens: 10,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      }),
+      assistantTurn(SONNET, {
+        input_tokens: 0,
+        output_tokens: 12,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      }),
+    ].join('\n');
+    const u = computeSessionUsage(content);
+    expect(u.context!.tokens).toBe(160_000);
+    expect(u.context!.model).toBe(OPUS);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

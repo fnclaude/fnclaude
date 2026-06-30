@@ -321,6 +321,41 @@ describe('createContextMonitor — tiered ladder + watermark', () => {
     expect(spy.calls).toEqual([]);
   });
 
+  test('a transient zero reading does NOT re-arm the watermark (synthetic guard)', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    // A `0` reading comes from a synthetic / interrupted assistant record whose
+    // usage is all zeros (issue #283). It must be treated like `null` — a
+    // no-op that does NOT lower the watermark. Otherwise it re-arms the ladder
+    // exactly like a real /compact drop, and the next real turn re-crosses the
+    // same rung and fires [consider] a SECOND time.
+    expect(m.tick(150_000)).toBe(true); // consider fires once, watermark = 150k
+    expect(m.tick(0)).toBe(false); // transient zero — no-op, no re-arm
+    expect(m.tick(158_800)).toBe(false); // same band, must NOT re-fire
+
+    const considerCount = spy.calls.filter((c) => c.includes('[consider]')).length;
+    expect(considerCount).toBe(1);
+  });
+
+  test('a negative reading is a no-op and does NOT move the watermark', () => {
+    const spy = spyWriter();
+    const m = createContextMonitor({
+      ladder: defaultLadder,
+      write: spy.write,
+      schedule: syncSchedule,
+    });
+
+    expect(m.tick(260_000)).toBe(true); // now, watermark = 250k
+    expect(m.tick(-1)).toBe(false); // bad reading, no re-arm
+    expect(m.tick(280_000)).toBe(false); // still latched at now band
+    expect(spy.calls.length).toBe(2); // one notice = two writes
+  });
+
   test('writer side effects are not captured back into the monitor', () => {
     const observed: string[] = [];
     const m = createContextMonitor({

@@ -196,8 +196,18 @@ export function computeSessionUsage(content: string): SessionUsage {
     acc.cacheCreation += turn.cacheCreation;
     acc.cacheRead += turn.cacheRead;
 
-    // Latest assistant turn wins for context size.
-    context = { tokens: turn.input + turn.cacheCreation + turn.cacheRead, model };
+    // Latest REAL assistant turn wins for context size. Claude writes a
+    // `model: "<synthetic>"` record (all-zero usage) for interrupted / partial
+    // turns; any record whose effective context tokens sum to 0 likewise
+    // carries no usable reading. Letting one overwrite `context` would drop the
+    // running size to 0 and make the context monitor re-arm its watermark as if
+    // a /compact had happened, re-firing the same ladder rung (issue #283).
+    // Token accumulation above still counts these (zeros are harmless); only
+    // the context assignment skips them.
+    const contextTokens = turn.input + turn.cacheCreation + turn.cacheRead;
+    if (model !== '<synthetic>' && contextTokens > 0) {
+      context = { tokens: contextTokens, model };
+    }
   }
 
   const perModel: Record<string, ModelUsage> = {};
