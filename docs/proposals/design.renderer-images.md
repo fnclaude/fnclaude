@@ -2,6 +2,8 @@
 
 > **Status: forward-looking.** This document describes a design that is NOT yet implemented. It is a forward-looking implementer's playbook, not a description of shipped code.
 
+> **⚠️ Superseded foundation — read [`design.renderer-images-in-viewport.md`](design.renderer-images-in-viewport.md) first.** This doc's **§3 `<Static>` foundation** and its **M0** are obsolete: PR #284 shipped an app-owned scroll viewport (`src/scroll/`) that re-renders the transcript on scroll, which is **mutually exclusive** with moving the transcript into Ink's `<Static>` / native scrollback. The image-rendering technique has changed accordingly — from cursor-positioned direct placement (`ink-picture`) to **Kitty Unicode placeholders** that are cell-anchored and survive the viewport's clip/relayout. The in-viewport doc supersedes §3 and the M0/M1/M2 milestone plan. **The rest of this doc remains authoritative** for the parts orthogonal to scroll: the Kitty wire format (§2), model-output resolution + **SSRF/path-traversal security** (§4), pasted images (§5), and the math/mermaid adapters.
+
 ## Why this exists
 
 [`docs/research/renderer-graphics-interactivity.md`](../research/renderer-graphics-interactivity.md) is the broad feasibility survey — images, math, mermaid, mouse, links, scroll. This doc goes deep on **images only** and is scoped to production implementation: exact integration points, concrete data flows, security requirements, and a milestone ordering. Math and mermaid reuse the same PNG→Kitty core described here; see the research doc for their content-specific adapters.
