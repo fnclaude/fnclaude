@@ -33,13 +33,15 @@ describe("GitHub autolinks in MarkdownRenderer", () => {
     expect(frame).toContain("#123");
   });
 
-  test("hyperlinks OFF: @mention is colored but NOT underlined, no OSC 8 bytes", () => {
+  test("hyperlinks OFF: @mention is blue+underline, no OSC 8 bytes", () => {
+    // Autolinks share the markdown-link underline policy: a link reads as a
+    // link (blue+underline) even when the terminal can't make it clickable.
     setHyperlinkSupportOverride(false);
     const { lastFrame } = renderWithRepo(<MarkdownRenderer text="thanks @octocat" />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("@octocat");
     expect(frame).toMatch(/\x1B\[34m/); // blue
-    expect(frame).not.toMatch(/\x1B\[4m/); // NOT underlined
+    expect(frame).toMatch(/\x1B\[4m/); // underlined — consistent with markdown links
     expect(frame).not.toContain("\x1b]8"); // no OSC 8 at all
   });
 
