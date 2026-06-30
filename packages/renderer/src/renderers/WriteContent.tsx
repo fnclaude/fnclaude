@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { countLines } from "./summarize";
 
 export interface WriteContentProps {
@@ -19,30 +20,24 @@ export interface WriteContentProps {
  *   summary  — file path + line count of new content
  *   dim      — full body, ANSI-faint
  */
-export function WriteContent({ filePath, content, visibility }: WriteContentProps): JSX.Element {
+export function WriteContent({
+  filePath,
+  content,
+  visibility,
+}: WriteContentProps): JSX.Element | null {
   const header = `▸ Write: ${filePath}`;
 
-  if (visibility === "hide") {
-    return <Text dimColor>{header}</Text>;
-  }
-
-  if (visibility === "summary") {
-    return <Text>{`${header} (${countLines(content)} lines)`}</Text>;
-  }
-
-  if (visibility === "dim") {
-    return (
-      <Box flexDirection="column">
-        <Text dimColor>{header}</Text>
-        <Text dimColor>{content}</Text>
-      </Box>
-    );
-  }
-
   return (
-    <Box flexDirection="column">
-      <Text>{header}</Text>
-      <Text>{content}</Text>
-    </Box>
+    <Filtered
+      visibility={visibility}
+      hidden={<Text dimColor>{header}</Text>}
+      summary={<Text>{`${header} (${countLines(content)} lines)`}</Text>}
+      full={({ dim }) => (
+        <Box flexDirection="column">
+          <Text dimColor={dim}>{header}</Text>
+          <Text dimColor={dim}>{content}</Text>
+        </Box>
+      )}
+    />
   );
 }

@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { countLines } from "./summarize";
 
 export interface ReadContentProps {
@@ -24,15 +25,12 @@ export function ReadContent({
   content,
   visibility,
 }: ReadContentProps): JSX.Element | null {
-  if (visibility === "hide") return null;
-
-  if (visibility === "summary") {
-    return <Text dimColor>{`  ↳ ${filePath} (${countLines(content)} lines)`}</Text>;
-  }
-
-  if (visibility === "dim") {
-    return <Text dimColor>{content}</Text>;
-  }
-
-  return <Text>{content}</Text>;
+  return (
+    <Filtered
+      visibility={visibility}
+      hidden={null}
+      summary={<Text dimColor>{`  ↳ ${filePath} (${countLines(content)} lines)`}</Text>}
+      full={({ dim }) => <Text dimColor={dim}>{content}</Text>}
+    />
+  );
 }

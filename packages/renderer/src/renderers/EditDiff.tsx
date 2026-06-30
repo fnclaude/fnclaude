@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { countLines } from "./summarize";
 
 function prefixLines(text: string, prefix: string): string {
@@ -32,43 +33,38 @@ export function EditDiff({
   oldString,
   newString,
   visibility,
-}: EditDiffProps): JSX.Element {
+}: EditDiffProps): JSX.Element | null {
   const removedLines = countLines(oldString);
   const addedLines = countLines(newString);
-
-  if (visibility === "hide") {
-    return <Text dimColor>{`▸ Edit: ${filePath}`}</Text>;
-  }
-
-  if (visibility === "summary") {
-    return (
-      <Text>
-        {`▸ Edit: ${filePath} `}
-        <Text color="red">{`-${removedLines}`}</Text> <Text color="green">{`+${addedLines}`}</Text>
-        {" lines"}
-      </Text>
-    );
-  }
-
   const removed = prefixLines(oldString, "- ");
   const added = prefixLines(newString, "+ ");
 
-  if (visibility === "dim") {
-    return (
-      <Box flexDirection="column">
-        <Text dimColor>{`▸ Edit: ${filePath}`}</Text>
-        <Text dimColor>{removed}</Text>
-        <Text dimColor>{added}</Text>
-      </Box>
-    );
-  }
-
-  // show
   return (
-    <Box flexDirection="column">
-      <Text>{`▸ Edit: ${filePath}`}</Text>
-      <Text color="red">{removed}</Text>
-      <Text color="green">{added}</Text>
-    </Box>
+    <Filtered
+      visibility={visibility}
+      hidden={<Text dimColor>{`▸ Edit: ${filePath}`}</Text>}
+      summary={
+        <Text>
+          {`▸ Edit: ${filePath} `}
+          <Text color="red">{`-${removedLines}`}</Text> <Text color="green">{`+${addedLines}`}</Text>
+          {" lines"}
+        </Text>
+      }
+      full={({ dim }) =>
+        dim ? (
+          <Box flexDirection="column">
+            <Text dimColor>{`▸ Edit: ${filePath}`}</Text>
+            <Text dimColor>{removed}</Text>
+            <Text dimColor>{added}</Text>
+          </Box>
+        ) : (
+          <Box flexDirection="column">
+            <Text>{`▸ Edit: ${filePath}`}</Text>
+            <Text color="red">{removed}</Text>
+            <Text color="green">{added}</Text>
+          </Box>
+        )
+      }
+    />
   );
 }

@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { firstNLines } from "./summarize";
 
 export interface BashOutputProps {
@@ -19,19 +20,28 @@ export interface BashOutputProps {
  *   summary  — first 5 lines + "(… N lines hidden)"
  *   dim      — full output, ANSI-faint
  */
-export function BashOutput({ content, visibility, isError }: BashOutputProps): JSX.Element | null {
-  if (visibility === "hide") return null;
+export function BashOutput({
+  content,
+  visibility,
+  isError,
+}: BashOutputProps): JSX.Element | null {
+  const { head, hiddenLines } = firstNLines(content);
+  const summaryBody = `${head}${hiddenLines > 0 ? `\n(… ${hiddenLines} lines hidden)` : ""}`;
 
-  if (visibility === "summary") {
-    const { head, hiddenLines } = firstNLines(content);
-    const body = `${head}${hiddenLines > 0 ? `\n(… ${hiddenLines} lines hidden)` : ""}`;
-    return isError ? <Text color="red">{body}</Text> : <Text>{body}</Text>;
-  }
-
-  if (visibility === "dim") {
-    return <Text dimColor>{content}</Text>;
-  }
-
-  // show
-  return isError ? <Text color="red">{content}</Text> : <Text>{content}</Text>;
+  return (
+    <Filtered
+      visibility={visibility}
+      hidden={null}
+      summary={isError ? <Text color="red">{summaryBody}</Text> : <Text>{summaryBody}</Text>}
+      full={({ dim }) =>
+        dim ? (
+          <Text dimColor>{content}</Text>
+        ) : isError ? (
+          <Text color="red">{content}</Text>
+        ) : (
+          <Text>{content}</Text>
+        )
+      }
+    />
+  );
 }

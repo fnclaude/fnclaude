@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { countLines } from "./summarize";
 
 export interface TaskNestedProps {
@@ -19,32 +20,26 @@ export interface TaskNestedProps {
  *   summary  — first line of prompt + line count
  *   dim      — full prompt, ANSI-faint
  */
-export function TaskNested({ description, prompt, visibility }: TaskNestedProps): JSX.Element {
+export function TaskNested({
+  description,
+  prompt,
+  visibility,
+}: TaskNestedProps): JSX.Element | null {
   const header = `▸ Task${description ? `: ${description}` : ""}`;
-
-  if (visibility === "hide") {
-    return <Text dimColor>{header}</Text>;
-  }
-
-  if (visibility === "summary") {
-    const firstLine = prompt.split("\n", 1)[0] ?? "";
-    const total = countLines(prompt);
-    return <Text>{`${header}\n  ${firstLine} (${total} lines)`}</Text>;
-  }
-
-  if (visibility === "dim") {
-    return (
-      <Box flexDirection="column">
-        <Text dimColor>{header}</Text>
-        <Text dimColor>{prompt}</Text>
-      </Box>
-    );
-  }
+  const firstLine = prompt.split("\n", 1)[0] ?? "";
+  const total = countLines(prompt);
 
   return (
-    <Box flexDirection="column">
-      <Text>{header}</Text>
-      <Text>{prompt}</Text>
-    </Box>
+    <Filtered
+      visibility={visibility}
+      hidden={<Text dimColor>{header}</Text>}
+      summary={<Text>{`${header}\n  ${firstLine} (${total} lines)`}</Text>}
+      full={({ dim }) => (
+        <Box flexDirection="column">
+          <Text dimColor={dim}>{header}</Text>
+          <Text dimColor={dim}>{prompt}</Text>
+        </Box>
+      )}
+    />
   );
 }
