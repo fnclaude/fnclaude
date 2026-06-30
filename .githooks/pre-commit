@@ -1,0 +1,62 @@
+#!/bin/sh
+# fnclaude monorepo pre-commit hook: auto-format renderer TypeScript, then verify.
+#
+# Installed automatically via mise.toml [hooks] enter = "git config core.hooksPath .githooks"
+# For non-mise users: git config core.hooksPath .githooks
+#
+# Only acts on staged .ts/.tsx files under packages/renderer/.
+# All other packages (cli, fnclaude) are untouched — only the renderer has biome.json.
+#
+# Behaviour:
+#   1. No renderer TS staged → exit 0 immediately (cli/docs commits are unaffected).
+#   2. Auto-format+fix with biome --write (safe fixes only).
+#   3. Re-stage the formatted files so the formatted result is what lands in the commit.
+#   4. Run `bun run check` (whole renderer package) to catch any remaining unsafe issues.
+#   5. If check still fails → print biome output + guidance and block the commit.
+
+set -e
+
+RENDERER_DIR="packages/renderer"
+
+# Collect staged .ts/.tsx files under packages/renderer/
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep "^${RENDERER_DIR}/.*\.tsx\?$" || true)
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "pre-commit: bun not on PATH — cannot run biome." >&2
+  echo "  Activate mise ('eval \"\$(mise activate)\"') or install bun, then re-commit." >&2
+  exit 1
+fi
+
+# Fresh-clone safety: install biome if node_modules is absent.
+if [ ! -f "${RENDERER_DIR}/node_modules/@biomejs/biome/package.json" ]; then
+  echo "pre-commit: biome not installed — running bun install in ${RENDERER_DIR}..." >&2
+  bun install --silent --cwd "${RENDERER_DIR}"
+fi
+
+# Strip the packages/renderer/ prefix to get paths relative to the package root.
+pkg_relative_files=""
+for f in $staged_files; do
+  rel="${f#${RENDERER_DIR}/}"
+  pkg_relative_files="${pkg_relative_files} ${rel}"
+done
+
+# Auto-format and apply safe lint fixes in-place.
+(cd "${RENDERER_DIR}" && node_modules/.bin/biome check --write $pkg_relative_files) || true
+
+# Re-stage the files now that biome has modified them.
+for f in $staged_files; do
+  git add "$f"
+done
+
+# Verify the whole package is clean (catches unsafe-fix issues biome left for the author).
+if ! (cd "${RENDERER_DIR}" && bun run check); then
+  echo >&2
+  echo "pre-commit: biome found issues it could not auto-fix (e.g. unused imports," >&2
+  echo "  unused variables, or redundant fragments). Fix the errors listed above," >&2
+  echo "  then re-stage and re-commit." >&2
+  exit 1
+fi
