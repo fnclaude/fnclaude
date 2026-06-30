@@ -39,6 +39,7 @@ import {
   liveReducer,
 } from "./live-message.ts";
 import { LiveRegion, type ToolCallInfo, renderEventNode } from "./renderers/EventRenderer.tsx";
+import { ScrollIndicator } from "./renderers/ScrollIndicator.tsx";
 import { MeasuredRow } from "./scroll/MeasuredRow.tsx";
 import { ScrollViewport } from "./scroll/ScrollViewport.tsx";
 import { type AnchoredScroll, useAnchoredScroll } from "./scroll/useAnchoredScroll.ts";
@@ -402,22 +403,32 @@ export function App(props: AppProps): React.ReactElement {
     <Box flexDirection="column">
       {/* TRANSCRIPT — a top-level control. Wrapped in the app-owned scroll
           viewport; the input is a SEPARATE sibling below (not nested), so the
-          transcript can clip independently. */}
-      <Box flexDirection="column" flexGrow={1}>
-        <ScrollViewport
-          height={viewportHeight}
+          transcript can clip independently. The row wrapper places a
+          one-column scroll-position indicator to the right of the viewport
+          without affecting the viewport's width (it renders nothing when the
+          content fits). */}
+      <Box flexDirection="row" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1}>
+          <ScrollViewport
+            height={viewportHeight}
+            scrollOffset={ctl.scrollOffset}
+            onContentHeight={ctl.setContentHeight}
+          >
+            <Transcript
+              events={events}
+              live={live}
+              visibilityFor={visibilityFor}
+              ctl={ctl}
+              toolCallById={toolCallById}
+              lastAssistantText={lastAssistantText}
+            />
+          </ScrollViewport>
+        </Box>
+        <ScrollIndicator
           scrollOffset={ctl.scrollOffset}
-          onContentHeight={ctl.setContentHeight}
-        >
-          <Transcript
-            events={events}
-            live={live}
-            visibilityFor={visibilityFor}
-            ctl={ctl}
-            toolCallById={toolCallById}
-            lastAssistantText={lastAssistantText}
-          />
-        </ScrollViewport>
+          maxScroll={ctl.maxScroll}
+          viewportHeight={viewportHeight}
+        />
       </Box>
       {/* INPUT — a separate top-level control (draft + status). */}
       <Box flexDirection="column">

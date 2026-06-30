@@ -57,7 +57,12 @@ function lineMsg(i: number, usage?: AssistantEvent["message"]["usage"]): ClaudeE
 
 /** The topmost transcript line carrying a MESSAGE-N marker. */
 function topMessageLine(frame: string): string | undefined {
-  return frame.split("\n").find((l) => l.includes("MESSAGE-"));
+  const line = frame.split("\n").find((l) => l.includes("MESSAGE-"));
+  if (line === undefined) return undefined;
+  // Strip ANSI then the trailing scroll-indicator column (thumb █ / track │)
+  // and padding, so we compare transcript content — the indicator's thumb
+  // legitimately shifts when content above the fold grows.
+  return line.replace(/\x1B\[[0-9;]*m/g, "").replace(/[█│\s]+$/, "");
 }
 
 describe("<App /> token-burn POC (Alt+u)", () => {
