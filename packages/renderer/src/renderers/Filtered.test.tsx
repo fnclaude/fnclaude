@@ -6,7 +6,9 @@ import { Filtered } from "./Filtered";
 describe("Filtered", () => {
   const hidden = <Text>HIDDEN</Text>;
   const summary = <Text>SUMMARY</Text>;
-  const full = ({ dim }: { dim: boolean }) => <Text dimColor={dim}>{`FULL${dim ? "-DIM" : ""}`}</Text>;
+  const full = ({ dim }: { dim: boolean }) => (
+    <Text dimColor={dim}>{`FULL${dim ? "-DIM" : ""}`}</Text>
+  );
 
   test("hide: renders the hidden node", () => {
     const { lastFrame } = render(

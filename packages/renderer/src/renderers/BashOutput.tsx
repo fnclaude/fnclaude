@@ -20,11 +20,7 @@ export interface BashOutputProps {
  *   summary  — first 5 lines + "(… N lines hidden)"
  *   dim      — full output, ANSI-faint
  */
-export function BashOutput({
-  content,
-  visibility,
-  isError,
-}: BashOutputProps): JSX.Element | null {
+export function BashOutput({ content, visibility, isError }: BashOutputProps): JSX.Element | null {
   const { head, hiddenLines } = firstNLines(content);
   const summaryBody = `${head}${hiddenLines > 0 ? `\n(… ${hiddenLines} lines hidden)` : ""}`;
 

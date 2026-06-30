@@ -46,7 +46,8 @@ export function EditDiff({
       summary={
         <Text>
           {`▸ Edit: ${filePath} `}
-          <Text color="red">{`-${removedLines}`}</Text> <Text color="green">{`+${addedLines}`}</Text>
+          <Text color="red">{`-${removedLines}`}</Text>{" "}
+          <Text color="green">{`+${addedLines}`}</Text>
           {" lines"}
         </Text>
       }
