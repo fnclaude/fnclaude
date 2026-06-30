@@ -51,7 +51,9 @@ export type KeybindAction =
   | { kind: "scroll"; delta: ScrollDelta }
   | { kind: "repaint" }
   | { kind: "closeStdin" }
-  | { kind: "interrupt" };
+  | { kind: "interrupt" }
+  | { kind: "historyPrev" }
+  | { kind: "historyNext" };
 
 /**
  * Element order matches `Alt+1` … `Alt+8` exactly (docs/keybind-spec.md).
@@ -98,6 +100,11 @@ export function dispatchKey(input: string, key: Key): KeybindAction | null {
     if (key.pageDown) return { kind: "scroll", delta: "pageDown" };
     if (key.home) return { kind: "scroll", delta: "top" };
     if (key.end) return { kind: "scroll", delta: "bottom" };
+    // Up/Down walk the submitted-prompt history into the draft (shell-style
+    // recall). Guarded with the navigation keys above so Ctrl+Up / Alt+Up still
+    // fall through to null.
+    if (key.upArrow) return { kind: "historyPrev" };
+    if (key.downArrow) return { kind: "historyNext" };
   }
 
   // Ctrl combos

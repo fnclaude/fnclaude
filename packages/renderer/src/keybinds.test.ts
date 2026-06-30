@@ -153,6 +153,24 @@ describe("dispatchKey — control combos", () => {
   });
 });
 
+describe("dispatchKey — prompt history", () => {
+  test("Up arrow → historyPrev", () => {
+    expect(dispatchKey("", { ...baseKey, upArrow: true })).toEqual({
+      kind: "historyPrev",
+    });
+  });
+
+  test("Down arrow → historyNext", () => {
+    expect(dispatchKey("", { ...baseKey, downArrow: true })).toEqual({
+      kind: "historyNext",
+    });
+  });
+
+  test("Ctrl+Up is null (still guarded)", () => {
+    expect(dispatchKey("", { ...baseKey, upArrow: true, ctrl: true })).toBeNull();
+  });
+});
+
 describe("dispatchKey — non-matches return null", () => {
   test("plain letter is null (let App handle text input)", () => {
     expect(dispatchKey("a", baseKey)).toBeNull();

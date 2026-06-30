@@ -321,6 +321,24 @@ export function App(props: AppProps): React.ReactElement {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
 
+  // Shell-style prompt-history recall. `promptHistoryRef` is the oldest→newest
+  // list of submitted prompts; `histIdxRef` is the cursor (== length means "on
+  // the live draft, not browsing"); `histStashRef` holds the in-progress draft
+  // stashed when navigation begins so Down past the newest restores it. Seeded
+  // once from any resumed `user_prompt` events so recall spans the prior turns.
+  const promptHistoryRef = useRef<string[]>([]);
+  const seededHistoryRef = useRef(false);
+  const histIdxRef = useRef(0);
+  const histStashRef = useRef("");
+  if (!seededHistoryRef.current) {
+    seededHistoryRef.current = true;
+    const seeded = (initialEvents ?? [])
+      .filter((e): e is Extract<ClaudeEvent, { type: "user_prompt" }> => e.type === "user_prompt")
+      .map((e) => e.text);
+    promptHistoryRef.current = seeded;
+    histIdxRef.current = seeded.length;
+  }
+
   // Exit path: the injected test seam if present, else Ink's app exit.
   const inkApp = useApp();
   const exitApp = props.exit ?? (() => inkApp.exit());
@@ -445,6 +463,29 @@ export function App(props: AppProps): React.ReactElement {
           // controller's bottom rule.
           ctl.onScroll(action.delta);
           return;
+        case "historyPrev": {
+          const h = promptHistoryRef.current;
+          if (h.length === 0) return;
+          if (histIdxRef.current >= h.length) {
+            // entering history from the live draft — stash it so Down can restore it
+            histStashRef.current = draftRef.current;
+            histIdxRef.current = h.length;
+          }
+          if (histIdxRef.current > 0) {
+            histIdxRef.current -= 1;
+            writeDraft(h[histIdxRef.current] ?? "");
+          }
+          return;
+        }
+        case "historyNext": {
+          const h = promptHistoryRef.current;
+          if (histIdxRef.current >= h.length) return; // already at the live draft
+          histIdxRef.current += 1;
+          writeDraft(
+            histIdxRef.current >= h.length ? histStashRef.current : (h[histIdxRef.current] ?? ""),
+          );
+          return;
+        }
         case "closeStdin":
           subRef.current?.close().catch(() => undefined);
           flashToast("close stdin");
@@ -497,6 +538,12 @@ export function App(props: AppProps): React.ReactElement {
         // back, so without this the submitted text would vanish.
         setEvents((prev) => [...prev, { type: "user_prompt", text }]);
         subRef.current?.sendUserTurn(text);
+        // Record the prompt for history recall and reset navigation to the live
+        // end: Up after a submit starts from the newest, and a fresh Down (with
+        // no stash) restores an empty draft rather than a stale stashed one.
+        promptHistoryRef.current = [...promptHistoryRef.current, text];
+        histIdxRef.current = promptHistoryRef.current.length;
+        histStashRef.current = "";
         // A turn is now in flight — Ctrl+C should interrupt, not exit.
         setBusy(true);
         writeDraft("");
