@@ -38,16 +38,12 @@ import {
   inFlightBlocks,
   liveReducer,
 } from "./live-message.ts";
-import {
-  LiveRegion,
-  type ToolCallInfo,
-  renderEventNode,
-} from "./renderers/EventRenderer.tsx";
-import { usePromptHistory } from "./usePromptHistory.ts";
+import { LiveRegion, type ToolCallInfo, renderEventNode } from "./renderers/EventRenderer.tsx";
 import { MeasuredRow } from "./scroll/MeasuredRow.tsx";
 import { ScrollViewport } from "./scroll/ScrollViewport.tsx";
 import { type AnchoredScroll, useAnchoredScroll } from "./scroll/useAnchoredScroll.ts";
 import type { ClaudeEvent, ElementId, FilterState, Visibility } from "./types/events.ts";
+import { usePromptHistory } from "./usePromptHistory.ts";
 
 /**
  * A streaming feed: an injectable source of events for tests. Receives an

@@ -10,10 +10,7 @@
  */
 
 import { Box, Text } from "ink";
-import {
-  type LiveState,
-  inFlightBlocks,
-} from "../live-message.ts";
+import { type LiveState, inFlightBlocks } from "../live-message.ts";
 import type {
   AssistantEvent,
   ClaudeEvent,
@@ -24,6 +21,7 @@ import type {
   UserEvent,
   Visibility,
 } from "../types/events.ts";
+import { TokenBurn } from "./TokenBurn.tsx";
 import {
   ErrorRenderer,
   MarkdownRenderer,
@@ -34,7 +32,6 @@ import {
   ToolResultRenderer,
   ToolUseRenderer,
 } from "./index.ts";
-import { TokenBurn } from "./TokenBurn.tsx";
 
 export interface ToolCallInfo {
   name: string;
@@ -225,10 +222,7 @@ function renderUnknownEvent(event: never): React.ReactElement {
  * `event.type` — matches liveReducer's style and makes a new union variant a
  * compile error rather than a silent drop.
  */
-export function renderEventNode(
-  event: ClaudeEvent,
-  ctx: RenderContext,
-): React.ReactElement | null {
+export function renderEventNode(event: ClaudeEvent, ctx: RenderContext): React.ReactElement | null {
   const { visibilityFor, toolCallById, lastAssistantText } = ctx;
   switch (event.type) {
     case "assistant":
@@ -236,9 +230,7 @@ export function renderEventNode(
     case "user_prompt":
       return <UserPromptRender text={event.text} />;
     case "user":
-      return (
-        <UserRender event={event} toolCallById={toolCallById} visibilityFor={visibilityFor} />
-      );
+      return <UserRender event={event} toolCallById={toolCallById} visibilityFor={visibilityFor} />;
     case "result": {
       const dup = !event.is_error && event.result === lastAssistantText;
       return <ResultRender event={event} suppressBody={dup} />;
