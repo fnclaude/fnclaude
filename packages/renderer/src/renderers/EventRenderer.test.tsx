@@ -27,7 +27,7 @@ const showAll = (_id: ElementId): Visibility => "show";
 const hideMeta = (id: ElementId): Visibility => (id === "meta" ? "hide" : "show");
 
 function frameOf(node: React.ReactNode): string {
-  const { lastFrame } = render(<>{node}</>);
+  const { lastFrame } = render(node as React.ReactElement);
   return lastFrame() ?? "";
 }
 
