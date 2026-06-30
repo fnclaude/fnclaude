@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { type Token, type Tokens, marked } from "marked";
 import { type JSX, useContext, useMemo } from "react";
 import remend from "remend";
+import { type RendererTheme, useRendererTheme } from "../theme.tsx";
 import { AlertBlock, parseAlert } from "./AlertBlock.tsx";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { TableBlock } from "./TableBlock.tsx";
@@ -20,9 +21,6 @@ import { osc8End, osc8Start, supportsHyperlinkOutput } from "./osc8.ts";
 
 /** Horizontal-rule glyph run, shared by the block `hr` and inline `<hr>`. */
 const HR_RULE = "─".repeat(40);
-
-/** Dim/secondary color for literal raw markup that has no terminal analog. */
-const RAW_MARKUP_COLOR = "magenta";
 
 export interface MarkdownRendererProps {
   /** Raw (possibly partial/streaming) markdown. */
@@ -56,7 +54,10 @@ export function MarkdownRenderer({ text }: MarkdownRendererProps): JSX.Element {
 }
 
 /** Per-depth heading style: H1 most prominent, H6 least. */
-function headingTextProps(depth: number): {
+function headingTextProps(
+  depth: number,
+  theme: RendererTheme,
+): {
   bold?: boolean;
   underline?: boolean;
   color?: string;
@@ -64,13 +65,13 @@ function headingTextProps(depth: number): {
 } {
   switch (depth) {
     case 1:
-      return { bold: true, underline: true, color: "cyan" };
+      return { bold: true, underline: true, color: theme.heading };
     case 2:
-      return { bold: true, color: "cyan" };
+      return { bold: true, color: theme.heading };
     case 3:
-      return { bold: true, color: "blue" };
+      return { bold: true, color: theme.headingAccent };
     case 4:
-      return { bold: true, color: "white" };
+      return { bold: true, color: theme.headingPlain };
     case 5:
       return { bold: true, dimColor: true };
     default:
@@ -80,10 +81,11 @@ function headingTextProps(depth: number): {
 
 /** A single block-level token → its block element (or null for whitespace). */
 function BlockToken({ token }: { token: Token }): JSX.Element | null {
+  const theme = useRendererTheme();
   switch (token.type) {
     case "heading": {
       const h = token as Tokens.Heading;
-      const props = headingTextProps(h.depth);
+      const props = headingTextProps(h.depth, theme);
       // exactOptionalPropertyTypes forbids passing `undefined` for typed
       // optional props, so spread only the keys that are actually set.
       const textProps = {
@@ -94,19 +96,19 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
       };
       return (
         <Box marginBottom={1}>
-          <Text {...textProps}>{inline(h.tokens)}</Text>
+          <Text {...textProps}>{inline(h.tokens, theme)}</Text>
         </Box>
       );
     }
     case "paragraph":
       return (
         <Box marginBottom={1}>
-          <Text>{inline((token as Tokens.Paragraph).tokens)}</Text>
+          <Text>{inline((token as Tokens.Paragraph).tokens, theme)}</Text>
         </Box>
       );
     case "text": {
       const tt = token as Tokens.Text;
-      return <Text>{tt.tokens ? inline(tt.tokens) : tt.text}</Text>;
+      return <Text>{tt.tokens ? inline(tt.tokens, theme) : tt.text}</Text>;
     }
     case "code": {
       const code = token as Tokens.Code;
@@ -127,7 +129,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
       return (
         <Box
           borderStyle="single"
-          borderColor="gray"
+          borderColor={theme.blockquoteBorder}
           borderTop={false}
           borderRight={false}
           borderBottom={false}
@@ -152,7 +154,9 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
     case "space":
       return null;
     case "table":
-      return <TableBlock token={token as Tokens.Table} renderInline={(toks) => inline(toks)} />;
+      return (
+        <TableBlock token={token as Tokens.Table} renderInline={(toks) => inline(toks, theme)} />
+      );
     case "html": {
       // Block-level raw HTML arrives as one token (the whole `<div>…</div>`),
       // not the split open/text/close stream inline HTML produces. Interpret a
@@ -171,7 +175,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
         return <Text>{"\n"}</Text>;
       }
       return (
-        <Text color={RAW_MARKUP_COLOR} dimColor>
+        <Text color={theme.rawMarkup} dimColor>
           {html}
         </Text>
       );
@@ -182,6 +186,7 @@ function BlockToken({ token }: { token: Token }): JSX.Element | null {
 }
 
 function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
+  const theme = useRendererTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
       {token.items.map((item, i) => {
@@ -191,7 +196,7 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
           return (
             <Box key={`li-${i}`} flexDirection="row">
               {item.checked ? (
-                <Text color="green">{`${checkbox} `}</Text>
+                <Text color={theme.listMarkerChecked}>{`${checkbox} `}</Text>
               ) : (
                 <Text>{`${checkbox} `}</Text>
               )}
@@ -207,9 +212,9 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
         return (
           <Box key={`li-${i}`} flexDirection="row">
             {token.ordered ? (
-              <Text color="yellow">{`${marker} `}</Text>
+              <Text color={theme.listMarkerOrdered}>{`${marker} `}</Text>
             ) : (
-              <Text color="cyan">{`${marker} `}</Text>
+              <Text color={theme.listMarkerBullet}>{`${marker} `}</Text>
             )}
             <Box flexDirection="column">
               <ListItemBody item={item} />
@@ -222,6 +227,7 @@ function ListBlock({ token }: { token: Tokens.List }): JSX.Element {
 }
 
 function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
+  const theme = useRendererTheme();
   return (
     <>
       {item.tokens.map((t, i) => {
@@ -231,10 +237,10 @@ function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
         if (t.type === "list") return <ListBlock key={`l-${i}`} token={t as Tokens.List} />;
         if (t.type === "text") {
           const tt = t as Tokens.Text;
-          return <Text key={`t-${i}`}>{tt.tokens ? inline(tt.tokens) : tt.text}</Text>;
+          return <Text key={`t-${i}`}>{tt.tokens ? inline(tt.tokens, theme) : tt.text}</Text>;
         }
         if (t.type === "paragraph") {
-          return <Text key={`p-${i}`}>{inline((t as Tokens.Paragraph).tokens)}</Text>;
+          return <Text key={`p-${i}`}>{inline((t as Tokens.Paragraph).tokens, theme)}</Text>;
         }
         return <BlockToken key={`b-${i}`} token={t} />;
       })}
@@ -252,9 +258,9 @@ function ListItemBody({ item }: { item: Tokens.ListItem }): JSX.Element {
  * between a recognized open tag and its matching close are gathered back into a
  * single styled span. See {@link renderInlineTokens}.
  */
-function inline(tokens: Token[] | undefined): React.ReactNode {
+function inline(tokens: Token[] | undefined, theme: RendererTheme): React.ReactNode {
   if (tokens === undefined) return null;
-  return renderInlineTokens(tokens);
+  return renderInlineTokens(tokens, theme);
 }
 
 /**
@@ -262,7 +268,7 @@ function inline(tokens: Token[] | undefined): React.ReactNode {
  * and mapping every other token to its inline element. Non-HTML tokens go
  * through {@link renderInlineToken}.
  */
-function renderInlineTokens(tokens: Token[]): React.ReactNode {
+function renderInlineTokens(tokens: Token[], theme: RendererTheme): React.ReactNode {
   const out: React.ReactNode[] = [];
   let i = 0;
   let key = 0;
@@ -281,7 +287,7 @@ function renderInlineTokens(tokens: Token[]): React.ReactNode {
           const close = findMatchingClose(tokens, i, tag.name);
           if (close !== -1) {
             const inner = tokens.slice(i + 1, close);
-            out.push(renderHtmlContainer(tag, inner, key++));
+            out.push(renderHtmlContainer(tag, inner, key++, theme));
             i = close + 1;
             continue;
           }
@@ -291,20 +297,20 @@ function renderInlineTokens(tokens: Token[]): React.ReactNode {
       // allowlisted-but-no-analog tag (`<div>`), a self-closing `<img/>`, a
       // stray close tag, or an open tag with no matching close — surfaces as
       // colored literal markup rather than being silently dropped.
-      out.push(rawMarkup(html, key++));
+      out.push(rawMarkup(html, key++, theme));
       i++;
       continue;
     }
-    out.push(renderInlineToken(t, key++));
+    out.push(renderInlineToken(t, key++, theme));
     i++;
   }
   return out;
 }
 
 /** Literal raw HTML text, colored so it's visibly unhandled markup. */
-function rawMarkup(text: string, key: number): React.ReactNode {
+function rawMarkup(text: string, key: number, theme: RendererTheme): React.ReactNode {
   return (
-    <Text key={`raw-${key}`} color={RAW_MARKUP_COLOR} dimColor>
+    <Text key={`raw-${key}`} color={theme.rawMarkup} dimColor>
       {text}
     </Text>
   );
@@ -344,21 +350,26 @@ function plainText(tokens: Token[]): string {
 }
 
 /** Render an interpreted raw-HTML container by wrapping its grouped children. */
-function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): React.ReactNode {
+function renderHtmlContainer(
+  tag: ParsedHtmlTag,
+  inner: Token[],
+  key: number,
+  theme: RendererTheme,
+): React.ReactNode {
   const k = `html-${key}`;
   switch (tag.name) {
     case "b":
     case "strong":
       return (
         <Text key={k} bold>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "i":
     case "em":
       return (
         <Text key={k} italic>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "s":
@@ -366,13 +377,13 @@ function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): R
     case "del":
       return (
         <Text key={k} strikethrough>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "ins":
       return (
         <Text key={k} underline>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "code":
@@ -380,29 +391,29 @@ function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): R
     case "samp":
     case "var":
       return (
-        <Text key={k} color="cyan">
-          {renderInlineTokens(inner)}
+        <Text key={k} color={theme.inlineCode}>
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "q":
       return (
         <Text key={k}>
           {'"'}
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
           {'"'}
         </Text>
       );
     case "mark":
       return (
         <Text key={k} inverse>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "kbd":
       // Render keys as NerdFont glyph(s). Unknown keys fall back to their
       // literal text inside the same kbd style, so nothing crashes or is lost.
       return (
-        <Text key={k} bold color="yellow">
+        <Text key={k} bold color={theme.kbd}>
           {kbdToGlyphs(plainText(inner))}
         </Text>
       );
@@ -411,24 +422,24 @@ function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): R
       return (
         <Text key={k}>
           {"_"}
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "sup":
       return (
         <Text key={k}>
           {"^"}
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Text>
       );
     case "a":
       return (
         <Link key={k} href={tag.href ?? ""}>
-          {renderInlineTokens(inner)}
+          {renderInlineTokens(inner, theme)}
         </Link>
       );
     default:
-      return rawMarkup(tag.raw, key);
+      return rawMarkup(tag.raw, key, theme);
   }
 }
 
@@ -447,12 +458,13 @@ function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): R
  * plain so they don't look interactive when they aren't.
  */
 function Link({ href, children }: { href: string; children: React.ReactNode }): JSX.Element {
+  const theme = useRendererTheme();
   if (!/^(https?:\/\/|mailto:)/.test(href)) {
     return <Text>{children}</Text>;
   }
   if (supportsHyperlinkOutput()) {
     return (
-      <Text color="blue" underline>
+      <Text color={theme.link} underline>
         {osc8Start(href)}
         {children}
         {osc8End()}
@@ -460,37 +472,37 @@ function Link({ href, children }: { href: string; children: React.ReactNode }): 
     );
   }
   return (
-    <Text color="blue" underline>
+    <Text color={theme.link} underline>
       {children}
     </Text>
   );
 }
 
 /** Map a single non-HTML inline token to its Ink element. */
-function renderInlineToken(t: Token, key: number): React.ReactNode {
+function renderInlineToken(t: Token, key: number, theme: RendererTheme): React.ReactNode {
   const i = key;
   switch (t.type) {
     case "strong":
       return (
         <Text key={`in-${i}`} bold>
-          {inline((t as Tokens.Strong).tokens)}
+          {inline((t as Tokens.Strong).tokens, theme)}
         </Text>
       );
     case "em":
       return (
         <Text key={`in-${i}`} italic>
-          {inline((t as Tokens.Em).tokens)}
+          {inline((t as Tokens.Em).tokens, theme)}
         </Text>
       );
     case "del":
       return (
         <Text key={`in-${i}`} strikethrough>
-          {inline((t as Tokens.Del).tokens)}
+          {inline((t as Tokens.Del).tokens, theme)}
         </Text>
       );
     case "codespan":
       return (
-        <Text key={`in-${i}`} color="cyan">
+        <Text key={`in-${i}`} color={theme.inlineCode}>
           {(t as Tokens.Codespan).text}
         </Text>
       );
@@ -498,7 +510,7 @@ function renderInlineToken(t: Token, key: number): React.ReactNode {
       const link = t as Tokens.Link;
       return (
         <Link key={`in-${i}`} href={link.href ?? ""}>
-          {inline(link.tokens)}
+          {inline(link.tokens, theme)}
         </Link>
       );
     }
@@ -509,7 +521,7 @@ function renderInlineToken(t: Token, key: number): React.ReactNode {
     case "text": {
       const tt = t as Tokens.Text;
       if (tt.tokens && tt.tokens.length > 0)
-        return <Text key={`in-${i}`}>{inline(tt.tokens)}</Text>;
+        return <Text key={`in-${i}`}>{inline(tt.tokens, theme)}</Text>;
       // marked leaves HTML entities as-is in GFM mode; AutolinkedText decodes
       // them (&copy; → ©, …) and links any GitHub @mention/#ref/SHA forms.
       // Codespans never reach here, so code is never autolinked.

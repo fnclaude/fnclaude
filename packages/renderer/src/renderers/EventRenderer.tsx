@@ -11,6 +11,7 @@
 
 import { Box, Text } from "ink";
 import { type LiveState, inFlightBlocks } from "../live-message.ts";
+import { useRendererTheme } from "../theme.tsx";
 import type {
   AssistantEvent,
   ClaudeEvent,
@@ -140,9 +141,10 @@ function UserPromptRender({ text }: { text: string }): React.ReactElement {
   // markdown the user typed renders styled, never as raw syntax. The cyan "›"
   // marker keeps the native prompt-bar affordance; it sits in a row beside the
   // markdown block.
+  const theme = useRendererTheme();
   return (
     <Box marginTop={1} marginBottom={1} flexDirection="row">
-      <Text bold color="cyan">
+      <Text bold color={theme.promptMarker}>
         {"› "}
       </Text>
       <Box flexDirection="column" flexGrow={1}>

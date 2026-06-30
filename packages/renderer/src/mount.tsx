@@ -21,6 +21,7 @@ import { App } from "./App";
 import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process";
 import type { GithubRepo } from "./renderers/github-autolink.ts";
 import { GithubRepoContext } from "./renderers/github-repo-context.ts";
+import { RendererThemeProvider } from "./theme.tsx";
 
 export type { AppProps } from "./App";
 export type { ClaudeSubscription, SpawnFn } from "./claude-process";
@@ -190,11 +191,18 @@ function guardedRender(
 ): Pick<Instance, "waitUntilExit" | "unmount"> {
   try {
     return renderFn(
-      <GithubRepoContext.Provider value={githubRepo}>
-        <RenderErrorBoundary>
-          <App subscription={sub} />
-        </RenderErrorBoundary>
-      </GithubRepoContext.Provider>,
+      // RendererThemeProvider owns the active palette for the whole tree; the
+      // startup theme comes from FNC_THEME (else dark). #294's detection code
+      // gets the live setter via the provider's `onReady` to flip light/dark at
+      // runtime. Mounted here (not in App.tsx) so the theme also wraps the
+      // error-boundary fallback render.
+      <RendererThemeProvider>
+        <GithubRepoContext.Provider value={githubRepo}>
+          <RenderErrorBoundary>
+            <App subscription={sub} />
+          </RenderErrorBoundary>
+        </GithubRepoContext.Provider>
+      </RendererThemeProvider>,
     );
   } catch {
     return {

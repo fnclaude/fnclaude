@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import type { JSX } from "react";
+import { useRendererTheme } from "../theme.tsx";
 import type { Visibility } from "../types/events";
 import { Filtered } from "./Filtered";
 import { countLines } from "./summarize";
@@ -34,6 +35,7 @@ export function EditDiff({
   newString,
   visibility,
 }: EditDiffProps): JSX.Element | null {
+  const theme = useRendererTheme();
   const removedLines = countLines(oldString);
   const addedLines = countLines(newString);
   const removed = prefixLines(oldString, "- ");
@@ -46,8 +48,8 @@ export function EditDiff({
       summary={
         <Text>
           {`▸ Edit: ${filePath} `}
-          <Text color="red">{`-${removedLines}`}</Text>{" "}
-          <Text color="green">{`+${addedLines}`}</Text>
+          <Text color={theme.diffRemoved}>{`-${removedLines}`}</Text>{" "}
+          <Text color={theme.diffAdded}>{`+${addedLines}`}</Text>
           {" lines"}
         </Text>
       }
@@ -61,8 +63,8 @@ export function EditDiff({
         ) : (
           <Box flexDirection="column">
             <Text>{`▸ Edit: ${filePath}`}</Text>
-            <Text color="red">{removed}</Text>
-            <Text color="green">{added}</Text>
+            <Text color={theme.diffRemoved}>{removed}</Text>
+            <Text color={theme.diffAdded}>{added}</Text>
           </Box>
         )
       }

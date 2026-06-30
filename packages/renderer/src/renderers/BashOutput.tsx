@@ -1,5 +1,6 @@
 import { Text } from "ink";
 import type { JSX } from "react";
+import { useRendererTheme } from "../theme.tsx";
 import type { Visibility } from "../types/events";
 import { Filtered } from "./Filtered";
 import { firstNLines } from "./summarize";
@@ -21,6 +22,7 @@ export interface BashOutputProps {
  *   dim      — full output, ANSI-faint
  */
 export function BashOutput({ content, visibility, isError }: BashOutputProps): JSX.Element | null {
+  const theme = useRendererTheme();
   const { head, hiddenLines } = firstNLines(content);
   const summaryBody = `${head}${hiddenLines > 0 ? `\n(… ${hiddenLines} lines hidden)` : ""}`;
 
@@ -28,12 +30,14 @@ export function BashOutput({ content, visibility, isError }: BashOutputProps): J
     <Filtered
       visibility={visibility}
       hidden={null}
-      summary={isError ? <Text color="red">{summaryBody}</Text> : <Text>{summaryBody}</Text>}
+      summary={
+        isError ? <Text color={theme.error}>{summaryBody}</Text> : <Text>{summaryBody}</Text>
+      }
       full={({ dim }) =>
         dim ? (
           <Text dimColor>{content}</Text>
         ) : isError ? (
-          <Text color="red">{content}</Text>
+          <Text color={theme.error}>{content}</Text>
         ) : (
           <Text>{content}</Text>
         )
