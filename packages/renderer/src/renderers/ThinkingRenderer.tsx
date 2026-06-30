@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 
 export interface ThinkingRendererProps {
   thinking: string;
@@ -20,26 +21,28 @@ export function ThinkingRenderer({
   thinking,
   visibility,
 }: ThinkingRendererProps): JSX.Element | null {
-  if (visibility === "hide") return null;
+  const { head, hasMore } = firstSentence(thinking);
 
-  if (visibility === "summary") {
-    const { head, hasMore } = firstSentence(thinking);
-    return (
-      <Text dimColor>
-        {"💭 "}
-        {head}
-        {hasMore ? " (thinking continues)" : ""}
-      </Text>
-    );
-  }
-
-  // show and dim both render full content with dim styling. Thinking is
-  // always rendered dim — "show" just means "full body visible at all".
   return (
-    <Text dimColor>
-      {"💭 "}
-      {thinking}
-    </Text>
+    <Filtered
+      visibility={visibility}
+      hidden={null}
+      summary={
+        <Text dimColor>
+          {"💭 "}
+          {head}
+          {hasMore ? " (thinking continues)" : ""}
+        </Text>
+      }
+      // show and dim both render full content with dim styling. Thinking is
+      // always rendered dim — "show" just means "full body visible at all".
+      full={() => (
+        <Text dimColor>
+          {"💭 "}
+          {thinking}
+        </Text>
+      )}
+    />
   );
 }
 

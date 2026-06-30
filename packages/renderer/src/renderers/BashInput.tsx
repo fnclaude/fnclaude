@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import type { JSX } from "react";
 import type { Visibility } from "../types/events";
+import { Filtered } from "./Filtered";
 import { firstNLines } from "./summarize";
 
 export interface BashInputProps {
@@ -19,27 +20,25 @@ export interface BashInputProps {
  *   summary  — first 5 lines (+ "N more lines" indicator for multi-line)
  *   dim      — full command, ANSI-faint
  */
-export function BashInput({ command, description, visibility }: BashInputProps): JSX.Element {
+export function BashInput({
+  command,
+  description,
+  visibility,
+}: BashInputProps): JSX.Element | null {
   const header = `▸ Bash${description ? `: ${description}` : ""}`;
+  const { head, hiddenLines } = firstNLines(command);
 
-  if (visibility === "hide") {
-    return <Text dimColor>{header}</Text>;
-  }
-
-  if (visibility === "summary") {
-    const { head, hiddenLines } = firstNLines(command);
-    return (
-      <Text>
-        {`$ ${head}`}
-        {hiddenLines > 0 ? `\n(… ${hiddenLines} more line${hiddenLines === 1 ? "" : "s"})` : ""}
-      </Text>
-    );
-  }
-
-  if (visibility === "dim") {
-    return <Text dimColor>{`$ ${command}`}</Text>;
-  }
-
-  // show
-  return <Text>{`$ ${command}`}</Text>;
+  return (
+    <Filtered
+      visibility={visibility}
+      hidden={<Text dimColor>{header}</Text>}
+      summary={
+        <Text>
+          {`$ ${head}`}
+          {hiddenLines > 0 ? `\n(… ${hiddenLines} more line${hiddenLines === 1 ? "" : "s"})` : ""}
+        </Text>
+      }
+      full={({ dim }) => <Text dimColor={dim}>{`$ ${command}`}</Text>}
+    />
+  );
 }
