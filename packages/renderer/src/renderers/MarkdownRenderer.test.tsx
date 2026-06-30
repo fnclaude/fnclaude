@@ -343,6 +343,24 @@ describe("MarkdownRenderer", () => {
       }
     });
 
+    // The three link render paths (markdown `link`, raw `<a href>`, GitHub
+    // autolink) all flow through one `<Link>` component, so the underline
+    // policy lives in exactly one place. The non-hyperlink branch is where the
+    // autolink path had drifted — it dropped the underline the other two keep.
+    // With OSC 8 OFF, every clickable path must still emit the underline SGR.
+    test("hyperlinks OFF: markdown link, raw <a>, and autolink all underline", () => {
+      setHyperlinkSupportOverride(false);
+      const mdLink = render(<MarkdownRenderer text="[click](https://example.com)" />).lastFrame() ?? "";
+      const rawAnchor =
+        render(<MarkdownRenderer text={'<a href="https://x.com">site</a>'} />).lastFrame() ?? "";
+      const autolink = render(<MarkdownRenderer text="thanks @octocat" />).lastFrame() ?? "";
+      for (const frame of [mdLink, rawAnchor, autolink]) {
+        expect(frame).toMatch(/\x1B\[4m/); // underline SGR present on every path
+        expect(frame).toMatch(/\x1B\[34m/); // blue SGR present on every path
+        expect(frame).not.toContain("\x1b]8"); // no OSC 8 when support is off
+      }
+    });
+
     test("hyperlinks ON: link inside a table cell keeps columns aligned", () => {
       setHyperlinkSupportOverride(true);
       const md = [

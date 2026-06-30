@@ -422,36 +422,48 @@ function renderHtmlContainer(tag: ParsedHtmlTag, inner: Token[], key: number): R
         </Text>
       );
     case "a":
-      return renderHtmlAnchor(tag, inner, key);
+      return (
+        <Link key={k} href={tag.href ?? ""}>
+          {renderInlineTokens(inner)}
+        </Link>
+      );
     default:
       return rawMarkup(tag.raw, key);
   }
 }
 
-/** Render a raw `<a href>` as an OSC 8 hyperlink (same policy as markdown links). */
-function renderHtmlAnchor(tag: ParsedHtmlTag, inner: Token[], key: number): React.ReactNode {
-  const k = `a-${key}`;
-  const href = tag.href ?? "";
-  // Mirror the markdown `link` policy: only http/https/mailto are clickable;
-  // wrap in OSC 8 when supported, else plain blue+underline.
-  if (/^(https?:\/\/|mailto:)/.test(href)) {
-    if (supportsHyperlinkOutput()) {
-      return (
-        <Text key={k} color="blue" underline>
-          {osc8Start(href)}
-          {renderInlineTokens(inner)}
-          {osc8End()}
-        </Text>
-      );
-    }
+/**
+ * Single source of truth for link rendering — used by markdown `link` tokens,
+ * raw `<a href>` tags, and GitHub autolinks. The underline policy lives here
+ * and nowhere else.
+ *
+ * Only http/https/mailto hrefs are clickable. Those always style blue+underline
+ * (so a link reads as a link whether or not the terminal can make it
+ * clickable) and additionally wrap in an OSC 8 hyperlink when the terminal
+ * supports one — making `[text](url)` clickable even when the visible text
+ * isn't the URL (the terminal's own URL matcher can't help there). The BEL-form
+ * OSC bytes tokenize as zero-width (see osc8.ts) so they don't perturb table
+ * cell-width measurement. Non-clickable hrefs (anchors, relative paths) render
+ * plain so they don't look interactive when they aren't.
+ */
+function Link({ href, children }: { href: string; children: React.ReactNode }): JSX.Element {
+  if (!/^(https?:\/\/|mailto:)/.test(href)) {
+    return <Text>{children}</Text>;
+  }
+  if (supportsHyperlinkOutput()) {
     return (
-      <Text key={k} color="blue" underline>
-        {renderInlineTokens(inner)}
+      <Text color="blue" underline>
+        {osc8Start(href)}
+        {children}
+        {osc8End()}
       </Text>
     );
   }
-  // Non-clickable href (anchor, relative): render text without link styling.
-  return <Text key={k}>{renderInlineTokens(inner)}</Text>;
+  return (
+    <Text color="blue" underline>
+      {children}
+    </Text>
+  );
 }
 
 /** Map a single non-HTML inline token to its Ink element. */
@@ -484,35 +496,11 @@ function renderInlineToken(t: Token, key: number): React.ReactNode {
       );
     case "link": {
       const link = t as Tokens.Link;
-      const href = link.href ?? "";
-      // Style http/https/mailto links blue+underline. When the terminal
-      // supports OSC 8 hyperlinks, wrap the (possibly titled) display text in
-      // an OSC 8 sequence so `[text](url)` is clickable even when the visible
-      // text isn't the URL — the terminal's URL auto-matcher can't handle
-      // those. The BEL-form OSC bytes tokenize as zero-width (see osc8.ts),
-      // so they don't perturb table cell-width measurement.
-      // When hyperlinks aren't supported, fall back to plain blue+underline
-      // and rely on the terminal's own URL matcher.
-      // Anchors (#id), relative paths, and other non-clickable hrefs render
-      // plain so they don't look interactive when they aren't.
-      if (/^(https?:\/\/|mailto:)/.test(href)) {
-        if (supportsHyperlinkOutput()) {
-          return (
-            <Text key={`in-${i}`} color="blue" underline>
-              {osc8Start(href)}
-              {inline(link.tokens)}
-              {osc8End()}
-            </Text>
-          );
-        }
-        return (
-          <Text key={`in-${i}`} color="blue" underline>
-            {inline(link.tokens)}
-          </Text>
-        );
-      }
-      // Non-clickable link: render its text without any link styling.
-      return <Text key={`in-${i}`}>{inline(link.tokens)}</Text>;
+      return (
+        <Link key={`in-${i}`} href={link.href ?? ""}>
+          {inline(link.tokens)}
+        </Link>
+      );
     }
     case "br":
       return <Text key={`in-${i}`}>{"\n"}</Text>;
@@ -535,17 +523,15 @@ function renderInlineToken(t: Token, key: number): React.ReactNode {
 /**
  * Render a leaf text run, decoding HTML entities and linking GitHub autolink
  * forms (@mentions, #refs, GH-refs, commit SHAs) against the ambient repo
- * context. Each linked segment styles blue+underline and, when the terminal
- * supports OSC 8, wraps in a clickable hyperlink — consistent with how titled
- * markdown links render. When hyperlinks aren't supported the link is colored
- * but NOT underlined (visible, not clickable). Plain http/https/mailto links
- * are unaffected — they're handled by the `link` case, never reaching here.
+ * context. Linked segments route through the shared {@link Link} component, so
+ * they style blue+underline (and wrap in an OSC 8 hyperlink when supported)
+ * identically to markdown links and raw `<a href>` tags. Plain http/https/mailto
+ * links are unaffected — they're handled by the `link` case, never reaching here.
  */
 function AutolinkedText({ text }: { text: string }): JSX.Element {
   const repo = useContext(GithubRepoContext);
   const decoded = decodeHTML(text);
   const segments = tokenizeGithubAutolinks(decoded, repo);
-  const linkable = supportsHyperlinkOutput();
   return (
     <>
       {segments.map((seg, i) => {
@@ -553,19 +539,10 @@ function AutolinkedText({ text }: { text: string }): JSX.Element {
         // Linked segments are left untouched so we never emojify inside URLs or
         // autolink display text. Codespans/code blocks never reach this path.
         if (seg.url === undefined) return emojify(seg.text);
-        if (linkable) {
-          return (
-            <Text key={`gl-${i}`} color="blue" underline>
-              {osc8Start(seg.url)}
-              {seg.text}
-              {osc8End()}
-            </Text>
-          );
-        }
         return (
-          <Text key={`gl-${i}`} color="blue">
+          <Link key={`gl-${i}`} href={seg.url}>
             {seg.text}
-          </Text>
+          </Link>
         );
       })}
     </>
