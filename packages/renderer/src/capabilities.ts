@@ -139,10 +139,7 @@ function detectImages(env: Env, color: ColorLevel): ImageProtocol {
   }
 
   // iTerm2 inline images, version-gated: < 3 has no inline-image support.
-  if (
-    env.TERM_PROGRAM === TERM_PROGRAM.iterm &&
-    majorVersion(env.TERM_PROGRAM_VERSION) >= 3
-  ) {
+  if (env.TERM_PROGRAM === TERM_PROGRAM.iterm && majorVersion(env.TERM_PROGRAM_VERSION) >= 3) {
     return "iterm2";
   }
 

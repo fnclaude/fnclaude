@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  type Env,
-  type TerminalCapabilities,
-  detectCapabilities,
-} from "./capabilities";
+import { type Env, type TerminalCapabilities, detectCapabilities } from "./capabilities";
 
 // Representative env fixtures. Each terminal sets a different subset of
 // signals; the module must reduce them to one capability object.
@@ -154,9 +150,7 @@ describe("detectCapabilities", () => {
     });
 
     test("COLORTERM=24bit reads as truecolor", () => {
-      expect(detectCapabilities({ TERM: "xterm", COLORTERM: "24bit" }).color).toBe(
-        "truecolor",
-      );
+      expect(detectCapabilities({ TERM: "xterm", COLORTERM: "24bit" }).color).toBe("truecolor");
     });
 
     test("TERM=dumb yields no color", () => {
@@ -170,15 +164,11 @@ describe("detectCapabilities", () => {
 
   describe("env-presence probes", () => {
     test("VTE_VERSION >= 5000 enables hyperlinks", () => {
-      expect(detectCapabilities({ TERM: "xterm", VTE_VERSION: "6800" }).hyperlinks).toBe(
-        true,
-      );
+      expect(detectCapabilities({ TERM: "xterm", VTE_VERSION: "6800" }).hyperlinks).toBe(true);
     });
 
     test("VTE_VERSION < 5000 does not enable hyperlinks", () => {
-      expect(detectCapabilities({ TERM: "xterm", VTE_VERSION: "4600" }).hyperlinks).toBe(
-        false,
-      );
+      expect(detectCapabilities({ TERM: "xterm", VTE_VERSION: "4600" }).hyperlinks).toBe(false);
     });
 
     test("WT_SESSION (Windows Terminal) enables hyperlinks + clipboard", () => {
@@ -188,9 +178,9 @@ describe("detectCapabilities", () => {
     });
 
     test("KONSOLE_VERSION enables hyperlinks", () => {
-      expect(
-        detectCapabilities({ TERM: "xterm", KONSOLE_VERSION: "220400" }).hyperlinks,
-      ).toBe(true);
+      expect(detectCapabilities({ TERM: "xterm", KONSOLE_VERSION: "220400" }).hyperlinks).toBe(
+        true,
+      );
     });
 
     test("any GHOSTTY* var enables kitty graphics", () => {
@@ -200,9 +190,7 @@ describe("detectCapabilities", () => {
     });
 
     test("FORCE_HYPERLINK forces OSC 8 on an unknown terminal", () => {
-      expect(detectCapabilities({ TERM: "xterm", FORCE_HYPERLINK: "1" }).hyperlinks).toBe(
-        true,
-      );
+      expect(detectCapabilities({ TERM: "xterm", FORCE_HYPERLINK: "1" }).hyperlinks).toBe(true);
     });
   });
 
