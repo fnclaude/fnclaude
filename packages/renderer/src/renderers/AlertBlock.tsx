@@ -1,15 +1,16 @@
 import { Box, Text } from "ink";
 import type { Token, Tokens } from "marked";
 import type { JSX } from "react";
+import { type RendererTheme, useRendererTheme } from "../theme.tsx";
 
 export type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 
-const ALERT_META: Record<AlertKind, { color: string; icon: string; label: string }> = {
-  note: { color: "blue", icon: "ℹ", label: "Note" },
-  tip: { color: "green", icon: "💡", label: "Tip" },
-  important: { color: "magenta", icon: "❗", label: "Important" },
-  warning: { color: "yellow", icon: "⚠", label: "Warning" },
-  caution: { color: "red", icon: "🛑", label: "Caution" },
+const ALERT_META: Record<AlertKind, { icon: string; label: string; token: keyof RendererTheme }> = {
+  note: { icon: "ℹ", label: "Note", token: "alertNote" },
+  tip: { icon: "💡", label: "Tip", token: "alertTip" },
+  important: { icon: "❗", label: "Important", token: "alertImportant" },
+  warning: { icon: "⚠", label: "Warning", token: "alertWarning" },
+  caution: { icon: "🛑", label: "Caution", token: "alertCaution" },
 };
 
 const ALERT_PATTERN = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
@@ -81,7 +82,9 @@ export interface AlertBlockProps {
  * component stays decoupled from MarkdownRenderer.
  */
 export function AlertBlock({ kind, bodyTokens, renderChildren }: AlertBlockProps): JSX.Element {
-  const { color, icon, label } = ALERT_META[kind];
+  const theme = useRendererTheme();
+  const { icon, label, token } = ALERT_META[kind];
+  const color = theme[token];
   return (
     <Box
       borderStyle="single"
