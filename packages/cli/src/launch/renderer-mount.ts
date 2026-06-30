@@ -12,6 +12,11 @@
 // renderer must degrade to the normal PTY launch, never crash, and an old
 // mountRenderer that ignores opts / lacks close() must still mount cleanly.
 
+import {
+  type ControlKind,
+  type SendControl,
+  createRendererControlSeam,
+} from '../mcp/handlers/send-control';
 import { resolveGithubRepo } from '../repo/github-origin';
 
 // --- Structural contract types ------------------------------------------
@@ -69,6 +74,14 @@ export interface RendererHandle {
   waitUntilExit(): Promise<void>;
   unmount(): void;
   sendUserTurn?(text: string): void;
+  /**
+   * Tagged control-injection surface (#299): context notices, /compact, and
+   * follow-up handoffs delivered with their structural `kind` so the renderer
+   * can classify + hide them (#288). The MATCHING half of the cli's
+   * {@link SendControl} seam. Landing alongside #288 — an older handle lacks it,
+   * and fnc degrades to {@link sendUserTurn} (control reaches claude unhidden).
+   */
+  sendControl?(kind: ControlKind, text: string): void;
   /** Resolves with claude's exit code once the child is reaped. */
   close?(): Promise<number>;
 }
@@ -231,6 +244,15 @@ export interface MaybeMountRendererArgs {
   onStderr?: (line: string) => void;
   /** Process exit seam (testability). Defaults to process.exit. */
   exit?: (code: number) => never;
+  /**
+   * Called once the renderer is mounted, with the renderer-backed
+   * {@link SendControl} seam (#299). fnc uses it to bind its deferred control
+   * seam (so the /compact MCP handler routes to the renderer) and to start the
+   * context-size monitor — closing the renderer-mode gap where notices,
+   * /compact, and follow-up handoffs were silently dropped. The returned
+   * teardown (if any) runs after the renderer exits.
+   */
+  onControlSeam?: (send: SendControl) => (() => void) | void;
 }
 
 /**
@@ -388,6 +410,21 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
 
   const handle = mod.mountRenderer(opts);
 
+  // Wire the tagged control seam (#299) onto the renderer mount API. This is
+  // what closes the renderer-mode gap: the /compact MCP handler binds here, and
+  // fnc starts the context-size monitor against the renderer-backed seam, so
+  // notices / /compact / follow-up handoffs are delivered in renderer mode for
+  // the first time. A renderer without sendControl degrades to plain user turns
+  // (createRendererControlSeam handles the fallback). Best-effort — never fatal.
+  let controlTeardown: (() => void) | void;
+  if (args.onControlSeam !== undefined) {
+    try {
+      controlTeardown = args.onControlSeam(createRendererControlSeam(handle));
+    } catch {
+      controlTeardown = undefined;
+    }
+  }
+
   // Ultracode delivers a second turn (the real seed prompt) after the
   // `/effort ultracode` initialPrompt. Only the §7 handle exposes
   // sendUserTurn — an old handle drops the follow-up rather than crashing.
@@ -400,6 +437,14 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
   }
 
   await handle.waitUntilExit();
+
+  if (typeof controlTeardown === 'function') {
+    try {
+      controlTeardown();
+    } catch {
+      // best-effort teardown — never block exit
+    }
+  }
 
   // The §7 refactor adds close() (reaps claude's exit code). An old handle
   // lacks it — degrade to a clean return (caller exits 0) rather than crash.

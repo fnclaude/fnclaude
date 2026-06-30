@@ -32,6 +32,7 @@ import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
 import { createPtyWriterHolder } from './mcp/handlers/inject-slash';
+import { createControlSeamHolder, createPtyControlSeam } from './mcp/handlers/send-control';
 import { createRestartHandler } from './mcp/handlers/restart';
 import {
   createRequestCompactHandler,
@@ -538,6 +539,13 @@ if (!claudeBin.ok) {
 // any tool call can arrive.
 const slashWriter = createPtyWriterHolder();
 
+// Deferred-binding tagged control-injection seam (#299) for control traffic
+// (context notices, /compact, follow-up handoffs). Built BEFORE the launch
+// mode (PTY vs renderer) is decided; the /compact handler takes
+// `controlSeam.sendControl` now and the real seam (PTY or renderer) binds
+// once it exists. Control messages sent before bind are queued, not dropped.
+const controlSeam = createControlSeamHolder();
+
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
 // subprocess claude launches per --mcp-config can dial back over
 // $FNC_SOCKET. Bind failure is fatal per Go canonical — we can't run
@@ -583,7 +591,7 @@ if (mcpSocketPath !== undefined) {
         copy_to_clipboard: handleCopyToClipboard,
         // Batch-2 slash-injection tools — thin wrappers over the C0
         // keystone, all sharing the deferred-bound PTY writer.
-        compact: createRequestCompactHandler({ write: slashWriter.write }),
+        compact: createRequestCompactHandler({ sendControl: controlSeam.sendControl }),
         set_effort: createSetEffortHandler({ write: slashWriter.write }),
         set_model: createSetModelHandler({ write: slashWriter.write }),
         run_slash: createRunSlashCommandHandler({ write: slashWriter.write }),
@@ -665,6 +673,22 @@ if (
     rendererArgs,
     ...(rendererInitialPrompt !== '' ? { initialPrompt: rendererInitialPrompt } : {}),
     ...(rendererFollowUp !== '' ? { followUpPrompt: rendererFollowUp } : {}),
+    // #299: bind the control seam to the renderer mount API and start the
+    // context monitor in renderer mode — wiring notices, /compact, and
+    // follow-up handoffs in renderer mode for the first time. The /compact MCP
+    // handler already routes through controlSeam.sendControl.
+    onControlSeam: (send) => {
+      controlSeam.bind(send);
+      return startContextMonitor({
+        launchCWD: cwd,
+        ladder: resolveContextNoticeLadder({
+          configLadder: config.contextNoticeLadder,
+          configThreshold: config.contextNoticeThreshold,
+        }),
+        sendControl: send,
+        ownSessionFile: ownSessionId !== null ? () => `${ownSessionId}.jsonl` : undefined,
+      }).stop;
+    },
   })
 ) {
   // maybeMountRenderer process.exits with claude's code on a §7 handle; this
@@ -730,6 +754,19 @@ try {
       term.write(payload);
     });
 
+    // Tagged control seam (#299): control traffic (context notices, /compact,
+    // follow-up handoffs) routes through this rather than the raw keystroke
+    // injector, so it carries the structural marker AND — crucially — defers
+    // around any line the user is mid-typing instead of splicing into it. The
+    // stdin forwarder below feeds `noteUserInput` so the seam knows when a draft
+    // is in flight.
+    const ptyControl = createPtyControlSeam({
+      write: (payload: string) => {
+        term.write(payload);
+      },
+    });
+    controlSeam.bind(ptyControl.sendControl);
+
     // Ultracode seed: claude booted under the `/effort ultracode` initial
     // prompt, which consumed its single prompt slot. If the user ALSO typed a
     // prompt, submit it as a follow-up once claude is ready — detected by its
@@ -754,6 +791,9 @@ try {
     // needed.
     process.stdin.setRawMode(true);
     process.stdin.on('data', (chunk: Buffer) => {
+      // Track draft state so a control message can't splice into a line the
+      // user is mid-typing (#299), then forward the keystrokes to claude.
+      ptyControl.noteUserInput(chunk.toString());
       term.write(chunk);
     });
 
@@ -766,10 +806,11 @@ try {
     // §9.0 / #170 part 2: tiered context-size monitor. Polls the live
     // session JSONL's latest-turn context size and, each time it crosses a
     // new rung of the escalation ladder (consider → plan → now → urgent),
-    // injects ONE plain-text notice line into the PTY via the same raw
-    // `term.write` seam user keystrokes go through — suggesting the model
-    // call request_compact. A watermark suppresses re-fires on mere growth
-    // and re-arms after a compaction drop. The ladder defaults to
+    // emits ONE notice through the tagged control seam (#299) — suggesting the
+    // model call request_compact. Routing through the seam (not raw term.write)
+    // means the notice carries the structural marker and never splices into a
+    // line the user is mid-typing. A watermark suppresses re-fires on mere
+    // growth and re-arms after a compaction drop. The ladder defaults to
     // 150k/200k/250k + repeat-50k-urgent, overridable via
     // [[context.notice_tiers]] / [context.notice_repeat] in config.toml,
     // the legacy [context] notice_threshold, or the
@@ -781,9 +822,7 @@ try {
         configLadder: config.contextNoticeLadder,
         configThreshold: config.contextNoticeThreshold,
       }),
-      write: (payload) => {
-        term.write(payload);
-      },
+      sendControl: ptyControl.sendControl,
       // Pin the monitor to THIS session's own JSONL by id (no oldest-mtime
       // guess). `null` when the id isn't knowable up front (--continue/fork) —
       // the reader then falls back to its legacy heuristic.

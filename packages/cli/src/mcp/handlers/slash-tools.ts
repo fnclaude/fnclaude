@@ -26,6 +26,7 @@ import { createCompactFollowUpGate } from '../../usage/context-monitor';
 import type { ParentDispatchHandler } from '../parent-dispatch';
 import type { WireRequest, WireResponse } from '../wire';
 import { type PtyWriter, formatSlashCommand, injectSubmittedLine } from './inject-slash';
+import { type SendControl, createPtyControlSeam } from './send-control';
 
 const QUEUED: WireResponse = { action: 'queued' };
 
@@ -50,11 +51,27 @@ export interface SlashToolDeps {
 const FOLLOW_UP_SPILL_LIMIT = 200;
 
 /**
- * Compact handler deps. Extends {@link SlashToolDeps} with the follow-up
- * spill + follow-up-gate seams so the follow_up submits as its OWN line,
- * AFTER a delay — never in the same synchronous burst as `/compact`.
+ * Compact handler deps. `/compact` and the follow-up handoff route through the
+ * tagged control-injection seam ({@link SendControl}, #299) plus the follow-up
+ * spill + follow-up-gate seams so the follow_up submits as its OWN line, AFTER
+ * a delay — never in the same synchronous burst as `/compact`.
  */
-export interface RequestCompactDeps extends SlashToolDeps {
+export interface RequestCompactDeps {
+  /**
+   * The tagged control-injection seam (#299) `/compact` and the follow-up
+   * handoff route through. When supplied, both carry the structural marker
+   * (`compact` / `followup`) and, in PTY mode, defer around in-flight user
+   * input. When omitted, a fallback {@link createPtyControlSeam} is built from
+   * `write` — preserving the pre-#299 direct-to-PTY behavior (unit tests assert
+   * the raw bytes via `write`).
+   */
+  sendControl?: SendControl;
+  /** Raw PTY-write sink — only used to build the fallback seam when `sendControl` is absent. */
+  write?: PtyWriter;
+  /** Timer seam for the fallback seam's separate CR write. Ignored when `sendControl` is supplied. */
+  schedule?: (fn: () => void, ms: number) => void;
+  /** Gap before the fallback seam's CR write. Ignored when `sendControl` is supplied. */
+  enterDelayMs?: number;
   /**
    * Persist a long/multi-line follow_up to a file and return its path. The
    * handler then injects a pointer line instead of the raw body. Defaults to
@@ -128,8 +145,16 @@ function followUpPointer(path: string): string {
  * NO output capture — returns `{ action: 'queued' }` regardless.
  */
 export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDispatchHandler {
-  const { write } = deps;
-  const injectDeps = { write, schedule: deps.schedule, enterDelayMs: deps.enterDelayMs };
+  // Route through the tagged seam (#299). When the caller supplies a
+  // sendControl, use it; otherwise build a fallback PTY seam from `write` so
+  // legacy callers (and the byte-level unit tests) keep their behavior.
+  const send: SendControl =
+    deps.sendControl ??
+    createPtyControlSeam({
+      write: deps.write ?? (() => {}),
+      schedule: deps.schedule,
+      enterDelayMs: deps.enterDelayMs,
+    }).sendControl;
   const spill = deps.spillFollowUp ?? defaultSpillFollowUp;
   const gate = deps.followUpGate ?? createCompactFollowUpGate();
 
@@ -137,7 +162,7 @@ export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDis
     const instructions = typeof req.instructions === 'string' ? req.instructions.trim() : '';
     // KEEP the instructions arg as-is — it steers compaction.
     const args = instructions === '' ? [] : [instructions];
-    injectSubmittedLine(formatSlashCommand('compact', args), injectDeps);
+    send('compact', formatSlashCommand('compact', args));
 
     const followUp = typeof req.follow_up === 'string' ? req.follow_up.trim() : '';
     if (followUp !== '') {
@@ -150,7 +175,7 @@ export function createRequestCompactHandler(deps: RequestCompactDeps): ParentDis
         const line = followUpNeedsFile(followUp)
           ? followUpPointer(spill(followUp))
           : followUp;
-        injectSubmittedLine(line, injectDeps);
+        send('followup', line);
       })();
       deps.trackFollowUp?.(p); // undefined in prod => fire-and-forget
     }
