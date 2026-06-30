@@ -49,6 +49,7 @@ import {
   ToolResultRenderer,
   ToolUseRenderer,
 } from "./renderers/index.ts";
+import { usePromptHistory } from "./usePromptHistory.ts";
 import { MeasuredRow } from "./scroll/MeasuredRow.tsx";
 import { ScrollViewport } from "./scroll/ScrollViewport.tsx";
 import { type AnchoredScroll, useAnchoredScroll } from "./scroll/useAnchoredScroll.ts";
@@ -321,23 +322,10 @@ export function App(props: AppProps): React.ReactElement {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
 
-  // Shell-style prompt-history recall. `promptHistoryRef` is the oldest→newest
-  // list of submitted prompts; `histIdxRef` is the cursor (== length means "on
-  // the live draft, not browsing"); `histStashRef` holds the in-progress draft
-  // stashed when navigation begins so Down past the newest restores it. Seeded
-  // once from any resumed `user_prompt` events so recall spans the prior turns.
-  const promptHistoryRef = useRef<string[]>([]);
-  const seededHistoryRef = useRef(false);
-  const histIdxRef = useRef(0);
-  const histStashRef = useRef("");
-  if (!seededHistoryRef.current) {
-    seededHistoryRef.current = true;
-    const seeded = (initialEvents ?? [])
-      .filter((e): e is Extract<ClaudeEvent, { type: "user_prompt" }> => e.type === "user_prompt")
-      .map((e) => e.text);
-    promptHistoryRef.current = seeded;
-    histIdxRef.current = seeded.length;
-  }
+  // Shell-style prompt-history recall, seeded once from any resumed
+  // `user_prompt` events so recall spans the prior turns. The store owns its own
+  // cursor/stash (see usePromptHistory); App just drives the draft from it.
+  const history = usePromptHistory(initialEvents);
 
   // Exit path: the injected test seam if present, else Ink's app exit.
   const inkApp = useApp();
@@ -432,6 +420,18 @@ export function App(props: AppProps): React.ReactElement {
     toastTimer.current = setTimeout(() => setToast(null), TOAST_DURATION_MS);
   };
 
+  // Idle Ctrl+C double-tap: the first press hints, a second within the window
+  // exits. Mirrors native claude's "press Ctrl+C again to exit" affordance.
+  const handleIdleCtrlC = () => {
+    const now = Date.now();
+    if (lastCtrlCRef.current !== null && now - lastCtrlCRef.current < CTRL_C_EXIT_WINDOW_MS) {
+      exitApp();
+      return;
+    }
+    lastCtrlCRef.current = now;
+    flashToast("press Ctrl+C again to exit");
+  };
+
   // Cleanup the toast timer on unmount.
   useEffect(() => {
     return () => {
@@ -464,26 +464,13 @@ export function App(props: AppProps): React.ReactElement {
           ctl.onScroll(action.delta);
           return;
         case "historyPrev": {
-          const h = promptHistoryRef.current;
-          if (h.length === 0) return;
-          if (histIdxRef.current >= h.length) {
-            // entering history from the live draft — stash it so Down can restore it
-            histStashRef.current = draftRef.current;
-            histIdxRef.current = h.length;
-          }
-          if (histIdxRef.current > 0) {
-            histIdxRef.current -= 1;
-            writeDraft(h[histIdxRef.current] ?? "");
-          }
+          const next = history.recallPrev(draftRef.current);
+          if (next !== null) writeDraft(next);
           return;
         }
         case "historyNext": {
-          const h = promptHistoryRef.current;
-          if (histIdxRef.current >= h.length) return; // already at the live draft
-          histIdxRef.current += 1;
-          writeDraft(
-            histIdxRef.current >= h.length ? histStashRef.current : (h[histIdxRef.current] ?? ""),
-          );
+          const next = history.recallNext();
+          if (next !== null) writeDraft(next);
           return;
         }
         case "closeStdin":
@@ -501,18 +488,7 @@ export function App(props: AppProps): React.ReactElement {
           }
           // Idle: first Ctrl+C hints, a second within the window exits — native
           // claude's double-tap-to-exit. (Easily switched to Ctrl+D-only.)
-          {
-            const now = Date.now();
-            if (
-              lastCtrlCRef.current !== null &&
-              now - lastCtrlCRef.current < CTRL_C_EXIT_WINDOW_MS
-            ) {
-              exitApp();
-              return;
-            }
-            lastCtrlCRef.current = now;
-            flashToast("press Ctrl+C again to exit");
-          }
+          handleIdleCtrlC();
           return;
       }
       return;
@@ -539,11 +515,8 @@ export function App(props: AppProps): React.ReactElement {
         setEvents((prev) => [...prev, { type: "user_prompt", text }]);
         subRef.current?.sendUserTurn(text);
         // Record the prompt for history recall and reset navigation to the live
-        // end: Up after a submit starts from the newest, and a fresh Down (with
-        // no stash) restores an empty draft rather than a stale stashed one.
-        promptHistoryRef.current = [...promptHistoryRef.current, text];
-        histIdxRef.current = promptHistoryRef.current.length;
-        histStashRef.current = "";
+        // end (see usePromptHistory.record).
+        history.record(text);
         // A turn is now in flight — Ctrl+C should interrupt, not exit.
         setBusy(true);
         writeDraft("");
