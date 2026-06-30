@@ -23,13 +23,14 @@
  * fixed interval and reacts to growth.
  *
  * ── What it writes ───────────────────────────────────────────────────
- * The notice is a PLAIN TEXT line, NOT a slash command, so it routes
- * through the raw PTY-write seam (the same `PtyWriter` the slash-injection
- * keystone wraps over `Bun.Terminal.write`) — submitted via
- * {@link injectSubmittedLine} (bracketed-paste body + a separate CR). The
- * body is `<fnc-notice>[level] context at Nk tokens — …</fnc-notice>`,
- * where N is the current size rounded to the nearest thousand. There is NO
- * output capture — fire-and-forget.
+ * The notice is a PLAIN TEXT line, NOT a slash command. It routes through
+ * the tagged control-injection seam (#299) as `sendControl('notice', body)`,
+ * so it carries the structural `notice` marker the renderer filter (#288)
+ * keys off and — in PTY mode — defers around any line the user is mid-typing
+ * instead of splicing into it. The body is
+ * `<fnc-notice>[level] context at Nk tokens — …</fnc-notice>`, where N is the
+ * current size rounded to the nearest thousand. There is NO output capture —
+ * fire-and-forget.
  *
  * ── Watermark (generalizes the old single-threshold latch) ───────────
  * The monitor tracks a WATERMARK = the highest ladder point already
@@ -66,7 +67,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { injectSubmittedLine, type PtyWriter } from '../mcp/handlers/inject-slash';
+import type { PtyWriter } from '../mcp/handlers/inject-slash';
+import { type SendControl, createPtyControlSeam } from '../mcp/handlers/send-control';
 import { encodeCWDForProjects } from '../launch/live-permission-reader';
 import { computeSessionUsage } from './session-usage';
 
@@ -138,9 +140,9 @@ const NOTICE_BODY: Record<NoticeLevel, (k: number) => string> = {
 /**
  * Format the notice payload BODY for a given level + context-token count.
  * N is rounded to the nearest thousand and rendered as `Nk`. There is NO
- * trailing terminator — the line is submitted via {@link injectSubmittedLine}
- * (bracketed-paste body + a SEPARATE CR), which is what actually dispatches
- * it in claude's bracketed-paste-enabled TUI.
+ * trailing terminator — the body is emitted through `sendControl('notice', …)`,
+ * which (in PTY mode) submits it as a bracketed-paste body + a SEPARATE CR,
+ * the form that actually dispatches in claude's bracketed-paste-enabled TUI.
  */
 export function formatContextNotice(level: NoticeLevel, tokens: number): string {
   const k = Math.round(tokens / 1000);
@@ -222,28 +224,45 @@ export interface ContextMonitor {
 export interface CreateContextMonitorArgs {
   /** The escalation ladder. */
   ladder: NoticeLadder;
-  /** Raw PTY-write sink — the same seam the slash keystone wraps. */
-  write: PtyWriter;
   /**
-   * Timer seam threaded into {@link injectSubmittedLine} for the separate CR
-   * write. Defaults (inside the primitive) to {@link setTimeout}. Tests pass
-   * a synchronous `(fn) => fn()` so the two writes land deterministically.
+   * The tagged control-injection seam the notice routes through (#299). When
+   * supplied, notices fire as `sendControl('notice', body)` so they carry the
+   * structural marker and, in PTY mode, never splice into in-flight user input.
+   * When omitted, the monitor builds a bare {@link createPtyControlSeam} from
+   * `write` — preserving the pre-#299 direct-to-PTY behavior (used by unit
+   * tests that assert the raw bytes).
+   */
+  sendControl?: SendControl;
+  /** Raw PTY-write sink — only used to build the fallback seam when `sendControl` is absent. */
+  write?: PtyWriter;
+  /**
+   * Timer seam threaded into the fallback seam's separate CR write. Defaults
+   * (inside the primitive) to {@link setTimeout}. Tests pass a synchronous
+   * `(fn) => fn()` so the two writes land deterministically. Ignored when
+   * `sendControl` is supplied.
    */
   schedule?: (fn: () => void, ms: number) => void;
-  /** Gap before the CR write, threaded into {@link injectSubmittedLine}. */
+  /** Gap before the fallback seam's CR write. Ignored when `sendControl` is supplied. */
   enterDelayMs?: number;
 }
 
 /**
- * Build a context monitor with its ladder + PTY writer bound. Pure state
+ * Build a context monitor with its ladder + control seam bound. Pure state
  * machine over `tick`; no IO, no timers — those live in
- * {@link startContextMonitor}. The notice is SUBMITTED via
- * {@link injectSubmittedLine} (bracketed-paste body + separate CR) so it is
- * actually dispatched in claude's bracketed-paste TUI rather than dropped
- * into the input box.
+ * {@link startContextMonitor}. The notice is emitted through the tagged
+ * {@link SendControl} seam (#299) so it carries the structural `notice` marker
+ * and, in PTY mode, defers around in-flight user input rather than splicing
+ * into a partially-typed line.
  */
 export function createContextMonitor(args: CreateContextMonitorArgs): ContextMonitor {
-  const { ladder, write, schedule, enterDelayMs } = args;
+  const { ladder } = args;
+  const send: SendControl =
+    args.sendControl ??
+    createPtyControlSeam({
+      write: args.write ?? (() => {}),
+      schedule: args.schedule,
+      enterDelayMs: args.enterDelayMs,
+    }).sendControl;
   // Watermark = the highest ladder point already noticed. 0 = none.
   let watermark = 0;
 
@@ -266,11 +285,7 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
         // Crossed a new rung — fire ONE notice for that point's level.
         watermark = currentPoint;
         // point is non-null here (currentPoint > 0).
-        injectSubmittedLine(formatContextNotice(point!.level, tokens), {
-          write,
-          schedule,
-          enterDelayMs,
-        });
+        send('notice', formatContextNotice(point!.level, tokens));
         return true;
       }
 
@@ -496,8 +511,15 @@ export interface StartContextMonitorArgs {
   launchCWD: string;
   /** Effective ladder (post {@link resolveContextNoticeLadder}). */
   ladder: NoticeLadder;
-  /** Raw PTY-write sink (`Bun.Terminal.write` wrapper in production). */
-  write: PtyWriter;
+  /**
+   * The tagged control-injection seam notices route through (#299). Supplied in
+   * production (PTY or renderer) so notices carry the structural marker and
+   * defer around in-flight input. When omitted, the fallback `write` seam is
+   * used (legacy direct-to-PTY behavior; unit tests assert raw bytes).
+   */
+  sendControl?: SendControl;
+  /** Raw PTY-write sink — only used to build the fallback seam when `sendControl` is absent. */
+  write?: PtyWriter;
   /** Poll interval in ms. Defaults to 4000. */
   intervalMs?: number;
   /**
@@ -520,11 +542,12 @@ export interface StartContextMonitorArgs {
   /** Timer seam — defaults to global `setInterval`. */
   setIntervalFn?: typeof setInterval;
   /**
-   * Schedule seam threaded into {@link injectSubmittedLine} for the notice's
-   * separate CR write. Defaults (inside the primitive) to {@link setTimeout}.
+   * Schedule seam threaded into the fallback seam's separate CR write. Defaults
+   * (inside the primitive) to {@link setTimeout}. Ignored when `sendControl` is
+   * supplied.
    */
   schedule?: (fn: () => void, ms: number) => void;
-  /** Gap before the notice's CR write, threaded into {@link injectSubmittedLine}. */
+  /** Gap before the fallback seam's CR write. Ignored when `sendControl` is supplied. */
   enterDelayMs?: number;
 }
 
@@ -550,7 +573,8 @@ export function startContextMonitor(args: StartContextMonitorArgs): RunningConte
 
   const monitor = createContextMonitor({
     ladder: args.ladder,
-    write: args.write,
+    ...(args.sendControl !== undefined ? { sendControl: args.sendControl } : {}),
+    ...(args.write !== undefined ? { write: args.write } : {}),
     schedule: args.schedule,
     enterDelayMs: args.enterDelayMs,
   });
