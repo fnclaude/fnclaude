@@ -53,6 +53,7 @@ export type RendererTheme = {
   diffRemoved: string;
   // Chrome / tool output
   promptMarker: string; // the "›" user-prompt marker
+  inputBorder: string; // border around the live prompt-input area
   error: string; // error output, ErrorRenderer
   result: string; // ResultRenderer soft warning
 };
@@ -83,6 +84,7 @@ export const DARK_THEME: RendererTheme = {
   diffAdded: "green",
   diffRemoved: "red",
   promptMarker: "cyan",
+  inputBorder: "gray",
   error: "red",
   result: "yellow",
 };
@@ -115,6 +117,7 @@ export const LIGHT_THEME: RendererTheme = {
   diffAdded: "#005f00",
   diffRemoved: "#870000",
   promptMarker: "#005f87",
+  inputBorder: "gray",
   error: "#870000",
   result: "#875f00",
 };

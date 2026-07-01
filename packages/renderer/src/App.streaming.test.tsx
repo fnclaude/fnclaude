@@ -110,6 +110,41 @@ describe("<App /> faithful rendering", () => {
     instance.unmount();
   });
 
+  test("does NOT commit a transient system/status event into the transcript", async () => {
+    // A live `status` ("requesting") is a momentary inter-turn affordance, not
+    // transcript content. Ingest must drop it so it never becomes a permanent
+    // `◌ requesting…` line. Pre-change ingest appended it and the transcript
+    // rendered it forever, even after real content arrived.
+    let push!: (e: ClaudeEvent) => void;
+    const feed: StreamFeed = (emit) => {
+      push = emit.push;
+      return () => undefined;
+    };
+    const instance = render(<App streamFeed={feed} />);
+    await flush();
+
+    push({ type: "system", subtype: "status", session_id: "s", uuid: "u1", status: "requesting" });
+    await flush();
+    // A subsequent real event lands — the status must still not be present.
+    push({
+      type: "assistant",
+      session_id: "s",
+      uuid: "a1",
+      message: {
+        id: "m1",
+        model: "claude-opus-4-8",
+        role: "assistant",
+        content: [{ type: "text", text: "real content arrived" }],
+      },
+    });
+    await flush();
+
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("real content arrived");
+    expect(frame).not.toContain("requesting");
+    instance.unmount();
+  });
+
   test("hides rate_limit_event by default (meta noise)", async () => {
     const events: ClaudeEvent[] = [
       {

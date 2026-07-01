@@ -106,7 +106,7 @@ describe("<App />", () => {
     const instance = render(<App initialEvents={[]} />);
     await flush();
     const frame = instance.lastFrame() ?? "";
-    expect(frame).toContain("> ");
+    expect(frame).toContain("›");
     expect(frame).toContain("type a message and press Enter");
     instance.unmount();
   });
@@ -466,6 +466,42 @@ describe("<App /> injected subscription", () => {
     const instance = render(<App initialEvents={fixtureSession} />);
     await flush();
     expect(instance.lastFrame() ?? "").toContain("Listing files now.");
+    instance.unmount();
+  });
+});
+
+describe("<App /> prompt-area chrome", () => {
+  test("styles the live-input marker as the bold cyan › (not a plain >)", async () => {
+    // The live input must match the committed prompt's affordance: a bold cyan
+    // "› " marker (theme.promptMarker → SGR 36, bold → SGR 1). Pre-change the
+    // marker was a plain, unstyled "> " string, so the bold+cyan+glyph sequence
+    // was absent.
+    const instance = render(<App initialEvents={[]} />);
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("\u001b[1m\u001b[36m›");
+    instance.unmount();
+  });
+
+  test("wraps the input region in a rounded border", async () => {
+    // Pre-change the input was a bare column with no border glyphs.
+    const instance = render(<App initialEvents={[]} />);
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    expect(frame).toContain("╭");
+    expect(frame).toContain("╰");
+    expect(frame).toContain("│");
+    expect(frame).toContain("─");
+    instance.unmount();
+  });
+
+  test("embeds the session name as a badge in the top border", async () => {
+    const instance = render(<App initialEvents={[]} sessionName="my-session" />);
+    await flush();
+    const frame = instance.lastFrame() ?? "";
+    // The badge rides on the top-rule row (the one carrying the ╭ corner).
+    const topRule = frame.split("\n").find((line) => line.includes("╭")) ?? "";
+    expect(topRule).toContain("my-session");
     instance.unmount();
   });
 });

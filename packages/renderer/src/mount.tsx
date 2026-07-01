@@ -15,6 +15,7 @@
  * library without spawning a TUI.
  */
 
+import { basename } from "node:path";
 import { type Instance, render } from "ink";
 import { Component, type ErrorInfo, type ReactElement, type ReactNode } from "react";
 import { App } from "./App";
@@ -58,6 +59,12 @@ export interface MountOptions {
    * regardless. Provided to the tree via {@link GithubRepoContext}.
    */
   githubRepo?: GithubRepo;
+  /**
+   * Human-readable label for the session, shown as a badge in the input box's
+   * top border (#291). When omitted it's derived from the launch `cwd`'s
+   * basename; the cli does not yet thread an explicit name.
+   */
+  sessionName?: string;
 }
 
 /**
@@ -165,7 +172,10 @@ export function mountRenderer(
 
   if (opts.initialPrompt) sub.sendUserTurn(opts.initialPrompt);
 
-  const instance = guardedRender(renderFn, sub, opts.githubRepo);
+  // Session badge (#291): an explicit name if the caller threads one, else the
+  // launch cwd's basename — a meaningful, always-available label.
+  const sessionName = opts.sessionName ?? basename(opts.cwd ?? process.cwd());
+  const instance = guardedRender(renderFn, sub, sessionName, opts.githubRepo);
 
   return {
     // Ink 7 types waitUntilExit as Promise<unknown>; normalize to the
@@ -187,6 +197,7 @@ export function mountRenderer(
 function guardedRender(
   renderFn: RenderFn,
   sub: ClaudeSubscription,
+  sessionName: string,
   githubRepo?: GithubRepo,
 ): Pick<Instance, "waitUntilExit" | "unmount"> {
   try {
@@ -199,7 +210,7 @@ function guardedRender(
       <RendererThemeProvider>
         <GithubRepoContext.Provider value={githubRepo}>
           <RenderErrorBoundary>
-            <App subscription={sub} />
+            <App subscription={sub} sessionName={sessionName} />
           </RenderErrorBoundary>
         </GithubRepoContext.Provider>
       </RendererThemeProvider>,
