@@ -1,6 +1,6 @@
 # Claude Code remote control
 
-A behavior-level reference for how Claude Code's Remote Control feature works — how a local `claude` session registers with the Anthropic API and accepts input from claude.ai or the mobile app. Includes two empirically verified findings about print/stream-json mode that are directly relevant to fnc's renderer mode. Minified symbol names and byte offsets are intentionally omitted; all findings are anchored on durable string literals from `claude --help`, `claude remote-control --help`, and live session output.
+A behavior-level reference for how Claude Code's Remote Control feature works — how a local `claude` session registers with the Anthropic API and accepts input from claude.ai or the mobile app. Includes empirically verified findings about the server subcommand and the print/stream-json gate, both directly relevant to fnc's renderer mode. Minified symbol names and byte offsets are intentionally omitted; all findings are anchored on durable string literals from `claude --help`, `claude remote-control --help`, and live session output.
 
 > See [`claude-code-render-modes.md`](claude-code-render-modes.md) for the `--print` stream-json mode that renderer-mode fnc uses, and [`claude-code-agent-ui-internals.md`](claude-code-agent-ui-internals.md) for how the interactive TUI session is structured.
 
@@ -55,6 +55,21 @@ Key differences from the interactive flag:
 
 Same transport and auth requirements apply.
 
+#### Server subcommand — verified working headless
+
+Empirically verified against a live session with `claude remote-control --verbose` (no TTY):
+
+```
+Environment ID: env_01Ep4GUC6awEHXEa9vf1v984
+·✔︎· Connected · fnclaude · main
+https://claude.ai/code/session_...
+Continue coding in the Claude mobile app.
+```
+
+The session URL was reachable from a phone; "fnclaude · main" appeared in the environment list on claude.ai. No local socket or port was opened (`ss`, `/tmp`, `$XDG_RUNTIME_DIR` all empty) — sync is entirely cloud-routed (outbound HTTPS), using the same `env_…` identity model as the Claude Code Remote MCP tools.
+
+This confirms the server subcommand is a viable headless bridge for renderer-mode integration work. The `--print` gate (below) only blocks the interactive "attach current session" path — it does not affect the server subcommand.
+
 ---
 
 ## The print/stream-json gate — remote control is categorically excluded
@@ -96,7 +111,8 @@ Renderer-mode fnc (`FNC_RENDERER=1`) drives a `claude --print` stream-json child
 |---|---|---|
 | PTY (default) | Works, ~native | `--remote-control`/`-R` passes through; claude owns the pty and runs the outbound bridge. Registration, QR code, and session sync all work. |
 | Inherit (non-TTY / Windows) | Works | claude owns the inherited tty; flag passes through. |
-| Renderer (`FNC_RENDERER=1`) | Does not work | `claude --print` stream-json is excluded by claude's own gate (Findings 1 and 2 above). |
+| Renderer (`FNC_RENDERER=1`) — interactive attach | Does not work | `claude --print` stream-json is excluded by claude's own gate (Findings 1 and 2 above). |
+| Renderer — via server subcommand | Viable integration path | `claude remote-control` runs headless with no TTY, connects successfully, and spawns sessions on demand. See "Server subcommand — verified working headless" above. The integration work is in making those server-spawned sessions render inside fnc's Ink UI rather than in a separate claude TUI. |
 
 ---
 
