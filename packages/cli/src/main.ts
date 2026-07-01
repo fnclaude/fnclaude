@@ -671,6 +671,13 @@ if (
     childEnv,
     cwd,
     rendererArgs,
+    // fnc-native `//` slash commands (e.g. `//restart`) resolve + dispatch
+    // through the shared registry: thread the original argv, the shared handoff
+    // trigger, and the live permission-mode reader so `//restart` rebuilds the
+    // same resume argv the MCP fnc_restart handler would.
+    origArgs: argv,
+    trigger: handoffTrigger,
+    livePermissionModeReader: (sid: string) => readLivePermissionMode(cwd, sid),
     ...(rendererInitialPrompt !== '' ? { initialPrompt: rendererInitialPrompt } : {}),
     ...(rendererFollowUp !== '' ? { followUpPrompt: rendererFollowUp } : {}),
     // #299: bind the control seam to the renderer mount API and start the

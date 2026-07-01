@@ -29,6 +29,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { createHandoffTrigger } from '../../src/handoff/trigger';
 import {
   buildRendererArgs,
   maybeMountRenderer,
@@ -370,5 +371,97 @@ describe('maybeMountRenderer — defensive degradation', () => {
     });
     expect(result).toBe(false);
     expect(called).toBe(false);
+  });
+});
+
+describe('maybeMountRenderer — //restart slash wiring', () => {
+  const VALID_SID = '01234567-89ab-cdef-0123-456789abcdef';
+
+  test('onSlash //restart → stash resume argv, awaiter unmounts + reaps + re-execs', async () => {
+    const trigger = createHandoffTrigger();
+    let captured: MountOptions | undefined;
+    let unmounted = false;
+    let closed = false;
+    let reexecArgv: string[] | null = null;
+    let resolveWait: () => void = () => {};
+    const waitPromise = new Promise<void>((r) => {
+      resolveWait = r;
+    });
+
+    // Don't await yet — maybeMountRenderer blocks on waitUntilExit until the
+    // restart awaiter unmounts. We drive onSlash while it's mid-flight.
+    const p = maybeMountRenderer({
+      env: { FNC_RENDERER: '1' },
+      claudeBin: '/resolved/claude',
+      childEnv: {},
+      cwd: '/work/dir',
+      rendererArgs: ['--model', 'opus'],
+      origArgs: ['/work/dir', '--ide'],
+      trigger,
+      reexec: async (argv) => {
+        reexecArgv = argv;
+      },
+      importRenderer: async () => ({
+        mountRenderer: (opts?: MountOptions) => {
+          captured = opts;
+          return fakeHandle({
+            waitUntilExit: () => waitPromise,
+            unmount: () => {
+              unmounted = true;
+              resolveWait();
+            },
+            close: async () => {
+              closed = true;
+              return 0;
+            },
+          });
+        },
+      }),
+      exit: noopExit,
+    });
+
+    while (captured === undefined) await new Promise((r) => setTimeout(r, 1));
+    const fb = await captured!.onSlash!('//restart', VALID_SID);
+    expect(fb).toEqual({ ok: true, message: 'restarting…' });
+
+    await p;
+    expect(unmounted).toBe(true);
+    expect(closed).toBe(true);
+    expect(reexecArgv).toEqual(['/work/dir', '--resume', VALID_SID, '--ide']);
+  });
+
+  test('onSlash unknown //command → feedback, nothing stashed, no re-exec', async () => {
+    const trigger = createHandoffTrigger();
+    let captured: MountOptions | undefined;
+    let reexecCalled = false;
+
+    const p = maybeMountRenderer({
+      env: { FNC_RENDERER: '1' },
+      claudeBin: '/resolved/claude',
+      childEnv: {},
+      cwd: '/work/dir',
+      rendererArgs: [],
+      trigger,
+      reexec: async () => {
+        reexecCalled = true;
+      },
+      importRenderer: async () => ({
+        mountRenderer: (opts?: MountOptions) => {
+          captured = opts;
+          // Resolves immediately: no restart, normal exit path.
+          return fakeHandle({ close: async () => 0 });
+        },
+      }),
+      exit: noopExit,
+    });
+
+    while (captured === undefined) await new Promise((r) => setTimeout(r, 1));
+    const fb = await captured!.onSlash!('//nope', VALID_SID);
+    expect(fb.ok).toBe(false);
+    expect(fb.message).toContain('unknown');
+    expect(trigger.getStashedArgv()).toBeNull();
+
+    await p;
+    expect(reexecCalled).toBe(false);
   });
 });

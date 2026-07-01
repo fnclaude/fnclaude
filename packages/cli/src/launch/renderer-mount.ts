@@ -12,12 +12,16 @@
 // renderer must degrade to the normal PTY launch, never crash, and an old
 // mountRenderer that ignores opts / lacks close() must still mount cleanly.
 
+import { reexecSelf } from '../handoff/awaiter';
+import { handoffTrigger, type HandoffTrigger } from '../handoff/trigger';
 import {
   type ControlKind,
   type SendControl,
   createRendererControlSeam,
 } from '../mcp/handlers/send-control';
 import { resolveGithubRepo } from '../repo/github-origin';
+import type { LivePermissionModeReader } from '../restart/restart-core';
+import { dispatchSlashLine } from '../slash/registry';
 
 // --- Structural contract types ------------------------------------------
 //
@@ -62,6 +66,16 @@ export interface MountOptions {
    * forms stay plain. `@mentions` and explicit `owner/repo#n` need no context.
    */
   githubRepo?: GithubRepo;
+  /**
+   * fnc-native slash-command sink (#`//` framework). The renderer calls this
+   * when a submitted draft starts with `//`, passing the raw line + claude's
+   * current session id; fnc resolves + dispatches the command and returns the
+   * feedback the renderer toasts. The `//` line is never forwarded to claude.
+   */
+  onSlash?: (
+    rawLine: string,
+    sessionId: string | null,
+  ) => Promise<{ ok: boolean; message: string }> | { ok: boolean; message: string };
 }
 
 /**
@@ -245,6 +259,24 @@ export interface MaybeMountRendererArgs {
   /** Process exit seam (testability). Defaults to process.exit. */
   exit?: (code: number) => never;
   /**
+   * The user's original argv (post-readArgv). Threaded into the `//restart`
+   * slash command so it can rebuild the relaunch argv. Defaults to `[]`.
+   */
+  origArgs?: readonly string[];
+  /**
+   * Handoff trigger shared with the MCP restart path. `//restart` (and claude's
+   * `fnc_restart`) stash+fire it; the renderer-mode awaiter armed below reaps
+   * claude and re-execs fnc when it fires. Defaults to the module singleton.
+   */
+  trigger?: HandoffTrigger;
+  /** Live permission-mode reader for `//restart`'s auto-capture. Optional. */
+  livePermissionModeReader?: LivePermissionModeReader;
+  /**
+   * Re-exec seam (testability). Replaces the process image with the relaunch
+   * argv; in production it never returns. Defaults to {@link reexecSelf}.
+   */
+  reexec?: (argv: string[]) => Promise<void>;
+  /**
    * Called once the renderer is mounted, with the renderer-backed
    * {@link SendControl} seam (#299). fnc uses it to bind its deferred control
    * seam (so the /compact MCP handler routes to the renderer) and to start the
@@ -398,10 +430,31 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
     githubRepo = null;
   }
 
+  // fnc-native slash-command sink. When the renderer submits a `//` line, this
+  // resolves + dispatches the command via the shared registry, threading the
+  // launch cwd / origArgs / handoff trigger so `//restart` can rebuild the
+  // resume argv. Sourcing the session id: the renderer reads it from the
+  // ingested `system`/`init` event (App captures it) and passes it here, since
+  // the cli host doesn't see the raw event stream.
+  const trigger = args.trigger ?? handoffTrigger;
+  const origArgs = args.origArgs ?? [];
+  const reexec = args.reexec ?? ((argv: string[]) => reexecSelf({ argv }).then(() => undefined));
+  const onSlash: MountOptions['onSlash'] = (rawLine, sessionId) =>
+    dispatchSlashLine(rawLine, {
+      sessionId,
+      launchCWD: args.cwd,
+      origArgs,
+      trigger,
+      ...(args.livePermissionModeReader !== undefined
+        ? { livePermissionModeReader: args.livePermissionModeReader }
+        : {}),
+    });
+
   const opts: MountOptions = {
     cwd: args.cwd,
     extraArgs: args.rendererArgs,
     spawnFn,
+    onSlash,
     ...(args.initialPrompt !== undefined && args.initialPrompt !== ''
       ? { initialPrompt: args.initialPrompt }
       : {}),
@@ -409,6 +462,16 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
   };
 
   const handle = mod.mountRenderer(opts);
+
+  // Renderer-mode restart awaiter. `//restart` (and claude's own fnc_restart
+  // over the socket) stash a relaunch argv + fire the shared trigger; unlike
+  // PTY mode there is no `startHandoffAwaiter` here, so wire the kill-and-exec
+  // ourselves: when the trigger fires, unmount the Ink app so `waitUntilExit`
+  // resolves, then the post-exit block below reaps claude and re-execs fnc.
+  void (async () => {
+    await trigger.awaitTrigger();
+    if (trigger.getStashedArgv() !== null) handle.unmount();
+  })();
 
   // Wire the tagged control seam (#299) onto the renderer mount API. This is
   // what closes the renderer-mode gap: the /compact MCP handler binds here, and
@@ -444,6 +507,22 @@ export async function maybeMountRenderer(args: MaybeMountRendererArgs): Promise<
     } catch {
       // best-effort teardown — never block exit
     }
+  }
+
+  // Restart path: a `//restart` (or claude's fnc_restart) stashed a relaunch
+  // argv. Reap claude (EOF its stdin), then re-exec fnc with the resume argv —
+  // `reexec` replaces the process image and does not return in production, so
+  // the normal close/exit below is skipped. Done here (not in the awaiter) so
+  // teardown ordering is deterministic and never races the caller's exit.
+  const stashedArgv = trigger.getStashedArgv();
+  if (stashedArgv !== null) {
+    try {
+      if (typeof handle.close === 'function') await handle.close();
+    } catch {
+      // best-effort reap — proceed to re-exec regardless
+    }
+    await reexec(stashedArgv);
+    return true; // unreachable in prod (execve); keeps the seam-injected path sane
   }
 
   // The §7 refactor adds close() (reaps claude's exit code). An old handle
