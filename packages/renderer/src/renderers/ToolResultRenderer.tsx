@@ -1,8 +1,8 @@
-import { Text } from "ink";
 import type { JSX } from "react";
 import type { ElementId, ToolResultBlock, Visibility } from "../types/events";
 import { BashOutput } from "./BashOutput";
 import { ErrorRenderer } from "./ErrorRenderer";
+import { GenericTool, coerceStructured, salientArg } from "./GenericTool";
 import { ReadContent } from "./ReadContent";
 
 export interface ToolResultRendererProps {
@@ -55,9 +55,24 @@ export function ToolResultRenderer({
       );
     }
 
-    default:
-      // No dedicated component — render the result body as plain text.
-      return <Text>{content}</Text>;
+    default: {
+      // No dedicated component — generic structured view keyed on the shared
+      // `tool.generic` element id. JSON payloads lay out as key/value; plain
+      // text renders verbatim under the tool header. `tool_use_id` is the
+      // stable per-instance key for the #285 expand seam (inert today).
+      const body = coerceStructured(content);
+      const salient =
+        typeof body === "string" ? undefined : salientArg(body as Record<string, unknown>);
+      return (
+        <GenericTool
+          header={`▸ ${toolName || "tool"}`}
+          body={body}
+          salient={salient}
+          visibility={visibilityFor("tool.generic")}
+          blockId={block.tool_use_id}
+        />
+      );
+    }
   }
 }
 
