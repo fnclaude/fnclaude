@@ -197,6 +197,23 @@ Cross-checked against the first-party 2.1.197 findings above:
 
 Treat the web sources as multi-version, cross-checked prior art — useful for corroboration and for understanding how the protocol evolved, not as the current wire format on their own.
 
+### Protocol history / versioning
+
+The transport above isn't the only one RC has ever used — it's already migrated once, **CCRv1 → CCRv2**:
+
+- **CCRv1** — a `session_ingress` **WebSocket** (`wss://.../session_ingress/ws/{session_id}`) as the primary control/work channel.
+- **CCRv2** — **SSE + POST / long-poll HTTP**, no control-channel websocket. This is the transport documented above, gated/named by the `CLAUDE_CODE_USE_CCR_V2` toggle and the `CCR v2` log strings (e.g. `[bridge:session] CCR v2: registered worker`).
+
+Timeline (approximate, from the cross-referenced prior art above):
+
+- WebSocket (CCRv1) was live in early builds — frr.dev's Feb-2026 session capture and originhq's Apr-2026 working WebSocket PoC both describe it; ly0/cc-remote-control-server's WebSocket-specific notes are pinned no later than ~2.1.68.
+- CCRv2 (SSE+POST) shipped by CLI **2.1.112** (ly0 commit dated 2026-04-24).
+- This document's wire protocol reflects CCRv2 as observed in claude **2.1.197** (current latest at time of writing) — long-poll `work/poll` + optional SSE `/events/stream`, no control websocket.
+
+The prior-art sources describing a websocket transport aren't wrong — they're documenting the older CCRv1, not misreading the current one.
+
+**Takeaway:** the RC wire protocol is not stable across releases — the transport already changed once within the 2.1.x line over roughly two months. Any re-implementation (fnc included) must pin to a known-good claude version and re-verify the endpoint map + transport on each meaningful claude bump. The durable string anchors (`CLAUDE_CODE_USE_CCR_V2`, `CCR v2`, endpoint paths) are the re-verification handles.
+
 ### Re-implementability
 
 The transport and envelope are fully re-implementable by a third party (e.g. fnc): plain HTTPS JSON on stable `/v1/…` paths, a small fully-enumerated header set, and `type`/`subtype` discriminators — nothing in the request framing is signed or obfuscated. The only gate is auth material: the Bearer token is a reusable, non-per-request-signed OAuth access token fnc can already mint via the existing `/login` flow, and `X-Trusted-Device-Token` only becomes a blocker under orgs that enforce Trusted Devices.
