@@ -25,6 +25,7 @@ Toggling an element flips its override: no override → set the opposite of the 
 6. `Write.content` — `tool_use` of `Write`, the content field
 7. `Task.nested` — `tool_use` of `Task`, the subagent prompt
 8. `errors` — blocks with `is_error: true` and result events with `is_error: true`
+- `tool.generic` (Alt+g) — the structured fallback for any tool without a bespoke view (Grep, Glob, WebFetch, TodoWrite, MCP tools). A **single shared** id, not one-per-tool: the tool set is open-ended and the Alt+digit table is full. `summary` in quiet/normal, `show` in verbose/debug.
 - `meta` (Alt+m) — session-init header, non-init/status `system` events (e.g. `thinking_tokens`), and `rate_limit_event`s. Raw JSON noise; hidden everywhere but `debug`.
 
 **Always-shown content** (not filterable): assistant text, tool-call headers, result events' `result` text.
@@ -40,6 +41,7 @@ Toggling an element flips its override: no override → set the opposite of the 
 | Read.content | hide | hide | summary | show |
 | Write.content | summary | summary | show | show |
 | Task.nested | summary | summary | show | show |
+| tool.generic | summary | summary | show | show |
 | errors | show | show | show | show |
 | meta | hide | hide | hide | show |
 
@@ -86,6 +88,7 @@ Slice C's per-element components decide what `summary` means per element:
 - `Write.content` — file path + line count of new content
 - `Read.content` — file path + line count of file
 - `Task.nested` — first line of subagent prompt + line count
+- `tool.generic` — tool name + the one salient arg (command / file_path / url / pattern / query, else the first string arg)
 - `thinking` — first sentence + `(thinking continues)`
 
 Each element-renderer accepts `visibility: Visibility` and renders accordingly.

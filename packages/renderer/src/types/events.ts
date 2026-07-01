@@ -206,6 +206,14 @@ export type ElementId =
   | "Read.content"
   | "Write.content"
   | "Task.nested"
+  /**
+   * The generic structured fallback for any tool without a bespoke view
+   * (Grep, Glob, WebFetch, TodoWrite, every MCP tool). A SINGLE shared id
+   * rather than one-per-tool: the tool set is open-ended and the Alt+digit
+   * table is full. Leans on `summary` in quiet/normal, `show` in
+   * verbose/debug. Toggle with Alt+g.
+   */
+  | "tool.generic"
   | "errors"
   /**
    * System/JSON noise: the session-init header, non-init/status `system`

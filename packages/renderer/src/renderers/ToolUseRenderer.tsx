@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import type { ElementId, ToolUseBlock, Visibility } from "../types/events";
 import { BashInput } from "./BashInput";
 import { EditDiff } from "./EditDiff";
-import { RawJson } from "./RawJson";
+import { GenericTool, salientArg } from "./GenericTool";
 import { ReadInput } from "./ReadInput";
 import { TaskNested } from "./TaskNested";
 import { WriteContent } from "./WriteContent";
@@ -22,8 +22,9 @@ export interface ToolUseRendererProps {
  * right input fields, and renders the matching per-tool component with
  * the visibility resolved for that tool's element id.
  *
- * Unknown tools fall back to a one-line header showing the tool name and
- * a compact input summary.
+ * Unknown tools fall back to the generic structured renderer: a header with
+ * the tool name plus a filterable key/value body (summary/verbose per the
+ * shared `tool.generic` element id), instead of a raw-JSON dump.
  */
 export function ToolUseRenderer({ block, visibilityFor }: ToolUseRendererProps): JSX.Element {
   const input = block.input;
@@ -76,10 +77,19 @@ export function ToolUseRenderer({ block, visibilityFor }: ToolUseRendererProps):
       );
 
     default:
-      // Unknown tool: render the full tool_use block as dim raw JSON rather
-      // than a truncated one-liner, so nothing is silently lost. A styled
-      // per-tool view can supersede this later.
-      return <RawJson value={{ name: block.name, input }} label={`tool_use ${block.name}`} />;
+      // Unknown tool: generic structured key/value view. Shares the single
+      // `tool.generic` element id (the Alt+digit table is full and the tool
+      // set is open-ended). `block.id` is the stable per-instance key for the
+      // #285 expand seam; no override resolver is wired yet, so it stays inert.
+      return (
+        <GenericTool
+          header={`▸ ${block.name}`}
+          body={input}
+          salient={salientArg(input)}
+          visibility={visibilityFor("tool.generic")}
+          blockId={block.id}
+        />
+      );
   }
 }
 

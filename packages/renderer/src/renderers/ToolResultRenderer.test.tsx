@@ -84,6 +84,24 @@ describe("ToolResultRenderer", () => {
     expect(lastFrame() ?? "").toContain("some glob output");
   });
 
+  test("unknown tool_result with JSON content → structured, not raw blob", () => {
+    const block: ToolResultBlock = {
+      type: "tool_result",
+      tool_use_id: "tu6",
+      content: '{"matches": 3, "file": "a.ts"}',
+    };
+    const { lastFrame } = render(
+      <ToolResultRenderer block={block} toolName="Grep" visibilityFor={visAll("show")} />,
+    );
+    const frame = lastFrame() ?? "";
+    // header names the originating tool
+    expect(frame).toContain("Grep");
+    // structured key/value, not the raw JSON blob
+    expect(frame).toContain("matches:");
+    expect(frame).toContain("3");
+    expect(frame).not.toContain('{"matches"');
+  });
+
   test("Bash output hide vs show differ", () => {
     const block: ToolResultBlock = {
       type: "tool_result",

@@ -92,6 +92,12 @@ export function dispatchKey(input: string, key: Key): KeybindAction | null {
     return { kind: "toggleElement", element: "token-burn" };
   }
 
+  // Alt + g → toggle the generic (structured-fallback) tool group. One shared
+  // id for every non-bespoke tool; letter-bind for the same digit-table reason.
+  if (key.meta && input === "g") {
+    return { kind: "toggleElement", element: "tool.generic" };
+  }
+
   // Scroll the app-owned viewport. PageUp/PageDown page; Home/End jump to the
   // top/bottom. These are navigation keys, not text — they take precedence over
   // the draft input. Guarded behind no-modifier so Ctrl/Alt combos still pass.

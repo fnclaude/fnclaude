@@ -81,6 +81,60 @@ describe("ToolUseRenderer", () => {
     expect(frame).toContain("**/*.ts");
   });
 
+  test("unknown tool_use → structured key/value, not raw JSON", () => {
+    const block: ToolUseBlock = {
+      type: "tool_use",
+      id: "tu8",
+      name: "Glob",
+      input: { pattern: "**/*.ts", path: "/src" },
+    };
+    const { lastFrame } = render(<ToolUseRenderer block={block} visibilityFor={visAll("show")} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Glob");
+    // key/value rows, keys dimmed with a trailing colon
+    expect(frame).toContain("pattern:");
+    expect(frame).toContain("**/*.ts");
+    // NOT raw JSON: no quoted keys, no braces, no {name,input} wrapper
+    expect(frame).not.toContain('"pattern"');
+    expect(frame).not.toContain("{");
+    expect(frame).not.toContain("}");
+    expect(frame).not.toContain('"name"');
+  });
+
+  test("unknown tool_use under summary → one-line salient arg", () => {
+    const block: ToolUseBlock = {
+      type: "tool_use",
+      id: "tu9",
+      name: "Glob",
+      input: { pattern: "**/*.ts", path: "/src" },
+    };
+    const { lastFrame } = render(
+      <ToolUseRenderer block={block} visibilityFor={visAll("summary")} />,
+    );
+    const frame = (lastFrame() ?? "").trim();
+    expect(frame).toContain("Glob");
+    expect(frame).toContain("**/*.ts");
+    // one line only — the non-salient arg is not shown
+    expect(frame.split("\n").length).toBe(1);
+    expect(frame).not.toContain("/src");
+  });
+
+  test("unknown tool_use consults the shared tool.generic element id", () => {
+    const queriedIds: string[] = [];
+    const visFor = (id: string) => {
+      queriedIds.push(id);
+      return "show" as const;
+    };
+    const block: ToolUseBlock = {
+      type: "tool_use",
+      id: "tu10",
+      name: "WebFetch",
+      input: { url: "https://example.com" },
+    };
+    render(<ToolUseRenderer block={block} visibilityFor={visFor} />);
+    expect(queriedIds).toContain("tool.generic");
+  });
+
   test("visibilityFor is consulted per element id", () => {
     const queriedIds: string[] = [];
     const visFor = (id: string) => {
