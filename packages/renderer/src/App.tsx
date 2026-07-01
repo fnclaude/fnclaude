@@ -43,6 +43,7 @@ import { ScrollIndicator } from "./renderers/ScrollIndicator.tsx";
 import { MeasuredRow } from "./scroll/MeasuredRow.tsx";
 import { ScrollViewport } from "./scroll/ScrollViewport.tsx";
 import { type AnchoredScroll, useAnchoredScroll } from "./scroll/useAnchoredScroll.ts";
+import { type RendererTheme, useRendererTheme } from "./theme.tsx";
 import type { ClaudeEvent, ElementId, FilterState, Visibility } from "./types/events.ts";
 import { usePromptHistory } from "./usePromptHistory.ts";
 
@@ -60,10 +61,13 @@ export type StreamFeed = (emit: {
 const TOAST_DURATION_MS = 2000;
 
 /**
- * Rows reserved below the scroll viewport for the input control (draft line +
- * status line). The transcript viewport gets `terminalRows - CHROME_ROWS`.
+ * Rows reserved below the scroll viewport for the bordered input control:
+ * the badge top-rule (1) + the draft line + the status line + the bottom
+ * border (1). The transcript viewport gets `terminalRows - CHROME_ROWS`. A
+ * multi-line draft overflows this fixed reserve — dynamic statusline chrome
+ * (#290) is not built yet, so the reserve is sized for the single-line case.
  */
-const CHROME_ROWS = 2;
+const CHROME_ROWS = 4;
 
 /**
  * Idle Ctrl+C double-tap window. A single Ctrl+C while nothing is generating
@@ -113,6 +117,13 @@ export interface AppProps {
    * or a small value to exercise clipping/anchoring deterministically.
    */
   viewportHeight?: number;
+  /**
+   * Human-readable label for the active session, rendered as a badge in the
+   * input box's top border (`╭─ <name> ─…─╮`). Threaded from `mountRenderer`
+   * (which derives it from the launch cwd until the cli passes an explicit
+   * name). Falls back to a generic label when absent.
+   */
+  sessionName?: string;
 }
 
 export function App(props: AppProps): React.ReactElement {
@@ -161,6 +172,15 @@ export function App(props: AppProps): React.ReactElement {
   // complexity in the additive `live` surface.
   const ingest = useMemo(
     () => (event: ClaudeEvent) => {
+      if (event.type === "system" && event.subtype === "status") {
+        // Transient inter-turn status ("requesting", …) — a momentary
+        // affordance, not transcript content. Never commit it: the ephemeral
+        // busy spinner (rendered below the transcript, gated on `busy`) covers
+        // the waiting state and self-clears the moment real content arrives.
+        // Committing it left a permanent dim `◌ requesting…` line that never
+        // cleared.
+        return;
+      }
       if (event.type === "stream_event") {
         setLive((prev) => liveReducer(prev, event));
         return;
@@ -236,6 +256,12 @@ export function App(props: AppProps): React.ReactElement {
   const windowSize = useWindowSize();
   const viewportHeight = props.viewportHeight ?? Math.max(1, windowSize.rows - CHROME_ROWS);
   const ctl = useAnchoredScroll({ viewportHeight });
+
+  // Prompt-area chrome: the active palette drives the input border, and the
+  // session badge falls back to a generic label until a real name is threaded.
+  const theme = useRendererTheme();
+  const sessionName =
+    props.sessionName !== undefined && props.sessionName.length > 0 ? props.sessionName : "fnc";
 
   const flashToast = (msg: string) => {
     setToast(msg);
@@ -417,6 +443,7 @@ export function App(props: AppProps): React.ReactElement {
             <Transcript
               events={events}
               live={live}
+              busy={busy}
               visibilityFor={visibilityFor}
               ctl={ctl}
               toolCallById={toolCallById}
@@ -430,21 +457,76 @@ export function App(props: AppProps): React.ReactElement {
           viewportHeight={viewportHeight}
         />
       </Box>
-      {/* INPUT — a separate top-level control (draft + status). */}
+      {/* INPUT — a separate top-level control (draft + status), wrapped in a
+          rounded box whose top border carries the session-name badge. The
+          badge rule is a custom top-rule row above a border-top-less box so the
+          name can sit inside the frame (Ink's <Box border> has no title slot).
+          CHROME_ROWS reserves the extra border/badge rows in the viewport. */}
       <Box flexDirection="column">
-        {draft.length > 0 ? (
-          // Indent continuation lines under the "> " prompt so a multi-line
-          // draft (shift+enter / backslash-continuation) reads cleanly.
-          <Text>{`> ${draft.replace(/\n/g, "\n  ")}`}</Text>
-        ) : (
-          <Text>
-            {"> "}
-            <Text dimColor>type a message and press Enter</Text>
-          </Text>
-        )}
-        <Text>{statusLine}</Text>
+        <InputBadgeRule name={sessionName} width={windowSize.columns} color={theme.inputBorder} />
+        <Box
+          borderStyle="round"
+          borderTop={false}
+          borderColor={theme.inputBorder}
+          flexDirection="column"
+          paddingX={1}
+        >
+          {draft.length > 0 ? (
+            // Indent continuation lines under the "› " marker so a multi-line
+            // draft (shift+enter / backslash-continuation) reads cleanly.
+            <Text>
+              <PromptMarker theme={theme} />
+              {draft.replace(/\n/g, "\n  ")}
+            </Text>
+          ) : (
+            <Text>
+              <PromptMarker theme={theme} />
+              <Text dimColor>type a message and press Enter</Text>
+            </Text>
+          )}
+          <Text>{statusLine}</Text>
+        </Box>
       </Box>
     </Box>
+  );
+}
+
+/**
+ * The live-input marker, matching the committed prompt's bold cyan "› " so the
+ * input reads as the same affordance as a submitted turn (UserPromptRender).
+ */
+function PromptMarker({ theme }: { theme: RendererTheme }): React.ReactElement {
+  return (
+    <Text bold color={theme.promptMarker}>
+      {"› "}
+    </Text>
+  );
+}
+
+/**
+ * Custom top-rule row for the input box: `╭─ <name> ─…─╮`, spanning the full
+ * terminal width, with the session name bold inside the border color. Rendered
+ * as a separate row above a border-top-less box so the badge sits in the frame
+ * — Ink's bordered <Box> exposes no native title slot.
+ */
+function InputBadgeRule({
+  name,
+  width,
+  color,
+}: {
+  name: string;
+  width: number;
+  color: string;
+}): React.ReactElement {
+  const label = ` ${name} `;
+  // `╭` + `─` + label + dashes + `╮` === width columns.
+  const dashes = Math.max(0, width - 3 - label.length);
+  return (
+    <Text color={color}>
+      {"╭─"}
+      <Text bold>{label}</Text>
+      {`${"─".repeat(dashes)}╮`}
+    </Text>
   );
 }
 
@@ -458,6 +540,7 @@ export function App(props: AppProps): React.ReactElement {
 function Transcript({
   events,
   live,
+  busy,
   visibilityFor,
   ctl,
   toolCallById,
@@ -465,6 +548,7 @@ function Transcript({
 }: {
   events: ClaudeEvent[];
   live: LiveState;
+  busy: boolean;
   visibilityFor: (id: ElementId) => Visibility;
   ctl: AnchoredScroll;
   toolCallById: Map<string, ToolCallInfo>;
@@ -472,15 +556,21 @@ function Transcript({
 }): React.ReactElement {
   const liveBlocks = inFlightBlocks(live);
   const hasLive = liveBlocks.length > 0;
+  // Ephemeral waiting affordance: a turn is in flight but no live block has
+  // arrived yet. Rendered inside the viewport (so it never touches the fixed
+  // input chrome) and self-clears the moment streaming content or the terminal
+  // `result` lands. Replaces the old committed, never-clearing `◌ requesting…`.
+  const waiting = busy && !hasLive;
 
   const rows = events.map((event, idx) => ({
     key: "uuid" in event && event.uuid ? event.uuid : `${event.type}-${idx}`,
     node: renderEventNode(event, { visibilityFor, toolCallById, lastAssistantText }),
   }));
 
-  const orderKey = `${rows.map((r) => r.key).join(" ")}|${hasLive ? "live" : ""}`;
+  const tail = hasLive ? ["live-region"] : waiting ? ["waiting-region"] : [];
+  const orderKey = `${rows.map((r) => r.key).join(" ")}|${tail.join(",")}`;
   const { setOrderedIds } = ctl;
-  const orderedIds = hasLive ? [...rows.map((r) => r.key), "live-region"] : rows.map((r) => r.key);
+  const orderedIds = [...rows.map((r) => r.key), ...tail];
   // `orderKey` is the stable serialization of `orderedIds`; depending on the
   // array directly would re-run the effect every render on new identity.
   // biome-ignore lint/correctness/useExhaustiveDependencies: orderKey encodes orderedIds
@@ -498,6 +588,11 @@ function Transcript({
       {hasLive && (
         <MeasuredRow id="live-region" onHeight={ctl.reportRowHeight}>
           <LiveRegion live={live} visibilityFor={visibilityFor} />
+        </MeasuredRow>
+      )}
+      {waiting && (
+        <MeasuredRow id="waiting-region" onHeight={ctl.reportRowHeight}>
+          <Text dimColor>{"◌ working…"}</Text>
         </MeasuredRow>
       )}
     </>

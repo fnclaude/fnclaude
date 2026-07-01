@@ -68,6 +68,17 @@ async function type(send: (i: string, k: Key) => void, text: string): Promise<vo
   }
 }
 
+/**
+ * The live-input draft line, isolated from the committed transcript. Both the
+ * draft and submitted prompts now share the bold `›` marker, so the draft is
+ * discriminated by the box border: the input line is the row carrying both a
+ * `│` border glyph and the `›` marker. ANSI is stripped so the marker and
+ * recalled text (separate styled nodes) read as one string.
+ */
+function draftLine(frame: string): string {
+  return frame.split("\n").find((line) => line.includes("│") && line.includes("›")) ?? "";
+}
+
 describe("<App /> prompt history recall", () => {
   test("Up recalls the most recent submitted prompt", async () => {
     const app = mount();
@@ -77,7 +88,7 @@ describe("<App /> prompt history recall", () => {
 
     app.send("", { ...baseKey, upArrow: true });
     await flush();
-    expect(app.frame()).toContain("> beta");
+    expect(draftLine(app.frame())).toContain("beta");
     app.unmount();
   });
 
@@ -91,7 +102,7 @@ describe("<App /> prompt history recall", () => {
     await flush();
     app.send("", { ...baseKey, upArrow: true });
     await flush();
-    expect(app.frame()).toContain("> alpha");
+    expect(draftLine(app.frame())).toContain("alpha");
     app.unmount();
   });
 
@@ -105,16 +116,16 @@ describe("<App /> prompt history recall", () => {
     await flush();
     app.send("", { ...baseKey, upArrow: true });
     await flush();
-    expect(app.frame()).toContain("> alpha");
+    expect(draftLine(app.frame())).toContain("alpha");
 
     app.send("", { ...baseKey, downArrow: true });
     await flush();
-    expect(app.frame()).toContain("> beta");
+    expect(draftLine(app.frame())).toContain("beta");
 
     app.send("", { ...baseKey, downArrow: true });
     await flush();
     // Past the newest → the live (empty) draft is restored: placeholder shows.
-    expect(app.frame()).toContain("type a message and press Enter");
+    expect(draftLine(app.frame())).toContain("type a message and press Enter");
     app.unmount();
   });
 
@@ -123,15 +134,15 @@ describe("<App /> prompt history recall", () => {
     await flush();
     await submit(app.send, "alpha");
     await type(app.send, "wip");
-    expect(app.frame()).toContain("> wip");
+    expect(draftLine(app.frame())).toContain("wip");
 
     app.send("", { ...baseKey, upArrow: true });
     await flush();
-    expect(app.frame()).toContain("> alpha");
+    expect(draftLine(app.frame())).toContain("alpha");
 
     app.send("", { ...baseKey, downArrow: true });
     await flush();
-    expect(app.frame()).toContain("> wip");
+    expect(draftLine(app.frame())).toContain("wip");
     app.unmount();
   });
 });
