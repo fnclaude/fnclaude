@@ -37,6 +37,7 @@ Navigation index for the fnclaude documentation.
 - [reverse-engineering/claude-code-prompt-strings.md](reverse-engineering/claude-code-prompt-strings.md) — Heuristic bulk extraction of all instruction-like strings from Claude Code binary — created 2026-06-18
 - [reverse-engineering/claude-code-render-modes.md](reverse-engineering/claude-code-render-modes.md) — Reference for Claude Code's three terminal render modes, escape-sequence mechanics, and implications for fnclaude — created 2026-06-26
 - [reverse-engineering/claude-code-terminal-tricks.md](reverse-engineering/claude-code-terminal-tricks.md) — Behavior-level reference for CC's terminal/TUI mechanisms: theme detection, OSC hyperlinks, image protocols, clipboard, keyboard handling, and capability detection — created 2026-06-29
+- [reverse-engineering/claude-remote-control.md](reverse-engineering/claude-remote-control.md) — Transport, auth, entry surfaces, and print/stream-json gate for Claude Code's Remote Control feature; renderer-mode implications for fnc — created 2026-06-30
 - [reverse-engineering/extract-claude-code-prompts.sh](reverse-engineering/extract-claude-code-prompts.sh) — Shell script used to extract prompt strings from the Claude Code binary
 
 ## Archive
