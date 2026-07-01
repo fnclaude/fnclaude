@@ -18,13 +18,13 @@
 import { basename } from "node:path";
 import { type Instance, render } from "ink";
 import { Component, type ErrorInfo, type ReactElement, type ReactNode } from "react";
-import { App } from "./App";
+import { App, type OnSlash } from "./App";
 import { type ClaudeSubscription, type SpawnFn, subscribeToClaude } from "./claude-process";
 import type { GithubRepo } from "./renderers/github-autolink.ts";
 import { GithubRepoContext } from "./renderers/github-repo-context.ts";
 import { RendererThemeProvider } from "./theme.tsx";
 
-export type { AppProps } from "./App";
+export type { AppProps, OnSlash, SlashFeedback } from "./App";
 export type { ClaudeSubscription, SpawnFn } from "./claude-process";
 export type { GithubRepo } from "./renderers/github-autolink.ts";
 
@@ -65,6 +65,15 @@ export interface MountOptions {
    * basename; the cli does not yet thread an explicit name.
    */
   sessionName?: string;
+  /**
+   * fnc-native slash-command sink. When a submitted draft starts with `//`,
+   * the renderer hands the raw line (and claude's current session id, sourced
+   * from the ingested `system`/`init` event) to this callback INSTEAD of
+   * forwarding it to claude, then surfaces the returned feedback as a toast.
+   * The cli provides the implementation (registry resolve + dispatch); absent
+   * it (the standalone bin), `//` lines fall through to claude unchanged.
+   */
+  onSlash?: OnSlash;
 }
 
 /**
@@ -175,7 +184,7 @@ export function mountRenderer(
   // Session badge (#291): an explicit name if the caller threads one, else the
   // launch cwd's basename — a meaningful, always-available label.
   const sessionName = opts.sessionName ?? basename(opts.cwd ?? process.cwd());
-  const instance = guardedRender(renderFn, sub, sessionName, opts.githubRepo);
+  const instance = guardedRender(renderFn, sub, sessionName, opts.githubRepo, opts.onSlash);
 
   return {
     // Ink 7 types waitUntilExit as Promise<unknown>; normalize to the
@@ -199,6 +208,7 @@ function guardedRender(
   sub: ClaudeSubscription,
   sessionName: string,
   githubRepo?: GithubRepo,
+  onSlash?: OnSlash,
 ): Pick<Instance, "waitUntilExit" | "unmount"> {
   try {
     return renderFn(
@@ -210,7 +220,11 @@ function guardedRender(
       <RendererThemeProvider>
         <GithubRepoContext.Provider value={githubRepo}>
           <RenderErrorBoundary>
-            <App subscription={sub} sessionName={sessionName} />
+            <App
+              subscription={sub}
+              sessionName={sessionName}
+              {...(onSlash !== undefined ? { onSlash } : {})}
+            />
           </RenderErrorBoundary>
         </GithubRepoContext.Provider>
       </RendererThemeProvider>,

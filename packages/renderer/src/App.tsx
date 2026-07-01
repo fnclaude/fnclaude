@@ -58,6 +58,24 @@ export type StreamFeed = (emit: {
   close: () => void;
 }) => () => void;
 
+/** Feedback an {@link OnSlash} handler returns, surfaced as a status toast. */
+export interface SlashFeedback {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * fnc-native slash-command sink. A submitted draft starting with `//` is
+ * handed here (with claude's current session id) INSTEAD of being forwarded to
+ * claude. The renderer only detects the `//` prefix — resolution + dispatch
+ * live in the cli host that provides this callback. A single `/` is NOT
+ * intercepted (it passes through to claude).
+ */
+export type OnSlash = (
+  rawLine: string,
+  sessionId: string | null,
+) => Promise<SlashFeedback> | SlashFeedback;
+
 const TOAST_DURATION_MS = 2000;
 
 /**
@@ -124,6 +142,13 @@ export interface AppProps {
    * name). Falls back to a generic label when absent.
    */
   sessionName?: string;
+  /**
+   * fnc-native slash-command sink. When present and a submitted draft starts
+   * with `//`, App calls this with the raw line + the current session id
+   * instead of `sendUserTurn`, clears the draft, and toasts the feedback.
+   * Absent (standalone bin), `//` lines fall through to claude unchanged.
+   */
+  onSlash?: OnSlash;
 }
 
 export function App(props: AppProps): React.ReactElement {
@@ -155,6 +180,16 @@ export function App(props: AppProps): React.ReactElement {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subRef = useRef<ClaudeSubscription | null>(null);
+  // claude's current session id, captured from ingested events (the
+  // `system`/`init` event and every subsequent event carry it). Sourced here
+  // because App — not the cli host — consumes the event stream; the `//`
+  // interception hands this id to `onSlash` so a slash command (e.g. restart)
+  // can `--resume` the SAME session. Null until the first event arrives.
+  const sessionIdRef = useRef<string | null>(null);
+  // Latest `onSlash` closure, kept in a ref so the submit handler (dispatched
+  // via the render-stable `handleKeyRef`) always sees the current prop.
+  const onSlashRef = useRef<OnSlash | undefined>(props.onSlash);
+  onSlashRef.current = props.onSlash;
 
   // Shell-style prompt-history recall, seeded once from any resumed
   // `user_prompt` events so recall spans the prior turns. The store owns its own
@@ -172,6 +207,16 @@ export function App(props: AppProps): React.ReactElement {
   // complexity in the additive `live` surface.
   const ingest = useMemo(
     () => (event: ClaudeEvent) => {
+      // Capture claude's session id from any event that carries one (the
+      // `system`/`init` line arrives first). Used by the `//` slash
+      // interception to resume the same session on restart.
+      if (
+        "session_id" in event &&
+        typeof event.session_id === "string" &&
+        event.session_id !== ""
+      ) {
+        sessionIdRef.current = event.session_id;
+      }
       if (event.type === "system" && event.subtype === "status") {
         // Transient inter-turn status ("requesting", …) — a momentary
         // affordance, not transcript content. Never commit it: the ephemeral
@@ -359,6 +404,21 @@ export function App(props: AppProps): React.ReactElement {
       }
       if (draftRef.current.length > 0) {
         const text = draftRef.current;
+        // fnc-native slash command: a draft starting with `//` (double slash) is
+        // intercepted and handed to the cli host, NEVER forwarded to claude. A
+        // single `/` (e.g. `/compact`) is NOT intercepted — it falls through to
+        // sendUserTurn below. Only intercept when a host provided `onSlash`; the
+        // standalone bin has no fnc host, so `//` lines pass through there.
+        if (text.startsWith("//") && onSlashRef.current !== undefined) {
+          const fb = onSlashRef.current(text, sessionIdRef.current);
+          Promise.resolve(fb)
+            .then((r) => {
+              if (r?.message) flashToast(r.message);
+            })
+            .catch(() => undefined);
+          writeDraft("");
+          return;
+        }
         // Append the prompt to the transcript — claude never echoes user turns
         // back, so without this the submitted text would vanish.
         setEvents((prev) => [...prev, { type: "user_prompt", text }]);
