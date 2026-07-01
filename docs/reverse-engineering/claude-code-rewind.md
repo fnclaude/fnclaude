@@ -276,6 +276,15 @@ The SDK exposes the same operation as typed methods and control requests:
   rejected with **"That message is no longer in the active context. Choose a
   more recent message."** Rewind targets are bounded by the live context window,
   not the full on-disk transcript.
+- **`/clear` does NOT block rewind the way compaction does.** Confirmed by
+  direct interactive testing: after an accidental `/clear`, `Esc Esc` →
+  `/rewind` still offered a restore point for the moment right before the
+  clear. So `/clear`'s "wipes conversation" behavior only resets what's
+  *currently shown*/active — it does not truncate the underlying transcript or
+  invalidate FileHistory-backed rewind targets for messages that predate the
+  clear. (Contrast with compaction above, which *does* age messages out of
+  valid rewind targets.) This is the one finding in this doc confirmed by live
+  human interactive use rather than a string/CLI-probe anchor.
 - **A forked session inherits no code-rewind history** (see `forkSession`
   above) — it starts with an empty FileHistory.
 
@@ -314,7 +323,9 @@ explicitly; brief version:
 
 - **`/clear`** — "wipes conversation but keeps files." Forward-only reset of the
   chat; does not restore any file state. Rewind, by contrast, can move *backward*
-  to a specific point and optionally restore files.
+  to a specific point and optionally restore files. But "wipes" is about the
+  visible/active context, not the underlying transcript — rewind can still
+  reach messages from before a `/clear` (see above).
 - **`/branch`** — "forks the conversation to try two approaches." Creates a new
   session diverging from a point (SDK `forkSession`, with `upToMessageId`),
   leaving the original intact. Rewind mutates the *current* session in place.
