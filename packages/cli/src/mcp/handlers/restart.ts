@@ -2,86 +2,28 @@
  * §8.1 — `fnc_restart` handler.
  *
  * Ports the Go canonical `handleRestart` from
- * `fnclaude@fnrhombus/src/socket_listener.go` lines 221-256. The
- * restart flow rebuilds the launch argv with the same magic prefix the
- * user originally typed, swaps in `--resume <session_id>` immediately
- * after the cwd positional, applies MCP-supplied overrides, then stashes
- * the result + fires the handoff trigger so §8.5's awaiter can SIGTERM
- * claude and re-exec fnc with the new argv.
- *
- * Algorithm (matches Go canonical):
- *   1. Validate session_id present + UUID 8-4-4-4-12 hex.
- *   2. `preserveArgs(origArgs, ∅, ∅)` — restart uses NO denylist.
- *   3. `applyOverrides(preserved, req)` — splices in MCP overrides.
- *   4. If no caller-supplied permission_mode AND no preserved
- *      `--permission-mode`, ask the injected `livePermissionModeReader`
- *      for the value claude wrote into the session JSONL. The reader is
- *      optional; production wiring stubs it out for now (TODO file IO).
- *   5. Split the leading magic-word run; rebuild argv as:
- *        `[...magic, launchCWD, '--resume', sid, ...rest]`
- *   6. `trigger.stashArgv(argv)` (first-stash-wins).
- *   7. `trigger.fire()` to wake §8.5's awaiter.
- *   8. Respond `{ action: 'done' }`.
+ * `fnclaude@fnrhombus/src/socket_listener.go` lines 221-256. This handler is
+ * now a THIN wire adapter over the shared {@link restartInPlace} core
+ * (`../../restart/restart-core`): it validates the wire request shape, maps
+ * snake_case override fields → the core's `OverrideRequest`, delegates the
+ * argv-build + stash/fire, then maps the core result back to a wire response.
+ * The `//restart` slash command calls the same core, so the two paths stay in
+ * lockstep on the #205 single-`--resume` guarantee, overrides, and live
+ * permission-mode capture.
  *
  * Design: docs/design.mcp.md §4.1, §5; docs/design.md §12-13.
  */
 
-import {
-  applyOverrides,
-  preserveArgs,
-  splitLeadingMagic,
-  type OverrideRequest,
-} from '../../argv/preserve-args';
+import type { OverrideRequest } from '../../argv/preserve-args';
 import type { HandoffTrigger } from '../../handoff/trigger';
+import {
+  type LivePermissionModeReader,
+  restartInPlace,
+} from '../../restart/restart-core';
 import type { ParentDispatchHandler } from '../parent-dispatch';
 import type { WireRequest, WireResponse } from '../wire';
 
-const SESSION_ID_RE =
-  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-
-/**
- * Flags stripped from the preserved restart argv. Restart re-supplies the
- * session reference itself (`--resume <session_id>` spliced after the cwd),
- * so any session-reference flag already present in origArgs MUST be dropped
- * — otherwise the stale flag is preserved AND a fresh one is prepended,
- * accumulating one extra `--resume` per generation (#205). Unlike a project
- * transfer, restart keeps everything else (worktree, name, add-dir, etc.) —
- * the denylist is scoped to just the session-reference flags.
- */
-const RESTART_DENY_FLAGS: ReadonlySet<string> = new Set([
-  '-r',
-  '--resume',
-  '-c',
-  '--continue',
-  '-F',
-  '--fork-session',
-]);
-
-/**
- * Subset of `RESTART_DENY_FLAGS` that may appear in bare (no-value) form —
- * a bare `--resume` (the picker) carries no session id. For these,
- * `preserveArgs` only consumes the following token when it isn't itself a
- * flag, so a bare occurrence doesn't swallow the next real flag.
- */
-const RESTART_DENY_BARE_OK: ReadonlySet<string> = new Set([
-  '-r',
-  '--resume',
-  '-c',
-  '--continue',
-  '-F',
-  '--fork-session',
-]);
-
-/**
- * Reader for the live permission-mode value claude persists in the
- * session JSONL (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`).
- * `launchCWD` is bound at construction time in main.ts, so the reader
- * only takes the per-call `sessionID`. Returns `null` when no value is
- * available (file missing, no matching record, etc.) — the auto-capture
- * append is skipped in that case. Same shape as switch.ts uses, so a
- * single closure can be wired into both handlers.
- */
-export type LivePermissionModeReader = (sessionID: string) => string | null;
+export type { LivePermissionModeReader };
 
 export interface CreateRestartHandlerArgs {
   /** The user's original argv as fnc saw it at startup (post-readArgv). */
@@ -110,45 +52,25 @@ export function createRestartHandler(args: CreateRestartHandlerArgs): ParentDisp
           'restart requires a session id; pass it as the fnc_restart session_id argument (read $CLAUDE_CODE_SESSION_ID via Bash).',
       };
     }
-    if (!SESSION_ID_RE.test(sessionID)) {
+
+    const result = restartInPlace({
+      sessionId: sessionID,
+      launchCWD,
+      origArgs,
+      // Apply MCP-supplied overrides. Wire snake_case → OverrideRequest camelCase.
+      overrides: wireToOverrideRequest(req),
+      trigger,
+      ...(livePermissionModeReader !== undefined ? { livePermissionModeReader } : {}),
+    });
+
+    if (!result.ok) {
+      // `missing-session-id` is already handled above; only the invalid-UUID
+      // case can reach here.
       return {
         action: 'error',
         error: `session_id ${JSON.stringify(sessionID)} is not a valid UUID; expected the 8-4-4-4-12 hex form.`,
       };
     }
-
-    // Preserve user flags, stripping any stale session-reference flag
-    // (--resume / --continue / --fork-session) so the fresh `--resume
-    // <session_id>` spliced below is the ONLY one — otherwise it accumulates
-    // one extra copy per restart generation (#205).
-    const preserved = preserveArgs(origArgs, RESTART_DENY_FLAGS, RESTART_DENY_BARE_OK);
-
-    // Apply MCP-supplied overrides. Wire snake_case → OverrideRequest camelCase.
-    const overrides = wireToOverrideRequest(req);
-    let withOverrides = applyOverrides(preserved, overrides);
-
-    // Auto-capture live permission-mode when no override was passed AND
-    // no preserved flag carries one. Mirrors Go canonical — runs only
-    // when an injected reader is available.
-    const permissionModeFromReq = req.permission_mode;
-    const callerSuppliedPermissionMode =
-      typeof permissionModeFromReq === 'string' && permissionModeFromReq !== '';
-    if (
-      !callerSuppliedPermissionMode &&
-      !flagPresent(withOverrides, '--permission-mode') &&
-      livePermissionModeReader !== undefined
-    ) {
-      const live = livePermissionModeReader(sessionID);
-      if (live !== null && live !== '') {
-        withOverrides = [...withOverrides, '--permission-mode', live];
-      }
-    }
-
-    const { magic, rest } = splitLeadingMagic(withOverrides);
-    const argv: string[] = [...magic, launchCWD, '--resume', sessionID, ...rest];
-
-    trigger.stashArgv(argv);
-    trigger.fire();
     return { action: 'done' };
   };
 }
@@ -175,16 +97,4 @@ function wireToOverrideRequest(req: WireRequest): OverrideRequest {
   if (typeof req.ide === 'boolean') out.ide = req.ide;
   if (typeof req.verbose === 'boolean') out.verbose = req.verbose;
   return out;
-}
-
-/**
- * Returns true when `args` contains `flag` as a standalone token or in
- * `--flag=value` form. Mirrors Go canonical's `flagPresent`.
- */
-function flagPresent(args: readonly string[], flag: string): boolean {
-  const eqPrefix = `${flag}=`;
-  for (const tok of args) {
-    if (tok === flag || tok.startsWith(eqPrefix)) return true;
-  }
-  return false;
 }
