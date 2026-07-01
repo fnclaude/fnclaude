@@ -22,6 +22,7 @@ Navigation index for the fnclaude documentation.
 ## Reference
 
 - [decisions.md](decisions.md) — Dated log of technical decisions made during the rewrite, with rationale — created 2026-05-27, updated 2026-06-26
+- [renderer-component-hierarchy.md](renderer-component-hierarchy.md) — React/Ink component composition tree and event→renderer dispatch map (Mermaid) — created 2026-06-30
 
 ## Research
 
