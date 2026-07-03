@@ -1,5 +1,34 @@
 # Changelog
 
+## [3.4.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.3.1...renderer-v3.4.0) (2026-07-03)
+
+
+### Features
+
+* fnc-native //slash-command framework with //restart ([#315](https://github.com/fnclaude/fnclaude/issues/315)) ([4fb14c5](https://github.com/fnclaude/fnclaude/commit/4fb14c523d4d1e1bf6fa8e23cb2a0046b2877510))
+* GitHub [@mention](https://github.com/mention) / #ref / commit-SHA autolinks in the renderer ([#278](https://github.com/fnclaude/fnclaude/issues/278)) ([19423b4](https://github.com/fnclaude/fnclaude/commit/19423b4c66ee38a3aa561201a3c415d82c8d9914))
+* **renderer:** app-owned scroll viewport with Alt+u token-burn toggle ([#284](https://github.com/fnclaude/fnclaude/issues/284)) ([c3a6f1a](https://github.com/fnclaude/fnclaude/commit/c3a6f1accffce5a8b57912f220217b77f4338094))
+* **renderer:** bordered prompt area with session badge ([#314](https://github.com/fnclaude/fnclaude/issues/314)) ([7b9ef9d](https://github.com/fnclaude/fnclaude/commit/7b9ef9d8ad8af12a08419a14f52ec58d8f64204e))
+* **renderer:** centralized theme palette with runtime light/dark switching ([#309](https://github.com/fnclaude/fnclaude/issues/309)) ([3849145](https://github.com/fnclaude/fnclaude/commit/38491456117520b134283acc44d3d09623e538fe))
+* **renderer:** clickable links via OSC 8 hyperlinks ([#276](https://github.com/fnclaude/fnclaude/issues/276)) ([dcaa729](https://github.com/fnclaude/fnclaude/commit/dcaa729b1b8b4c27b0eecca5b2c65cc149bcdce3))
+* **renderer:** env-only terminal capability detection module ([#303](https://github.com/fnclaude/fnclaude/issues/303)) ([7eb375d](https://github.com/fnclaude/fnclaude/commit/7eb375d0039c780dd3c6bc17bcd910921708bbcd))
+* **renderer:** GFM tables, syntax highlighting, alerts, heading levels, task lists, entities, OSC 8 links ([#261](https://github.com/fnclaude/fnclaude/issues/261)) ([bd6fb55](https://github.com/fnclaude/fnclaude/commit/bd6fb5557c5cd3a4a491432c4fbc58d7560923c3))
+* **renderer:** interpret HTML subset (kbd/mark/br/hr/sub/sup/raw-a), color raw markup ([#279](https://github.com/fnclaude/fnclaude/issues/279)) ([1948f6b](https://github.com/fnclaude/fnclaude/commit/1948f6bd5978b06096c33f8ca0a447e3139d5aae))
+* **renderer:** multi-line prompt input via Shift+Enter and backslash ([#259](https://github.com/fnclaude/fnclaude/issues/259)) ([75e08b7](https://github.com/fnclaude/fnclaude/commit/75e08b7b9dc6f9163026a4c94e0dd42a9b84af19))
+* **renderer:** native Claude-Code look — markdown, noise filter, user prompts ([#256](https://github.com/fnclaude/fnclaude/issues/256)) ([7e5161c](https://github.com/fnclaude/fnclaude/commit/7e5161c6e2ff204b84fe3cb8b87ec7a8959856aa))
+* **renderer:** render GitHub emoji shortcodes (:rocket: etc.) ([#280](https://github.com/fnclaude/fnclaude/issues/280)) ([67bf7f5](https://github.com/fnclaude/fnclaude/commit/67bf7f5e135783818020763f7a0be43a6b3c682d))
+* **renderer:** render GitHub emoji shortcodes (:rocket: etc.) ([#281](https://github.com/fnclaude/fnclaude/issues/281)) ([09a44c2](https://github.com/fnclaude/fnclaude/commit/09a44c2c8fb743937c4d3e47d27ba8335d76db20))
+* **renderer:** render submitted user prompts as markdown ([#258](https://github.com/fnclaude/fnclaude/issues/258)) ([eda0abb](https://github.com/fnclaude/fnclaude/commit/eda0abbed2df2fd5c36bbe2bf61802aab68cf2ec))
+* **renderer:** scroll-position indicator in transcript viewport ([#306](https://github.com/fnclaude/fnclaude/issues/306)) ([4b28f33](https://github.com/fnclaude/fnclaude/commit/4b28f33b6cb428206e294859a9c1adffd993566d))
+* **renderer:** structured generic tool renderer for unknown tools ([#313](https://github.com/fnclaude/fnclaude/issues/313)) ([9b07b4b](https://github.com/fnclaude/fnclaude/commit/9b07b4b66b7fd5f28d85b68894639c09f3af46a3))
+
+
+### Bug Fixes
+
+* **renderer:** Ctrl+C interrupts claude's turn instead of killing fnc ([#277](https://github.com/fnclaude/fnclaude/issues/277)) ([a279f07](https://github.com/fnclaude/fnclaude/commit/a279f075929f48fa52f48a734cb79fe2a81c79d8))
+* **renderer:** drop OSC 8 link escapes; keep http styled+Ghostty-clickable, plain non-clickable ([#263](https://github.com/fnclaude/fnclaude/issues/263)) ([de0a0d7](https://github.com/fnclaude/fnclaude/commit/de0a0d725cd98b769fc38cd71ea2f445b4f87f82))
+* **renderer:** measure table cell width from rendered tokens, not raw cell.text ([#272](https://github.com/fnclaude/fnclaude/issues/272)) ([2959ee0](https://github.com/fnclaude/fnclaude/commit/2959ee056168152ce2058fd618169661132661dd))
+
 ## [3.3.1](https://github.com/fnclaude/fnclaude/compare/renderer-v3.3.0...renderer-v3.3.1) (2026-06-26)
 
 
