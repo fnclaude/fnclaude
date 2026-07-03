@@ -88,7 +88,16 @@ export function createSpawnHandler(deps: SpawnHandlerDeps): ParentDispatchHandle
   const spawnFn = deps.spawnLauncher ?? defaultSpawn;
   const copyHandler = deps.handleCopyToClipboard;
   const writeSummary =
-    deps.writeSummaryFile ?? ((args: { content: string }) => writeSummaryFile({ content: args.content }));
+    deps.writeSummaryFile ??
+    (async (args: { content: string }): Promise<string> => {
+      // The real writeSummaryFile takes `{ summary }` and returns
+      // `{ path }`; the injected seam contract is `{ content } → string`.
+      // Bridge the two here: forward the content as `summary` and unwrap
+      // `.path`. (#237: the old adapter passed `{ content }`, so the real
+      // fn wrote `undefined` and threw the "data" argument TypeError.)
+      const { path } = await writeSummaryFile({ summary: args.content });
+      return path;
+    });
 
   return async (req: WireRequest): Promise<WireResponse> => {
     // 1. Validate required args.
