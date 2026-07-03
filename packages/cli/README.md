@@ -217,7 +217,37 @@ quiet_missing_api_key = false
 [auto]
 tmux = "never"      # "never" | "worktree"
 handoff = "ask"     # "never" | "ask" | non-negative integer seconds
+
+[[context.notice_tiers]]
+at = "88%"          # tokens (860000) OR "NN%" of the auto-compact point
+level = "now"       # "consider" | "plan" | "now" | "urgent"
+
+[[context.notice_tiers]]
+at = "94%"
+level = "urgent"
+
+[context.notice_repeat]
+every = "2.5%"      # cadence past the last tier, same unit as `at`
+level = "urgent"
 ```
+
+#### Context-size compaction notices `[context]`
+
+As a session's context grows, fnclaude injects a one-shot notice line into the running `claude` suggesting a manual `/compact` before Claude Code's own auto-compaction fires. Notices escalate through a **ladder** of tiers (`consider → plan → now → urgent`), each firing once as context crosses it, plus an optional repeating tier past the last one.
+
+- `[[context.notice_tiers]]` — an array of `{ at, level }` tables. `at` is the threshold; `level` is one of `consider`, `plan`, `now`, `urgent`.
+- `[context.notice_repeat]` — a single `{ every, level }` table. After the highest fixed tier, re-fire `level` every `every` further along.
+
+Each `at`/`every` is **either** a bare integer (absolute token count) **or** a quoted percentage string like `"94%"`:
+
+- **Bare integer** — an absolute token count: `at = 860000`.
+- **`"NN%"`** — a percentage of the *derived auto-compact threshold*, where **100% is the exact point Claude Code will auto-compact**, computed per active model / surface / env. `"94%"` resolves to ≈878k on a default 1M `cli` session (100% = 934,000) and ≈439k on a 500k `local-agent` surface (100% = 467,000) — the **same config self-adjusts** to each model with no re-tuning. Percentages are re-resolved whenever the active model changes, and are **not** capped at 100% (with auto-compact disabled, usage climbs past the wall). The derived threshold tracks Claude Code's own knobs — setting `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (or the `local-agent`/`remote_cowork` entrypoint, or `CLAUDE_CODE_DISABLE_1M_CONTEXT`) moves both Claude Code's real behavior and this derivation together.
+
+The **built-in default** is the percentage ladder `76%` consider / `82%` plan / `88%` now / `94%` urgent, with a `2.5%` urgent repeat.
+
+A malformed tier or a bare-number `notice_repeat` (it must be a `{ every, level }` table) is dropped **with a warning on stderr** — not silently discarded.
+
+The legacy single threshold `[context] notice_threshold = 250000` (absolute tokens, maps to a one-tier `now` ladder) is still honored, and the `FNC_CONTEXT_NOTICE_THRESHOLD` env var overrides everything above with a single absolute-token `now` tier.
 
 #### Env var mapping
 
@@ -228,6 +258,7 @@ handoff = "ask"     # "never" | "ask" | non-negative integer seconds
 | `name.quiet_missing_api_key` | `FNCLAUDE_QUIET_MISSING_API_KEY` |
 | `auto.tmux` | `FNCLAUDE_TMUX` |
 | `auto.handoff` | `FNCLAUDE_HANDOFF` |
+| `context.notice_threshold` (single-tier override) | `FNC_CONTEXT_NOTICE_THRESHOLD` |
 
 `ANTHROPIC_API_KEY` is read (standard) for the auto-name LLM call.
 

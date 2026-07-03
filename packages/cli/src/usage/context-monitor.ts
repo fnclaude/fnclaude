@@ -8,12 +8,16 @@
  * at a clean stopping point.
  *
  * ── The ladder ────────────────────────────────────────────────────────
- * A {@link NoticeLadder} is a sorted list of finite {@link NoticeTier}s
- * (each `{ at, level }`) plus an optional repeating tier
+ * A {@link NoticeLadder} is a list of finite {@link NoticeTier}s (each
+ * `{ at, level }`, absolute token counts) plus an optional repeating tier
  * (`{ every, level }`). Levels are a closed enum (consider → plan → now →
- * urgent), each mapping to a fixed notice body. The built-in default
- * ({@link DEFAULT_NOTICE_LADDER}) is 150k consider / 200k plan / 250k now,
- * then every 50k past the last tier (300k, 350k, …) → urgent.
+ * urgent), each mapping to a fixed notice body. Config supplies a
+ * {@link NoticeLadderSpec} whose thresholds may be absolute OR percentages of
+ * the derived auto-compact point (`"94%"`, #332); {@link resolveLadderSpec}
+ * collapses a spec to a numeric ladder per tick. The built-in default
+ * ({@link DEFAULT_NOTICE_LADDER}) is the percentage ladder 76/82/88/94% +
+ * a 2.5% repeat, which self-adjusts to each model's/surface's auto-compact
+ * point (≈ 710k/766k/822k/878k on a default 1M `cli` session).
  *
  * ── What it reads ────────────────────────────────────────────────────
  * The token source is the shared session-usage reader
@@ -70,6 +74,7 @@ import { basename, join } from 'node:path';
 import type { PtyWriter } from '../mcp/handlers/inject-slash';
 import { type SendControl, createPtyControlSeam } from '../mcp/handlers/send-control';
 import { encodeCWDForProjects } from '../launch/live-permission-reader';
+import { deriveAutoCompactThreshold, resolvePctToTokens } from './autocompact-threshold';
 import { computeSessionUsage } from './session-usage';
 
 /** The closed enum of escalation levels, low → high. */
@@ -112,15 +117,99 @@ export interface NoticeLadder {
   repeat?: NoticeRepeat;
 }
 
-/** Built-in default ladder used when nothing is configured. */
-export const DEFAULT_NOTICE_LADDER: NoticeLadder = {
+// ── Ladder SPEC (config-level, percentage-aware) ─────────────────────────────
+// A tier/repeat threshold is EITHER an absolute token count (a bare integer in
+// config, back-compat) OR a percentage of the derived auto-compact threshold
+// (`"94%"`, #332). The SPEC carries that choice; {@link resolveLadderSpec}
+// collapses it into a concrete numeric {@link NoticeLadder} for the state
+// machine, recomputed whenever the active model/surface/env (hence the derived
+// threshold) changes. A numeric {@link NoticeLadder} is itself a valid spec
+// (its `at`/`every` are the `number` arm), so absolute-only ladders flow
+// through both representations unchanged.
+
+/** A percentage threshold: `pct`% of the derived auto-compact point (100% = wall). */
+export interface PctThreshold {
+  pct: number;
+}
+
+/** True iff `v` is a {@link PctThreshold} marker. */
+export function isPctThreshold(v: unknown): v is PctThreshold {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { pct?: unknown }).pct === 'number' &&
+    Number.isFinite((v as { pct: number }).pct)
+  );
+}
+
+/** A finite tier whose threshold may be absolute tokens or a percentage. */
+export interface NoticeTierSpec {
+  at: number | PctThreshold;
+  level: NoticeLevel;
+}
+
+/** A repeating tier whose spacing may be absolute tokens or a percentage. */
+export interface NoticeRepeatSpec {
+  every: number | PctThreshold;
+  level: NoticeLevel;
+}
+
+/** The config-level ladder: tiers + optional repeat, each possibly a percentage. */
+export interface NoticeLadderSpec {
+  tiers: NoticeTierSpec[];
+  repeat?: NoticeRepeatSpec;
+}
+
+/**
+ * Built-in default ladder used when nothing is configured. Expressed as
+ * PERCENTAGES of the derived auto-compact threshold (#332): the same config
+ * self-adjusts to the correct absolute token counts across models and
+ * surfaces. On a default 1M `cli` session (100% = 934,000) these resolve to
+ * ≈ 710k/766k/822k/878k with a ≈ 23k repeat; on a 500k `local-agent` surface
+ * (100% = 467,000) they resolve to roughly half that — no re-tuning.
+ */
+export const DEFAULT_NOTICE_LADDER: NoticeLadderSpec = {
   tiers: [
-    { at: 150_000, level: 'consider' },
-    { at: 200_000, level: 'plan' },
-    { at: 250_000, level: 'now' },
+    { at: { pct: 76 }, level: 'consider' },
+    { at: { pct: 82 }, level: 'plan' },
+    { at: { pct: 88 }, level: 'now' },
+    { at: { pct: 94 }, level: 'urgent' },
   ],
-  repeat: { every: 50_000, level: 'urgent' },
+  repeat: { every: { pct: 2.5 }, level: 'urgent' },
 };
+
+/**
+ * Collapse a {@link NoticeLadderSpec} into a concrete numeric
+ * {@link NoticeLadder} against a derived auto-compact `threshold` (100%).
+ * Absolute thresholds pass through unchanged. Percentage thresholds resolve
+ * to `round(pct/100 * threshold)` — NOT clamped above 100%. When `threshold`
+ * is `null` (the active model, hence the window, isn't known yet) percentage
+ * entries are DROPPED (the monitor stays silent about them until the first
+ * assistant turn names the model); absolute entries still resolve.
+ */
+export function resolveLadderSpec(spec: NoticeLadderSpec, threshold: number | null): NoticeLadder {
+  const tiers: NoticeTier[] = [];
+  for (const t of spec.tiers) {
+    const at = resolveThresholdValue(t.at, threshold);
+    if (at === null) continue;
+    tiers.push({ at, level: t.level });
+  }
+
+  let repeat: NoticeRepeat | undefined;
+  if (spec.repeat !== undefined) {
+    const every = resolveThresholdValue(spec.repeat.every, threshold);
+    if (every !== null) repeat = { every, level: spec.repeat.level };
+  }
+
+  return repeat === undefined ? { tiers } : { tiers, repeat };
+}
+
+/** Resolve one absolute-or-percent value; `null` when a percent can't resolve yet. */
+function resolveThresholdValue(v: number | PctThreshold, threshold: number | null): number | null {
+  if (typeof v === 'number') return v;
+  if (threshold === null) return null;
+  return resolvePctToTokens(v.pct, threshold);
+}
 
 /** Env var that overrides both config and the built-in default (legacy). */
 export const CONTEXT_NOTICE_THRESHOLD_ENV = 'FNC_CONTEXT_NOTICE_THRESHOLD';
@@ -159,10 +248,10 @@ export function formatContextNotice(level: NoticeLevel, tokens: number): string 
  *   4. The built-in {@link DEFAULT_NOTICE_LADDER}.
  */
 export function resolveContextNoticeLadder(args: {
-  configLadder: NoticeLadder | undefined;
+  configLadder: NoticeLadderSpec | undefined;
   configThreshold: number | undefined;
   env?: Record<string, string | undefined>;
-}): NoticeLadder {
+}): NoticeLadderSpec {
   const env = args.env ?? process.env;
   const raw = env[CONTEXT_NOTICE_THRESHOLD_ENV];
   if (raw !== undefined && raw !== '') {
@@ -215,8 +304,14 @@ export interface ContextMonitor {
    * A jump past several rungs fires ONE notice for the highest crossed
    * level. A drop lowers the watermark (re-arm) without firing. A `null`
    * reading is a no-op and never moves the watermark.
+   *
+   * `ladderOverride`, when supplied, is used for THIS tick instead of the
+   * ladder bound at construction — the seam {@link startContextMonitor} uses
+   * to feed a freshly-resolved numeric ladder each tick (percentage tiers are
+   * re-resolved against the current derived auto-compact threshold, #332). The
+   * watermark persists across ticks regardless of which ladder was used.
    */
-  tick: (tokens: number | null) => boolean;
+  tick: (tokens: number | null, ladderOverride?: NoticeLadder) => boolean;
   /** True once at least one notice has been fired (watermark above 0). */
   hasFired: () => boolean;
 }
@@ -267,7 +362,7 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
   let watermark = 0;
 
   return {
-    tick: (tokens: number | null): boolean => {
+    tick: (tokens: number | null, ladderOverride?: NoticeLadder): boolean => {
       // A null reading (no assistant turn yet / unreadable JSONL) is a no-op —
       // it must NOT move the watermark. A non-positive reading is treated the
       // same: a transient `0` (a synthetic / interrupted assistant record whose
@@ -278,7 +373,8 @@ export function createContextMonitor(args: CreateContextMonitorArgs): ContextMon
         return false;
       }
 
-      const point = highestCrossedPoint(ladder, tokens);
+      const activeLadder = ladderOverride ?? ladder;
+      const point = highestCrossedPoint(activeLadder, tokens);
       const currentPoint = point?.at ?? 0;
 
       if (currentPoint > watermark) {
@@ -337,6 +433,20 @@ function listSessionJsonls(launchCWD: string): SessionCandidate[] {
 }
 
 /**
+ * One context reading: the latest assistant turn's context-token count AND
+ * the model that produced it. The model is needed to derive the auto-compact
+ * threshold percentage tiers resolve against (#332). Either field is `null`
+ * when unavailable (no assistant turn yet, unreadable/foreign file).
+ */
+export interface ContextReading {
+  tokens: number | null;
+  model: string | null;
+}
+
+/** The "nothing to read" reading — a no-op for the monitor's tick. */
+const NO_READING: ContextReading = { tokens: null, model: null };
+
+/**
  * Build a context reader pinned to THIS monitor's own session JSONL.
  *
  * ── Why pinning, not newest-mtime ────────────────────────────────────────
@@ -378,21 +488,22 @@ function listSessionJsonls(launchCWD: string): SessionCandidate[] {
  */
 export function createPinnedContextReader(
   resolveOwnSessionFile?: () => string | null,
-): (launchCWD: string) => number | null {
+): (launchCWD: string) => ContextReading {
   let baseline: Set<string> | null = null; // basenames present at first call
   let pinnedPath: string | null = null;
 
-  function readTokens(path: string): number | null {
+  function readReading(path: string): ContextReading {
     let raw: string;
     try {
       raw = readFileSync(path, 'utf8');
     } catch {
-      return null; // ENOENT / unreadable — caller decides whether to unpin
+      return NO_READING; // ENOENT / unreadable — caller decides whether to unpin
     }
-    return computeSessionUsage(raw).context?.tokens ?? null;
+    const ctx = computeSessionUsage(raw).context;
+    return { tokens: ctx?.tokens ?? null, model: ctx?.model ?? null };
   }
 
-  return (launchCWD: string): number | null => {
+  return (launchCWD: string): ContextReading => {
     if (pinnedPath !== null) {
       let raw: string;
       try {
@@ -400,9 +511,10 @@ export function createPinnedContextReader(
       } catch {
         // Pinned file vanished — unpin and let the next tick re-resolve.
         pinnedPath = null;
-        return null;
+        return NO_READING;
       }
-      return computeSessionUsage(raw).context?.tokens ?? null;
+      const ctx = computeSessionUsage(raw).context;
+      return { tokens: ctx?.tokens ?? null, model: ctx?.model ?? null };
     }
 
     // ── Identity path (no guessing) ──────────────────────────────────────
@@ -415,11 +527,11 @@ export function createPinnedContextReader(
     // no notice than a notice about another session's context.
     if (resolveOwnSessionFile !== undefined) {
       const own = resolveOwnSessionFile();
-      if (own === null || own === '') return null;
+      if (own === null || own === '') return NO_READING;
       const dir = join(resolveHome(), '.claude', 'projects', encodeCWDForProjects(launchCWD));
       const path = join(dir, own);
       pinnedPath = path;
-      return readTokens(path);
+      return readReading(path);
     }
 
     // ── Legacy heuristic path (no identity available) ────────────────────
@@ -440,7 +552,7 @@ export function createPinnedContextReader(
     }
 
     const fresh = candidates.filter((c) => !baseline!.has(basename(c.path)));
-    if (fresh.length === 0) return null;
+    if (fresh.length === 0) return NO_READING;
 
     // Pin to the oldest-mtime fresh candidate — ours was born first.
     let oldest = fresh[0]!;
@@ -448,7 +560,7 @@ export function createPinnedContextReader(
       if (c.mtimeMs < oldest.mtimeMs) oldest = c;
     }
     pinnedPath = oldest.path;
-    return readTokens(pinnedPath);
+    return readReading(pinnedPath);
   };
 }
 
@@ -509,8 +621,14 @@ function resolveHome(): string {
 export interface StartContextMonitorArgs {
   /** Launch cwd — resolves the encoded `~/.claude/projects/<cwd>` dir. */
   launchCWD: string;
-  /** Effective ladder (post {@link resolveContextNoticeLadder}). */
-  ladder: NoticeLadder;
+  /**
+   * Effective ladder SPEC (post {@link resolveContextNoticeLadder}). May carry
+   * percentage tiers (#332); they're re-resolved to absolute token counts each
+   * tick against the derived auto-compact threshold for the CURRENT model. A
+   * numeric {@link NoticeLadder} is a valid spec (absolute-only) and flows
+   * through unchanged.
+   */
+  ladder: NoticeLadderSpec;
   /**
    * The tagged control-injection seam notices route through (#299). Supplied in
    * production (PTY or renderer) so notices carry the structural marker and
@@ -523,13 +641,27 @@ export interface StartContextMonitorArgs {
   /** Poll interval in ms. Defaults to 4000. */
   intervalMs?: number;
   /**
-   * Context reader seam. Defaults to a fresh {@link createPinnedContextReader}
-   * instance (one per monitor), which pins to this session's own JSONL rather
-   * than re-picking newest-mtime each tick. Injectable so tests can drive a
-   * scripted sequence without a real `~/.claude`. Returns the latest
-   * context-token count, or `null`.
+   * Full context reader seam: returns the latest turn's token count AND model
+   * (the model drives the derived auto-compact threshold for percentage tiers,
+   * #332). Defaults to a fresh {@link createPinnedContextReader}. Takes
+   * precedence over {@link readContextTokens} when both are supplied.
+   */
+  readContext?: (launchCWD: string) => ContextReading;
+  /**
+   * Legacy tokens-only reader seam (back-compat for tests that don't care about
+   * the model). Wrapped as a {@link ContextReading} with `model: null`, so
+   * percentage tiers can't resolve through it — use it only with absolute
+   * ladders. Ignored when {@link readContext} is supplied.
    */
   readContextTokens?: (launchCWD: string) => number | null;
+  /**
+   * Derive the auto-compact threshold (100% for percentage tiers) from the
+   * active model. Defaults to {@link deriveAutoCompactThreshold} over
+   * `process.env`. Production supplies one bound to the claude child's env
+   * (childEnv) so surface/window overrides are honored. Returns `null` when the
+   * threshold can't be derived (percentage tiers then stay dormant that tick).
+   */
+  deriveThreshold?: (model: string) => number | null;
   /**
    * Resolver for THIS session's own JSONL basename (e.g. `<session-id>.jsonl`),
    * threaded into the default {@link createPinnedContextReader}. Returns the
@@ -568,11 +700,24 @@ export interface RunningContextMonitor {
  */
 export function startContextMonitor(args: StartContextMonitorArgs): RunningContextMonitor {
   const intervalMs = args.intervalMs ?? 4000;
-  const read = args.readContextTokens ?? createPinnedContextReader(args.ownSessionFile);
+  const spec = args.ladder;
+  // Resolve the reader: full {tokens, model} seam wins; else adapt a legacy
+  // tokens-only seam (model unknown → percentage tiers dormant); else the
+  // default pinned on-disk reader.
+  const read: (launchCWD: string) => ContextReading =
+    args.readContext ??
+    (args.readContextTokens !== undefined
+      ? (cwd: string): ContextReading => ({ tokens: args.readContextTokens!(cwd), model: null })
+      : createPinnedContextReader(args.ownSessionFile));
+  const deriveThreshold =
+    args.deriveThreshold ?? ((model: string): number | null => deriveAutoCompactThreshold({ model, env: process.env }));
   const setIntervalImpl = args.setIntervalFn ?? setInterval;
 
   const monitor = createContextMonitor({
-    ladder: args.ladder,
+    // Construction fallback ladder (absolute-only view of the spec); the tick
+    // loop always feeds a freshly-resolved override, so this is just a safe
+    // base for any tick that somehow arrives without one.
+    ladder: resolveLadderSpec(spec, null),
     ...(args.sendControl !== undefined ? { sendControl: args.sendControl } : {}),
     ...(args.write !== undefined ? { write: args.write } : {}),
     schedule: args.schedule,
@@ -588,8 +733,13 @@ export function startContextMonitor(args: StartContextMonitorArgs): RunningConte
   };
 
   timer = setIntervalImpl(() => {
-    const tokens = read(args.launchCWD);
-    monitor.tick(tokens); // watermark re-arm: keep polling so it can fire again
+    const reading = read(args.launchCWD);
+    // Recompute the derived threshold for the CURRENT model each tick, then
+    // resolve the spec's percentage tiers against it (#332). Absolute tiers are
+    // unaffected. Model unknown → percentage tiers stay dormant this tick.
+    const threshold = reading.model !== null ? deriveThreshold(reading.model) : null;
+    const resolved = resolveLadderSpec(spec, threshold);
+    monitor.tick(reading.tokens, resolved); // watermark re-arm: keep polling so it can fire again
   }, intervalMs);
   // Don't let the poll timer keep the event loop alive on its own; the
   // live claude subprocess owns process lifetime.

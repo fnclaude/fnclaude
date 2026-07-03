@@ -70,6 +70,7 @@ import { loadHostAliases } from './repo/host-aliases';
 import { findOwner, formatOwnerLookupError } from './repo/owner-lookup';
 import { loadRepoSettings } from './repo/repo-settings';
 import { resolveInput } from './repo/resolve-input';
+import { deriveAutoCompactThreshold } from './usage/autocompact-threshold';
 import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
 import { planOwnSession } from './usage/own-session';
 import { createWarningBuffer } from './warnings/buffer';
@@ -476,6 +477,15 @@ const childEnv = composeEnv({
   socket: mcpSocketPath,
 });
 
+// #332: percentage context-notice tiers ("94%") resolve against the derived
+// Claude Code auto-compact threshold (100% = the auto-compact point), computed
+// per active model + the child's env (surface/window overrides). We read the
+// SAME env claude sees (childEnv), so setting CLAUDE_CODE_AUTO_COMPACT_WINDOW
+// et al. moves claude's real behavior and this derivation in lockstep. The
+// active model is supplied per tick by the context monitor's session reader.
+const deriveNoticeThreshold = (model: string): number =>
+  deriveAutoCompactThreshold({ model, env: childEnv });
+
 // Self-MCP --mcp-config injection (§7.4). Skipped when there's no socket
 // to dial back to (win32 — no listener), and gated to interactive
 // sessions per design.md §29. The fnc bin is realpath'd so symlinked
@@ -692,6 +702,7 @@ if (
           configLadder: config.contextNoticeLadder,
           configThreshold: config.contextNoticeThreshold,
         }),
+        deriveThreshold: deriveNoticeThreshold,
         sendControl: send,
         ownSessionFile: ownSessionId !== null ? () => `${ownSessionId}.jsonl` : undefined,
       }).stop;
@@ -817,18 +828,20 @@ try {
     // model call request_compact. Routing through the seam (not raw term.write)
     // means the notice carries the structural marker and never splices into a
     // line the user is mid-typing. A watermark suppresses re-fires on mere
-    // growth and re-arms after a compaction drop. The ladder defaults to
-    // 150k/200k/250k + repeat-50k-urgent, overridable via
-    // [[context.notice_tiers]] / [context.notice_repeat] in config.toml,
-    // the legacy [context] notice_threshold, or the
-    // FNC_CONTEXT_NOTICE_THRESHOLD env var (precedence in
-    // resolveContextNoticeLadder).
+    // growth and re-arms after a compaction drop. The ladder defaults to a
+    // percentage ladder (76/82/88/94% + 2.5% repeat) that resolves against the
+    // derived auto-compact point per active model/surface (#332), overridable
+    // via [[context.notice_tiers]] / [context.notice_repeat] in config.toml
+    // (each `at`/`every` a bare token count OR a "NN%" percentage), the legacy
+    // [context] notice_threshold, or the FNC_CONTEXT_NOTICE_THRESHOLD env var
+    // (precedence in resolveContextNoticeLadder).
     contextMonitorStop = startContextMonitor({
       launchCWD: cwd,
       ladder: resolveContextNoticeLadder({
         configLadder: config.contextNoticeLadder,
         configThreshold: config.contextNoticeThreshold,
       }),
+      deriveThreshold: deriveNoticeThreshold,
       sendControl: ptyControl.sendControl,
       // Pin the monitor to THIS session's own JSONL by id (no oldest-mtime
       // guess). `null` when the id isn't knowable up front (--continue/fork) —
