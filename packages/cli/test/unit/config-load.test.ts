@@ -258,6 +258,68 @@ describe('loadConfig — [[context.notice_tiers]] + [context.notice_repeat]', ()
   });
 });
 
+describe('loadConfig — malformed notice config warns instead of silent drop (#331)', () => {
+  test('bare-number notice_repeat = 50000 warns and is not silently dropped', async () => {
+    const warnings: string[] = [];
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "consider"',
+        '',
+        '[context]',
+        'notice_repeat = 50000',
+        '',
+      ].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath, warn: (m) => warnings.push(m) });
+    // Tiers still parse; the malformed repeat is dropped BUT a warning fires.
+    expect(c.contextNoticeLadder).toEqual({ tiers: [{ at: 150000, level: 'consider' }] });
+    expect(warnings.some((w) => /notice_repeat/.test(w))).toBe(true);
+  });
+
+  test('malformed tier entry (bad level) warns', async () => {
+    const warnings: string[] = [];
+    writeFileSync(
+      configPath,
+      ['[[context.notice_tiers]]', 'at = 150000', 'level = "bogus"', ''].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath, warn: (m) => warnings.push(m) });
+    expect(c.contextNoticeLadder).toEqual({ tiers: [] });
+    expect(warnings.some((w) => /notice_tiers/.test(w))).toBe(true);
+  });
+
+  test('a repeat table missing `level` warns', async () => {
+    const warnings: string[] = [];
+    writeFileSync(
+      configPath,
+      ['[context.notice_repeat]', 'every = 50000', ''].join('\n'),
+    );
+    const c = await loadConfig({ path: configPath, warn: (m) => warnings.push(m) });
+    expect(warnings.some((w) => /notice_repeat/.test(w))).toBe(true);
+  });
+
+  test('valid config emits NO warnings', async () => {
+    const warnings: string[] = [];
+    writeFileSync(
+      configPath,
+      [
+        '[[context.notice_tiers]]',
+        'at = 150000',
+        'level = "consider"',
+        '',
+        '[context.notice_repeat]',
+        'every = 50000',
+        'level = "urgent"',
+        '',
+      ].join('\n'),
+    );
+    await loadConfig({ path: configPath, warn: (m) => warnings.push(m) });
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe('loadConfig — [exec.env] table', () => {
   test('[exec.env] with string values → execEnv map', async () => {
     writeFileSync(

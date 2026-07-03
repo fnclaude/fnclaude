@@ -59,9 +59,11 @@ export interface FnConfig {
    * means "no tier config present" (fall through to legacy
    * `notice_threshold` / built-in default). An explicitly-empty
    * `notice_tiers = []` with no repeat yields `{ tiers: [] }` — a disabled
-   * monitor. Invalid tier/repeat entries are dropped defensively; tiers
-   * are sorted ascending by `at` and de-duplicated. Precedence between
-   * this and `notice_threshold` lives in `resolveContextNoticeLadder`.
+   * monitor. Malformed tier/repeat entries are dropped BUT surface a warning
+   * (#331) — silent discarding gave the writer no signal that a bare-number
+   * `notice_repeat` never fires. Tiers are sorted ascending by `at` and
+   * de-duplicated. Precedence between this and `notice_threshold` lives in
+   * `resolveContextNoticeLadder`.
    */
   contextNoticeLadder: NoticeLadder | undefined;
   execEnv: Record<string, string> | undefined;
@@ -69,6 +71,12 @@ export interface FnConfig {
 
 export interface LoadConfigArgs {
   path: string;
+  /**
+   * Sink for config-validation warnings (#331) — malformed notice tier/repeat
+   * entries emit here instead of being silently dropped. Defaults to
+   * `console.warn` (stderr). Tests inject a capturing sink.
+   */
+  warn?: (message: string) => void;
 }
 
 const EMPTY: FnConfig = {
@@ -81,6 +89,7 @@ const EMPTY: FnConfig = {
 };
 
 export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
+  const warn = args.warn ?? ((m: string): void => console.warn(m));
   let isFile = false;
   try {
     isFile = statSync(args.path).isFile();
@@ -105,7 +114,7 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
     autoHandoff: pickAutoHandoff(root),
     autoSpawnCommand: pickAutoSpawnCommand(root),
     contextNoticeThreshold: pickContextNoticeThreshold(root),
-    contextNoticeLadder: pickContextNoticeLadder(root),
+    contextNoticeLadder: pickContextNoticeLadder(root, warn),
     execEnv: pickExecEnv(root),
   };
 }
@@ -116,10 +125,15 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
  * (neither key under `[context]`), so the resolver falls through to the
  * legacy `notice_threshold` / built-in default. An explicitly-empty
  * `notice_tiers = []` (with no repeat) yields `{ tiers: [] }` — a disabled
- * monitor. Invalid tier/repeat entries are dropped; tiers are sorted
- * ascending by `at` and de-duplicated.
+ * monitor. Malformed entries are dropped BUT emit a warning via `warn` (#331)
+ * rather than vanishing silently (a bare-number `notice_repeat` that isn't a
+ * `{ every, level }` table used to just never fire, with zero signal); tiers
+ * are sorted ascending by `at` and de-duplicated.
  */
-function pickContextNoticeLadder(root: Record<string, unknown>): NoticeLadder | undefined {
+function pickContextNoticeLadder(
+  root: Record<string, unknown>,
+  warn: (message: string) => void,
+): NoticeLadder | undefined {
   const context = root.context;
   if (context === null || typeof context !== 'object' || Array.isArray(context)) return undefined;
   const ctx = context as Record<string, unknown>;
@@ -131,29 +145,58 @@ function pickContextNoticeLadder(root: Record<string, unknown>): NoticeLadder | 
   if (!hasTiers && !hasRepeat) return undefined;
 
   const tiers: NoticeTier[] = [];
-  if (Array.isArray(rawTiers)) {
+  if (hasTiers && !Array.isArray(rawTiers)) {
+    warn(
+      `[fnclaude] config: [[context.notice_tiers]] must be an array of { at, level } tables (got ${typeof rawTiers}) — ignoring.`,
+    );
+  } else if (Array.isArray(rawTiers)) {
     const seen = new Set<number>();
-    for (const entry of rawTiers) {
-      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    rawTiers.forEach((entry, i) => {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        warn(`[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} is not a table — ignoring.`);
+        return;
+      }
       const e = entry as Record<string, unknown>;
       const at = e.at;
-      const level = e.level;
-      if (typeof at !== 'number' || !Number.isFinite(at) || at <= 0) continue;
-      if (!isNoticeLevel(level)) continue;
-      if (seen.has(at)) continue;
+      if (typeof at !== 'number' || !Number.isFinite(at) || at <= 0) {
+        warn(
+          `[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`at\` (expected a positive token count, got ${JSON.stringify(at)}) — ignoring.`,
+        );
+        return;
+      }
+      if (!isNoticeLevel(e.level)) {
+        warn(
+          `[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`level\` (${JSON.stringify(e.level)}); expected one of consider|plan|now|urgent — ignoring.`,
+        );
+        return;
+      }
+      if (seen.has(at)) return;
       seen.add(at);
-      tiers.push({ at, level });
-    }
+      tiers.push({ at, level: e.level });
+    });
     tiers.sort((a, b) => a.at - b.at);
   }
 
   let repeat: NoticeRepeat | undefined;
-  if (rawRepeat !== null && typeof rawRepeat === 'object' && !Array.isArray(rawRepeat)) {
-    const r = rawRepeat as Record<string, unknown>;
-    const every = r.every;
-    const level = r.level;
-    if (typeof every === 'number' && Number.isFinite(every) && every > 0 && isNoticeLevel(level)) {
-      repeat = { every, level };
+  if (hasRepeat) {
+    if (rawRepeat === null || typeof rawRepeat !== 'object' || Array.isArray(rawRepeat)) {
+      warn(
+        `[fnclaude] config: [context.notice_repeat] must be a table { every, level } (got ${Array.isArray(rawRepeat) ? 'array' : typeof rawRepeat}) — ignoring. See the [context] section in the README.`,
+      );
+    } else {
+      const r = rawRepeat as Record<string, unknown>;
+      const every = r.every;
+      if (typeof every !== 'number' || !Number.isFinite(every) || every <= 0) {
+        warn(
+          `[fnclaude] config: [context.notice_repeat] has invalid \`every\` (expected a positive token count, got ${JSON.stringify(every)}) — ignoring.`,
+        );
+      } else if (!isNoticeLevel(r.level)) {
+        warn(
+          `[fnclaude] config: [context.notice_repeat] has invalid \`level\` (${JSON.stringify(r.level)}); expected one of consider|plan|now|urgent — ignoring.`,
+        );
+      } else {
+        repeat = { every, level: r.level };
+      }
     }
   }
 
