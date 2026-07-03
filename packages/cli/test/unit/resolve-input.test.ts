@@ -284,6 +284,23 @@ describe('resolveInput — dual lookup ambiguity', () => {
     const r = assertKind(resolveInput(args({ input: 'fnrhombus/arch-setup' })), 'launch');
     expect(r.launchCwd).toBe(join(SHELL_CWD, 'fnrhombus/arch-setup'));
   });
+
+  // Issue #239: when the local path candidate and the clone destination
+  // resolve to the SAME on-disk directory, there is nothing ambiguous — it's
+  // one directory reachable by two names. The old code returned `ambiguous`
+  // and main.ts rendered "the local directory X OR X" with two identical
+  // paths, wrongly rejecting valid input. Collapse to a single launch instead.
+  test('name@owner where local path === clone destination → launch, NOT ambiguous', () => {
+    // Run from ~/src with cloneTemplate ~/src/{repo}@{owner}: join(shellCwd,
+    // input) and computeCloneDestination() land on the identical path.
+    const srcDir = join(HOME, 'src');
+    const target = join(srcDir, 'arch-setup@fnrhombus');
+    mkdirSync(target, { recursive: true });
+    const r = resolveInput(args({ input: 'arch-setup@fnrhombus', shellCwd: srcDir }));
+    expect(r.kind).not.toBe('ambiguous');
+    const launch = assertKind(r, 'launch');
+    expect(launch.launchCwd).toBe(target);
+  });
 });
 
 describe('resolveInput — workspace suffix propagation', () => {
