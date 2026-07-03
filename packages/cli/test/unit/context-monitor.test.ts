@@ -32,6 +32,7 @@ import {
   createContextMonitor,
   formatContextNotice,
   resolveContextNoticeLadder,
+  resolveLadderSpec,
   startContextMonitor,
 } from '../../src/usage/context-monitor';
 
@@ -48,8 +49,20 @@ function noticeWrites(body: string): string[] {
   return [`\x1b[200~${body}\x1b[201~`, '\r'];
 }
 
-/** The default ladder used in most tests: 150k/200k/250k + repeat 50k urgent. */
-const defaultLadder = DEFAULT_NOTICE_LADDER;
+/**
+ * The numeric ladder used in most state-machine tests: 150k/200k/250k +
+ * repeat 50k urgent. Kept explicit (NOT aliased to DEFAULT_NOTICE_LADDER,
+ * which is now a percentage spec per #332) so these tests exercise concrete
+ * absolute token crossings independent of any derived auto-compact threshold.
+ */
+const defaultLadder = {
+  tiers: [
+    { at: 150_000, level: 'consider' as NoticeLevel },
+    { at: 200_000, level: 'plan' as NoticeLevel },
+    { at: 250_000, level: 'now' as NoticeLevel },
+  ],
+  repeat: { every: 50_000, level: 'urgent' as NoticeLevel },
+};
 
 describe('formatContextNotice — per-level bodies', () => {
   test('consider body, tokens rounded to nearest k', () => {
@@ -452,6 +465,141 @@ describe('resolveContextNoticeLadder — precedence + legacy', () => {
       env: { [CONTEXT_NOTICE_THRESHOLD_ENV]: 'nope' },
     });
     expect(ladder).toEqual(DEFAULT_NOTICE_LADDER);
+  });
+});
+
+describe('resolveLadderSpec — percent → absolute against a derived threshold (#332)', () => {
+  test('percent tiers resolve to absolute token counts', () => {
+    const spec = {
+      tiers: [
+        { at: { pct: 76 }, level: 'consider' as NoticeLevel },
+        { at: { pct: 94 }, level: 'urgent' as NoticeLevel },
+      ],
+      repeat: { every: { pct: 2.5 }, level: 'urgent' as NoticeLevel },
+    };
+    // 100% = 934000 (default 1M cli session).
+    expect(resolveLadderSpec(spec, 934_000)).toEqual({
+      tiers: [
+        { at: Math.round(0.76 * 934_000), level: 'consider' },
+        { at: Math.round(0.94 * 934_000), level: 'urgent' },
+      ],
+      repeat: { every: Math.round(0.025 * 934_000), level: 'urgent' },
+    });
+  });
+
+  test('SAME spec self-adjusts to a 500k surface threshold', () => {
+    const spec = { tiers: [{ at: { pct: 94 }, level: 'urgent' as NoticeLevel }] };
+    expect(resolveLadderSpec(spec, 467_000)).toEqual({
+      tiers: [{ at: Math.round(0.94 * 467_000), level: 'urgent' }],
+    });
+  });
+
+  test('absolute tiers pass through unchanged regardless of threshold', () => {
+    const spec = { tiers: [{ at: 150_000, level: 'consider' as NoticeLevel }] };
+    expect(resolveLadderSpec(spec, 934_000)).toEqual({ tiers: [{ at: 150_000, level: 'consider' }] });
+    expect(resolveLadderSpec(spec, null)).toEqual({ tiers: [{ at: 150_000, level: 'consider' }] });
+  });
+
+  test('a null threshold DROPS percent tiers (window not yet known) but keeps absolutes', () => {
+    const spec = {
+      tiers: [
+        { at: 150_000, level: 'consider' as NoticeLevel },
+        { at: { pct: 94 }, level: 'urgent' as NoticeLevel },
+      ],
+      repeat: { every: { pct: 2.5 }, level: 'urgent' as NoticeLevel },
+    };
+    expect(resolveLadderSpec(spec, null)).toEqual({ tiers: [{ at: 150_000, level: 'consider' }] });
+  });
+});
+
+describe('DEFAULT_NOTICE_LADDER — shipped percentage ladder (#332)', () => {
+  test('is the 76/82/88/94% + 2.5% repeat ladder', () => {
+    expect(DEFAULT_NOTICE_LADDER).toEqual({
+      tiers: [
+        { at: { pct: 76 }, level: 'consider' },
+        { at: { pct: 82 }, level: 'plan' },
+        { at: { pct: 88 }, level: 'now' },
+        { at: { pct: 94 }, level: 'urgent' },
+      ],
+      repeat: { every: { pct: 2.5 }, level: 'urgent' },
+    });
+  });
+});
+
+describe('startContextMonitor — percent ladder resolves against the live model (#332)', () => {
+  test('fires the urgent tier at 94% of the derived 1M threshold', () => {
+    const spy = spyWriter();
+    let cb: (() => void) | null = null;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    // A 1M-class model → threshold 934000 → 94% = 877960. Feed a reading just
+    // above that; the urgent tier must fire.
+    startContextMonitor({
+      launchCWD: '/tmp/x',
+      ladder: DEFAULT_NOTICE_LADDER,
+      write: spy.write,
+      intervalMs: 10,
+      schedule: syncSchedule,
+      setIntervalFn: fakeSetInterval,
+      readContext: () => ({ tokens: 880_000, model: 'claude-opus-4-8[1m]' }),
+      deriveThreshold: (model) => (model.endsWith('[1m]') ? 934_000 : 167_000),
+    });
+
+    cb?.();
+    expect(spy.calls.some((c) => c.includes('[urgent]'))).toBe(true);
+  });
+
+  test('SAME percent ladder fires urgent much lower on a 500k surface model', () => {
+    const spy = spyWriter();
+    let cb: (() => void) | null = null;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    // threshold 467000 → 94% = 438980. 500k reading is well past urgent; a
+    // reading at 300k (below 88% = 411k, above 82%*? no) — pick 445k → urgent.
+    startContextMonitor({
+      launchCWD: '/tmp/x',
+      ladder: DEFAULT_NOTICE_LADDER,
+      write: spy.write,
+      intervalMs: 10,
+      schedule: syncSchedule,
+      setIntervalFn: fakeSetInterval,
+      readContext: () => ({ tokens: 445_000, model: 'claude-opus-4-8[1m]' }),
+      deriveThreshold: () => 467_000,
+    });
+
+    cb?.();
+    // 445k > 94% (438980) of the 467k threshold → urgent fires; on a 1M
+    // threshold 445k would be below even the 76% tier (710k) → nothing.
+    expect(spy.calls.some((c) => c.includes('[urgent]'))).toBe(true);
+  });
+
+  test('stays silent while the model (hence threshold) is unknown', () => {
+    const spy = spyWriter();
+    let cb: (() => void) | null = null;
+    const fakeSetInterval = ((fn: () => void) => {
+      cb = fn;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as unknown as typeof setInterval;
+
+    startContextMonitor({
+      launchCWD: '/tmp/x',
+      ladder: DEFAULT_NOTICE_LADDER,
+      write: spy.write,
+      intervalMs: 10,
+      schedule: syncSchedule,
+      setIntervalFn: fakeSetInterval,
+      readContext: () => ({ tokens: 900_000, model: null }),
+      deriveThreshold: () => 934_000,
+    });
+
+    cb?.();
+    expect(spy.calls).toEqual([]);
   });
 });
 

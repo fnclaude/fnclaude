@@ -29,9 +29,10 @@
 import { statSync } from 'node:fs';
 
 import {
-  type NoticeLadder,
-  type NoticeRepeat,
-  type NoticeTier,
+  type NoticeLadderSpec,
+  type NoticeRepeatSpec,
+  type NoticeTierSpec,
+  type PctThreshold,
   isNoticeLevel,
 } from '../usage/context-monitor';
 
@@ -59,13 +60,13 @@ export interface FnConfig {
    * means "no tier config present" (fall through to legacy
    * `notice_threshold` / built-in default). An explicitly-empty
    * `notice_tiers = []` with no repeat yields `{ tiers: [] }` — a disabled
-   * monitor. Malformed tier/repeat entries are dropped BUT surface a warning
-   * (#331) — silent discarding gave the writer no signal that a bare-number
-   * `notice_repeat` never fires. Tiers are sorted ascending by `at` and
-   * de-duplicated. Precedence between this and `notice_threshold` lives in
-   * `resolveContextNoticeLadder`.
+   * monitor. Each `at`/`every` is either a bare integer (absolute tokens) or a
+   * quoted `"NN%"` percentage of the derived auto-compact point (#332).
+   * Malformed tier/repeat entries are dropped BUT surface a warning (#331) —
+   * silent discarding gave the writer no signal. Precedence between this and
+   * `notice_threshold` lives in `resolveContextNoticeLadder`.
    */
-  contextNoticeLadder: NoticeLadder | undefined;
+  contextNoticeLadder: NoticeLadderSpec | undefined;
   execEnv: Record<string, string> | undefined;
 }
 
@@ -120,20 +121,52 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
 }
 
 /**
+ * Parse one `at`/`every` threshold value: a bare positive finite number
+ * (absolute tokens) OR a quoted `"NN%"` string → {@link PctThreshold}. `%`
+ * values are NOT capped above 100% (auto-compact-disabled sessions climb past
+ * the wall, #332). Returns `undefined` for anything invalid, with `reason`
+ * describing why (for the caller's warning).
+ */
+function parseThresholdValue(v: unknown): { value: number | PctThreshold } | { reason: string } {
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v) || v <= 0) return { reason: `numeric threshold must be positive, got ${v}` };
+    return { value: v };
+  }
+  if (typeof v === 'string') {
+    const m = /^\s*([0-9]*\.?[0-9]+)\s*%\s*$/.exec(v);
+    if (m === null) return { reason: `string threshold must be an "NN%" percentage, got ${JSON.stringify(v)}` };
+    const pct = Number(m[1]);
+    if (!Number.isFinite(pct) || pct <= 0) return { reason: `percentage must be positive, got ${JSON.stringify(v)}` };
+    return { value: { pct } };
+  }
+  return { reason: `threshold must be a number or "NN%" string, got ${typeof v}` };
+}
+
+/** Sort/dedup key for a threshold value (absolute vs percent kept distinct). */
+function thresholdKey(v: number | PctThreshold): string {
+  return typeof v === 'number' ? `abs:${v}` : `pct:${v.pct}`;
+}
+
+/** Numeric sort key: absolute by tokens, percent by its number. */
+function thresholdSortKey(v: number | PctThreshold): number {
+  return typeof v === 'number' ? v : v.pct;
+}
+
+/**
  * Parse `[[context.notice_tiers]]` + `[context.notice_repeat]` into a
- * {@link NoticeLadder}. Returns undefined when NO tier config is present
+ * {@link NoticeLadderSpec}. Returns undefined when NO tier config is present
  * (neither key under `[context]`), so the resolver falls through to the
  * legacy `notice_threshold` / built-in default. An explicitly-empty
  * `notice_tiers = []` (with no repeat) yields `{ tiers: [] }` — a disabled
- * monitor. Malformed entries are dropped BUT emit a warning via `warn` (#331)
- * rather than vanishing silently (a bare-number `notice_repeat` that isn't a
- * `{ every, level }` table used to just never fire, with zero signal); tiers
- * are sorted ascending by `at` and de-duplicated.
+ * monitor. Each `at`/`every` may be a bare integer (absolute tokens) or a
+ * quoted `"NN%"` percentage (#332). Malformed entries are dropped BUT emit a
+ * warning via `warn` (#331) rather than vanishing silently; tiers are sorted
+ * ascending and de-duplicated by threshold.
  */
 function pickContextNoticeLadder(
   root: Record<string, unknown>,
   warn: (message: string) => void,
-): NoticeLadder | undefined {
+): NoticeLadderSpec | undefined {
   const context = root.context;
   if (context === null || typeof context !== 'object' || Array.isArray(context)) return undefined;
   const ctx = context as Record<string, unknown>;
@@ -144,24 +177,22 @@ function pickContextNoticeLadder(
   const hasRepeat = rawRepeat !== undefined;
   if (!hasTiers && !hasRepeat) return undefined;
 
-  const tiers: NoticeTier[] = [];
+  const tiers: NoticeTierSpec[] = [];
   if (hasTiers && !Array.isArray(rawTiers)) {
     warn(
       `[fnclaude] config: [[context.notice_tiers]] must be an array of { at, level } tables (got ${typeof rawTiers}) — ignoring.`,
     );
   } else if (Array.isArray(rawTiers)) {
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     rawTiers.forEach((entry, i) => {
       if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
         warn(`[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} is not a table — ignoring.`);
         return;
       }
       const e = entry as Record<string, unknown>;
-      const at = e.at;
-      if (typeof at !== 'number' || !Number.isFinite(at) || at <= 0) {
-        warn(
-          `[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`at\` (expected a positive token count, got ${JSON.stringify(at)}) — ignoring.`,
-        );
+      const parsed = parseThresholdValue(e.at);
+      if ('reason' in parsed) {
+        warn(`[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`at\` (${parsed.reason}) — ignoring.`);
         return;
       }
       if (!isNoticeLevel(e.level)) {
@@ -170,14 +201,15 @@ function pickContextNoticeLadder(
         );
         return;
       }
-      if (seen.has(at)) return;
-      seen.add(at);
-      tiers.push({ at, level: e.level });
+      const key = thresholdKey(parsed.value);
+      if (seen.has(key)) return;
+      seen.add(key);
+      tiers.push({ at: parsed.value, level: e.level });
     });
-    tiers.sort((a, b) => a.at - b.at);
+    tiers.sort((a, b) => thresholdSortKey(a.at) - thresholdSortKey(b.at));
   }
 
-  let repeat: NoticeRepeat | undefined;
+  let repeat: NoticeRepeatSpec | undefined;
   if (hasRepeat) {
     if (rawRepeat === null || typeof rawRepeat !== 'object' || Array.isArray(rawRepeat)) {
       warn(
@@ -185,17 +217,15 @@ function pickContextNoticeLadder(
       );
     } else {
       const r = rawRepeat as Record<string, unknown>;
-      const every = r.every;
-      if (typeof every !== 'number' || !Number.isFinite(every) || every <= 0) {
-        warn(
-          `[fnclaude] config: [context.notice_repeat] has invalid \`every\` (expected a positive token count, got ${JSON.stringify(every)}) — ignoring.`,
-        );
+      const parsed = parseThresholdValue(r.every);
+      if ('reason' in parsed) {
+        warn(`[fnclaude] config: [context.notice_repeat] has invalid \`every\` (${parsed.reason}) — ignoring.`);
       } else if (!isNoticeLevel(r.level)) {
         warn(
           `[fnclaude] config: [context.notice_repeat] has invalid \`level\` (${JSON.stringify(r.level)}); expected one of consider|plan|now|urgent — ignoring.`,
         );
       } else {
-        repeat = { every, level: r.level };
+        repeat = { every: parsed.value, level: r.level };
       }
     }
   }
