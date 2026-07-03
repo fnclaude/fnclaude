@@ -20,7 +20,7 @@
  * See specs.md §18.1 for the user-facing description.
  */
 
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 import { expandTilde, noopDir } from '../path/resolve';
@@ -79,6 +79,24 @@ export type ResolveResult =
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Do two paths point at the same on-disk location? A cheap string equality
+ * catches the common case (both already normalized by `join`/`expandTilde`);
+ * `realpathSync` additionally collapses symlinks and any residual `.`/`..`
+ * segments so a path reached through a symlinked prefix isn't mistaken for a
+ * distinct directory. Callers pass paths that are known to exist, but guard
+ * the realpath calls anyway — a race that removes one between the existence
+ * check and here just means "treat as different", which is the safe default.
+ */
+function sameLocation(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    return realpathSync(a) === realpathSync(b);
   } catch {
     return false;
   }
@@ -198,7 +216,15 @@ export function resolveInput(args: ResolveInputArgs): ResolveResult {
   const destExists = isDirectory(destination);
 
   if (pathExists && destExists) {
-    return { kind: 'ambiguous', path: pathCandidate, cloneDestination: destination };
+    // Only ambiguous if the two candidates are genuinely different places.
+    // When `join(shellCwd, input)` and the clone destination resolve to the
+    // same directory (e.g. `fnc name@owner` run from the very dir the
+    // cloneTemplate expands into), there's one target reachable by two names —
+    // collapse to a single launch instead of erroring "the local directory X
+    // OR X" against identical paths (issue #239).
+    if (!sameLocation(pathCandidate, destination)) {
+      return { kind: 'ambiguous', path: pathCandidate, cloneDestination: destination };
+    }
   }
   if (pathExists) {
     return {
