@@ -20,6 +20,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createSpawnHandler } from '../../src/mcp/handlers/spawn';
 import type { SpawnFn } from '../../src/handoff/spawn-launcher';
@@ -380,6 +383,53 @@ describe('createSpawnHandler — applyOverrides(nil, req)', () => {
     });
 
     expect(calls[0]?.argv).toEqual(['tmux', 'new-window', '-d', '/fnc', 'd']);
+  });
+});
+
+// ── 3b. production summary writer (no injected seam) ──────────────────
+
+describe('createSpawnHandler — production summary writer (real writeSummaryFile)', () => {
+  test('no injected writeSummaryFile → summary persisted, string path threaded, done', async () => {
+    // Exercises the PRODUCTION adapter that wraps the real
+    // writeSummaryFile. Every other test injects `writeSummaryFile`,
+    // which bypasses that adapter — this is the wiring #237 breaks:
+    // the adapter must forward `{ summary }` (not `{ content }`) and
+    // unwrap the returned `{ path }` to a plain string.
+    const dir = mkdtempSync(join(tmpdir(), 'fnc-spawn-prod-'));
+    const prevXdg = process.env.XDG_RUNTIME_DIR;
+    process.env.XDG_RUNTIME_DIR = dir;
+    try {
+      const { spawn, calls } = recordingSpawn();
+      const handler = createSpawnHandler({
+        config: {
+          autoSpawnCommand: 'tmux new-window -d {bin} {dest} --name {name} @{summary}',
+        },
+        processEnv: {},
+        fncBinPath: '/fnc',
+        spawnLauncher: spawn,
+        // writeSummaryFile intentionally NOT injected.
+      });
+
+      const summary = 'production summary content\nline two\n';
+      const r = await handler({ op: 'spawn', destination: 'd', name: 'n', summary });
+
+      expect(r.action).toBe('done');
+      expect(calls).toHaveLength(1);
+
+      // The threaded summary token must be `@<string path>` pointing at a
+      // real file containing the summary — not `@[object Object]` (unwrap
+      // bug) and not an errored-out no-write.
+      const argv = calls[0]?.argv ?? [];
+      const summaryToken = argv[argv.length - 1] ?? '';
+      expect(summaryToken.startsWith('@')).toBe(true);
+      const summaryPath = summaryToken.slice(1);
+      expect(existsSync(summaryPath)).toBe(true);
+      expect(readFileSync(summaryPath, 'utf8')).toBe(summary);
+    } finally {
+      if (prevXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = prevXdg;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
