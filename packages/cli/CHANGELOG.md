@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.14.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.2...cli-v2.14.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** inject one-shot system prompt for non-streaming -p ([#260](https://github.com/fnclaude/fnclaude/issues/260)) ([3b66cec](https://github.com/fnclaude/fnclaude/commit/3b66cecd0deb33d3f8edd1cf3008cf46b7e38cfb))
+* **cli:** replumb control injection through a tagged seam ([#299](https://github.com/fnclaude/fnclaude/issues/299)) ([#305](https://github.com/fnclaude/fnclaude/issues/305)) ([a1c6d38](https://github.com/fnclaude/fnclaude/commit/a1c6d38ad11c0120016d645023e3de797ac0a032))
+* fnc-native //slash-command framework with //restart ([#315](https://github.com/fnclaude/fnclaude/issues/315)) ([4fb14c5](https://github.com/fnclaude/fnclaude/commit/4fb14c523d4d1e1bf6fa8e23cb2a0046b2877510))
+* GitHub [@mention](https://github.com/mention) / #ref / commit-SHA autolinks in the renderer ([#278](https://github.com/fnclaude/fnclaude/issues/278)) ([19423b4](https://github.com/fnclaude/fnclaude/commit/19423b4c66ee38a3aa561201a3c415d82c8d9914))
+
+
+### Bug Fixes
+
+* **cli:** dedup identical resolver candidates before ambiguity check ([#335](https://github.com/fnclaude/fnclaude/issues/335)) ([c945b1a](https://github.com/fnclaude/fnclaude/commit/c945b1a022a9a1482e7dcc37cc890354c7ffd6c6))
+* **cli:** derive worktree-sibling marker from config, not hardcoded + ([#247](https://github.com/fnclaude/fnclaude/issues/247)) ([448ea2f](https://github.com/fnclaude/fnclaude/commit/448ea2f2a8edf1aa9865d3176cd3f7d64891f4a4))
+* **cli:** ignore synthetic-zero context readings in the ctx monitor ([#286](https://github.com/fnclaude/fnclaude/issues/286)) ([c490519](https://github.com/fnclaude/fnclaude/commit/c490519de7a34da8555c81966600112193d0df11))
+* **cli:** pass summary string through spawn write-summary adapter ([#334](https://github.com/fnclaude/fnclaude/issues/334)) ([261def7](https://github.com/fnclaude/fnclaude/commit/261def70acc58dd7737c7b03988809f01866351e)), closes [#237](https://github.com/fnclaude/fnclaude/issues/237)
+* **cli:** pin context monitor to its own session id, not oldest-mtime ([#274](https://github.com/fnclaude/fnclaude/issues/274)) ([c3efa95](https://github.com/fnclaude/fnclaude/commit/c3efa95d6cf8937f702c92a3817997bcbdb46c63))
+* **cli:** re-resolve fnc from PATH when captured bin path is gone ([#255](https://github.com/fnclaude/fnclaude/issues/255)) ([a1a66c9](https://github.com/fnclaude/fnclaude/commit/a1a66c9267b28bd4a61ad2a941837b4518907644))
+
 ## [2.13.2](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.1...cli-v2.13.2) (2026-06-26)
 
 
