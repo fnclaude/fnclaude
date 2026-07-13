@@ -565,7 +565,7 @@ export function createPinnedContextReader(
 }
 
 /** Default delay (ms) before a compact follow_up submits. See {@link createCompactFollowUpGate}. */
-export const COMPACT_FOLLOWUP_DELAY_MS = 10_000;
+export const COMPACT_FOLLOWUP_DELAY_MS = 60_000;
 
 /** Seams for {@link createCompactFollowUpGate} — injectable for fake-clock unit tests. */
 export interface CreateCompactFollowUpGateArgs {
@@ -591,9 +591,9 @@ export interface CreateCompactFollowUpGateArgs {
  *
  * Compaction reliably takes a while. Landing the follow_up LATE is harmless
  * (the TUI queues it); landing it EARLY is the bug. So instead of trying to
- * detect an unobservable "accepted" edge, we just wait a fixed window long
- * enough that compaction is comfortably in progress. No disk reads, no poll
- * loop, no false positives.
+ * detect an unobservable "accepted" edge, we just wait a fixed 60s window —
+ * comfortably long enough that compaction is in progress. No disk reads, no
+ * poll loop, no false positives.
  *
  * The delay is unit-tested with a fake `sleep` (see context-monitor.test.ts)
  * — no real timers, no `~/.claude` touched.

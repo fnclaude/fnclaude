@@ -40,15 +40,21 @@ describe('request_compact (C1)', () => {
     expect(r).toEqual({ action: 'queued' });
     // The bug: a single bulk write of "/compact\r" is treated as a paste and
     // the trailing CR is swallowed. The fix submits the body bracketed-paste
-    // wrapped, then a SEPARATE bare CR so it lexes as a Return keypress.
-    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
+    // wrapped, then SEPARATE bare CRs so one lexes as a Return keypress. Control
+    // messages fire 3 retry CRs (a single CR after a large paste is unreliable).
+    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r', '\r', '\r']);
   });
 
-  test('instructions appended after the command, submitted as two writes', async () => {
+  test('instructions appended after the command, submitted as body + retry CRs', async () => {
     const spy = spyWriter();
     const handler = createRequestCompactHandler({ write: spy.write, schedule: syncSchedule });
     await handler({ op: 'compact', instructions: 'focus on the auth refactor' });
-    expect(spy.calls).toEqual(['\x1b[200~/compact focus on the auth refactor\x1b[201~', '\r']);
+    expect(spy.calls).toEqual([
+      '\x1b[200~/compact focus on the auth refactor\x1b[201~',
+      '\r',
+      '\r',
+      '\r',
+    ]);
   });
 
   test('follow_up is NOT written back-to-back — only /compact lands before the gate resolves', async () => {
@@ -70,20 +76,29 @@ describe('request_compact (C1)', () => {
     });
     expect(r).toEqual({ action: 'queued' });
     // ONLY /compact so far — the follow_up has NOT been written (never back-to-back).
-    expect(spy.calls).toEqual(['\x1b[200~/compact keep the renderer work\x1b[201~', '\r']);
+    expect(spy.calls).toEqual([
+      '\x1b[200~/compact keep the renderer work\x1b[201~',
+      '\r',
+      '\r',
+      '\r',
+    ]);
 
     // Resolve the gate; await the detached follow_up work.
     release();
     await tracked;
-    // Now the follow_up lands as its OWN two-write submit, AFTER /compact.
+    // Now the follow_up lands as its OWN submit (body + 3 retry CRs), AFTER /compact.
     expect(spy.calls).toEqual([
       '\x1b[200~/compact keep the renderer work\x1b[201~',
       '\r',
+      '\r',
+      '\r',
       '\x1b[200~now continue with step 3\x1b[201~',
+      '\r',
+      '\r',
       '\r',
     ]);
     // The follow_up body must NOT be a slash command.
-    expect(spy.calls[2]!.includes('/now')).toBe(false);
+    expect(spy.calls[4]!.includes('/now')).toBe(false);
   });
 
   test('short single-line follow_up is injected INLINE (no file spill)', async () => {
@@ -106,7 +121,11 @@ describe('request_compact (C1)', () => {
     expect(spy.calls).toEqual([
       '\x1b[200~/compact\x1b[201~',
       '\r',
+      '\r',
+      '\r',
       '\x1b[200~continue with step 3\x1b[201~',
+      '\r',
+      '\r',
       '\r',
     ]);
   });
@@ -132,7 +151,11 @@ describe('request_compact (C1)', () => {
     expect(spy.calls).toEqual([
       '\x1b[200~/compact\x1b[201~',
       '\r',
+      '\r',
+      '\r',
       '\x1b[200~@/tmp/fnc-followup-FIXED.md\x1b[201~',
+      '\r',
+      '\r',
       '\r',
     ]);
   });
@@ -154,7 +177,8 @@ describe('request_compact (C1)', () => {
     await handler({ op: 'compact', follow_up: 'line one\nline two' });
     await tracked;
     expect(spilled).toBe('line one\nline two');
-    expect(spy.calls[2]).toBe('\x1b[200~@/tmp/fnc-followup-ML.md\x1b[201~');
+    // /compact paste + 3 CRs occupy [0..3]; the follow_up @file paste is [4].
+    expect(spy.calls[4]).toBe('\x1b[200~@/tmp/fnc-followup-ML.md\x1b[201~');
   });
 
   test('empty/whitespace follow_up is ignored — only /compact is written', async () => {
@@ -165,7 +189,7 @@ describe('request_compact (C1)', () => {
       followUpGate: async () => {},
     });
     await handler({ op: 'compact', follow_up: '   ' });
-    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r']);
+    expect(spy.calls).toEqual(['\x1b[200~/compact\x1b[201~', '\r', '\r', '\r']);
   });
 
   test('captures no output — response carries only action', async () => {

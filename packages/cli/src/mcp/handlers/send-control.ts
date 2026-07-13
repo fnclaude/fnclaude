@@ -37,7 +37,17 @@
  * it takes the holder's `sendControl` now and the real seam is bound later.
  */
 
-import { injectSubmittedLine, type PtyWriter } from './inject-slash';
+import { DEFAULT_CR_INTERVAL_MS, injectSubmittedLine, type PtyWriter } from './inject-slash';
+
+/**
+ * How many submit CRs a control message fires. Control bodies (notices,
+ * `/compact`, follow-ups) are often long, and a single CR after a large paste
+ * is unreliably swallowed while claude ingests it — so we re-send the submit a
+ * few times, draft-guarded, until it takes. See {@link createPtyControlSeam}.
+ */
+const CONTROL_CR_COUNT = 3;
+/** Gap (ms) between a control message's successive retry CRs. */
+const CONTROL_CR_INTERVAL_MS = DEFAULT_CR_INTERVAL_MS;
 
 /** The closed set of control-message kinds the seam tags. */
 export type ControlKind = 'notice' | 'compact' | 'followup';
@@ -55,10 +65,14 @@ export type SendControl = (kind: ControlKind, text: string) => void;
 export interface CreatePtyControlSeamArgs {
   /** The PTY input sink (`Bun.Terminal.write` wrapper in production). */
   write: PtyWriter;
-  /** Timer seam threaded into {@link injectSubmittedLine} for the separate CR. */
+  /** Timer seam threaded into {@link injectSubmittedLine} for the separate CR(s). */
   schedule?: (fn: () => void, ms: number) => void;
-  /** Gap before the CR write, threaded into {@link injectSubmittedLine}. */
+  /** Gap before the first CR write, threaded into {@link injectSubmittedLine}. */
   enterDelayMs?: number;
+  /** How many retry CRs each control message fires. Defaults to {@link CONTROL_CR_COUNT}. */
+  crCount?: number;
+  /** Gap between successive retry CRs. Defaults to {@link CONTROL_CR_INTERVAL_MS}. */
+  crIntervalMs?: number;
 }
 
 /** PTY-mode control seam plus the draft-tracking input observer. */
@@ -101,22 +115,35 @@ function lastLineEndIndex(chunk: string): number {
  * Build the PTY-mode control seam.
  *
  * `sendControl` submits the message via {@link injectSubmittedLine} (bracketed-
- * paste body + a separate CR) — UNLESS the user currently has a partially-typed
+ * paste body + separate CRs) — UNLESS the user currently has a partially-typed
  * line in flight, in which case it is queued and flushed once the user submits
  * or clears the line. This is what stops a notice from splicing into a draft.
+ *
+ * Retry + draft guard. Control bodies are often long, and a single CR after a
+ * large paste is unreliably swallowed while claude ingests it (the submit is
+ * dropped and the line never sends). So each control message fires
+ * {@link CONTROL_CR_COUNT} CRs spaced {@link CONTROL_CR_INTERVAL_MS} apart via
+ * `injectSubmittedLine`, retrying the submit until it takes. The retry is
+ * draft-guarded through `shouldSubmit: () => !drafting`, re-checked at each CR's
+ * fire time: the moment the user starts typing, the remaining retry CRs are
+ * skipped so a late Return can't submit their fresh draft.
  *
  * The PTY wire carries only the body bytes (behavior unchanged for the user);
  * the {@link ControlKind} marker is the in-process contract this seam upholds
  * and is what travels structurally in renderer mode.
  */
 export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControlSeam {
+  let drafting = false;
+  const queue: ControlEnvelope[] = [];
   const injectDeps = {
     write: args.write,
     schedule: args.schedule,
     enterDelayMs: args.enterDelayMs,
+    crCount: args.crCount ?? CONTROL_CR_COUNT,
+    crIntervalMs: args.crIntervalMs ?? CONTROL_CR_INTERVAL_MS,
+    // Re-checked at each CR's fire time — skip a retry once the user drafts.
+    shouldSubmit: (): boolean => !drafting,
   };
-  let drafting = false;
-  const queue: ControlEnvelope[] = [];
 
   function inject(env: ControlEnvelope): void {
     injectSubmittedLine(env.text, injectDeps);

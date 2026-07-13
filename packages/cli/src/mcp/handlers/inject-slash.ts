@@ -66,22 +66,40 @@ const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
 /** Bare carriage return — the Return keypress claude's line editor submits on. */
 const SUBMIT_CR = '\r';
-/** Default gap (ms) between the pasted body and the separate submit CR. */
+/** Default gap (ms) between the pasted body and the first submit CR. */
 const DEFAULT_ENTER_DELAY_MS = 10;
+/** Default gap (ms) between successive submit CRs when `crCount` > 1. */
+export const DEFAULT_CR_INTERVAL_MS = 1000;
 
 /**
  * Seams for {@link injectSubmittedLine}. `write` is the PTY sink; `schedule`
- * and `enterDelayMs` exist so unit tests can run the two writes
- * synchronously (`schedule: (fn) => fn()`) and assert their exact order
- * without a real timer.
+ * and `enterDelayMs` exist so unit tests can run the writes synchronously
+ * (`schedule: (fn) => fn()`) and assert their exact order without a real timer.
+ * `crCount`/`crIntervalMs`/`shouldSubmit` drive the retry-CR behavior (see
+ * {@link injectSubmittedLine}); all default to the single-CR-immediately shape
+ * so existing callers are unchanged.
  */
 export interface InjectSubmittedLineDeps {
   /** The PTY input sink. */
   write: PtyWriter;
-  /** Timer seam for the separate CR write. Defaults to {@link setTimeout}. */
+  /** Timer seam for the separate CR write(s). Defaults to {@link setTimeout}. */
   schedule?: (fn: () => void, ms: number) => void;
-  /** Gap before the CR write. Defaults to {@link DEFAULT_ENTER_DELAY_MS}. */
+  /** Gap before the FIRST CR write. Defaults to {@link DEFAULT_ENTER_DELAY_MS}. */
   enterDelayMs?: number;
+  /**
+   * How many submit CRs to fire (clamped to ≥ 1). Default 1 — the generic
+   * slash tools keep the single-CR behavior. Control messages pass > 1 so a
+   * submit swallowed while claude ingests a large paste is retried.
+   */
+  crCount?: number;
+  /** Gap between successive CRs when `crCount` > 1. Defaults to {@link DEFAULT_CR_INTERVAL_MS}. */
+  crIntervalMs?: number;
+  /**
+   * Checked at EACH CR's fire time; the CR is skipped when it returns false.
+   * Default `() => true`. Callers wire this to a "user is drafting" predicate
+   * so a late retry CR never submits a line the user has since started typing.
+   */
+  shouldSubmit?: () => boolean;
 }
 
 /**
@@ -100,15 +118,33 @@ export interface InjectSubmittedLineDeps {
  *   2. after a short delay, writes a bare `\r` as a SEPARATE write so it
  *      lexes as a standalone Return keypress and submits the pasted line.
  *
- * The two MUST be separate writes with a gap between them. Fire-and-forget:
- * returns once the body is written; the CR is scheduled, not awaited.
+ * The body and the CR MUST be separate writes with a gap between them.
+ *
+ * Retry CRs. A SINGLE CR after a large paste is unreliable: for a long body
+ * the Return fires while claude is still ingesting/collapsing the paste, so it
+ * is swallowed and the line never submits (observed live — sometimes it only
+ * lands when the next injection appends to the buffer, merging two turns). When
+ * `crCount` > 1 we therefore fire that many CRs, spaced `crIntervalMs` apart
+ * (`enterDelayMs + i*crIntervalMs`), so a stuck submit gets re-sent until it
+ * takes. `shouldSubmit` is re-checked at each CR's fire time and skips that CR
+ * when false — the guard that stops a LATE retry from submitting a line the
+ * user has since started typing (their fresh draft). `crCount` is clamped to
+ * ≥ 1. Fire-and-forget: returns once the body is written; the CRs are
+ * scheduled, not awaited.
  */
 export function injectSubmittedLine(text: string, deps: InjectSubmittedLineDeps): void {
   const schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const enterDelayMs = deps.enterDelayMs ?? DEFAULT_ENTER_DELAY_MS;
+  const crIntervalMs = deps.crIntervalMs ?? DEFAULT_CR_INTERVAL_MS;
+  const crCount = Math.max(1, deps.crCount ?? 1);
+  const shouldSubmit = deps.shouldSubmit ?? ((): boolean => true);
 
   deps.write(`${PASTE_START}${text}${PASTE_END}`);
-  schedule(() => deps.write(SUBMIT_CR), enterDelayMs);
+  for (let i = 0; i < crCount; i++) {
+    schedule(() => {
+      if (shouldSubmit()) deps.write(SUBMIT_CR);
+    }, enterDelayMs + i * crIntervalMs);
+  }
 }
 
 /**
