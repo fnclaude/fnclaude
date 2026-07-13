@@ -26,9 +26,22 @@ import {
 /** Synchronous schedule so the separate CR write lands deterministically. */
 const syncSchedule = (fn: () => void): void => fn();
 
-/** The two writes injectSubmittedLine produces for one submitted line. */
-function submitWrites(body: string): string[] {
-  return [`\x1b[200~${body}\x1b[201~`, '\r'];
+/**
+ * The writes a CONTROL-seam submit produces: the bracketed-paste body plus
+ * CONTROL_CR_COUNT (3) retry CRs. Control messages fire multiple spaced CRs
+ * because a single CR after a large paste is unreliable (the retry fix).
+ */
+function controlSubmitWrites(body: string): string[] {
+  return [`\x1b[200~${body}\x1b[201~`, '\r', '\r', '\r'];
+}
+
+/** A schedule seam that CAPTURES `(fn, ms)` pairs instead of executing them. */
+function captureSchedule(): {
+  schedule: (fn: () => void, ms: number) => void;
+  captured: { fn: () => void; ms: number }[];
+} {
+  const captured: { fn: () => void; ms: number }[] = [];
+  return { schedule: (fn, ms) => captured.push({ fn, ms }), captured };
 }
 
 describe('structural marker — the seam carries a kind the raw injector cannot', () => {
@@ -73,7 +86,7 @@ describe('PTY seam — does not splice into in-flight user input', () => {
     seam.noteUserInput('\r');
 
     // Now the deferred control flushes as its own clean submit.
-    expect(writes).toEqual(submitWrites('<fnc-notice>compact soon</fnc-notice>'));
+    expect(writes).toEqual(controlSubmitWrites('<fnc-notice>compact soon</fnc-notice>'));
   });
 
   test('with no draft in flight, control injects immediately (behavior unchanged)', () => {
@@ -81,7 +94,7 @@ describe('PTY seam — does not splice into in-flight user input', () => {
     const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
 
     seam.sendControl('notice', 'X');
-    expect(writes).toEqual(submitWrites('X'));
+    expect(writes).toEqual(controlSubmitWrites('X'));
   });
 
   test('a line-clear (Ctrl-U) also releases deferred control', () => {
@@ -93,7 +106,7 @@ describe('PTY seam — does not splice into in-flight user input', () => {
     expect(writes).toEqual([]);
 
     seam.noteUserInput('\x15'); // kill line
-    expect(writes).toEqual(submitWrites('/compact'));
+    expect(writes).toEqual(controlSubmitWrites('/compact'));
   });
 
   test('multiple deferred messages flush in order on submit', () => {
@@ -106,7 +119,44 @@ describe('PTY seam — does not splice into in-flight user input', () => {
     expect(writes).toEqual([]);
 
     seam.noteUserInput('\r');
-    expect(writes).toEqual([...submitWrites('A'), ...submitWrites('B')]);
+    expect(writes).toEqual([...controlSubmitWrites('A'), ...controlSubmitWrites('B')]);
+  });
+});
+
+describe('PTY seam — retry submit CR (long-paste swallow fix)', () => {
+  test('a control message fires 3 submit CRs, spaced ~1s apart', () => {
+    const writes: string[] = [];
+    const { schedule, captured } = captureSchedule();
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule });
+
+    seam.sendControl('compact', 'x');
+
+    // The paste body is written synchronously; the CRs are only SCHEDULED.
+    expect(writes).toEqual(['\x1b[200~x\x1b[201~']);
+    // Three retries, at enterDelay (10ms) then +1000ms each.
+    expect(captured.map((c) => c.ms)).toEqual([10, 1010, 2010]);
+
+    // Firing the scheduled callbacks writes a bare CR each — three retries so a
+    // submit swallowed while claude ingests a large paste still gets re-sent.
+    for (const c of captured) c.fn();
+    expect(writes.filter((w) => w === '\r').length).toBe(3);
+  });
+
+  test('retry CRs are skipped once the user starts a fresh draft (draft guard)', () => {
+    const writes: string[] = [];
+    const { schedule, captured } = captureSchedule();
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule });
+
+    // No draft in flight at send time → the message injects, scheduling 3 CRs.
+    seam.sendControl('compact', 'x');
+    expect(captured.length).toBe(3);
+
+    // The user starts typing BEFORE the scheduled CRs fire.
+    seam.noteUserInput('a');
+
+    // Every retry CR is guarded away — none lands into the user's draft.
+    for (const c of captured) c.fn();
+    expect(writes.filter((w) => w === '\r')).toEqual([]);
   });
 });
 

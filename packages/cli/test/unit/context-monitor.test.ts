@@ -44,9 +44,13 @@ function spyWriter(): { write: PtyWriter; calls: string[] } {
 /** Synchronous schedule seam so the separate CR write lands deterministically. */
 const syncSchedule = (fn: () => void): void => fn();
 
-/** The two writes injectSubmittedLine produces for a notice body. */
+/**
+ * The writes a notice submit produces: the bracketed-paste body plus the
+ * control seam's 3 retry CRs (the long-paste swallow fix — a single CR after a
+ * large paste is unreliable, so control messages re-send the submit).
+ */
 function noticeWrites(body: string): string[] {
-  return [`\x1b[200~${body}\x1b[201~`, '\r'];
+  return [`\x1b[200~${body}\x1b[201~`, '\r', '\r', '\r'];
 }
 
 /**
@@ -190,7 +194,7 @@ describe('createContextMonitor — tiered ladder + watermark', () => {
     expect(m.tick(160_000)).toBe(true); // consider
     expect(m.tick(170_000)).toBe(false); // still below plan tier
     expect(m.tick(199_000)).toBe(false);
-    expect(spy.calls.length).toBe(2); // one notice = two writes
+    expect(spy.calls.length).toBe(4); // one notice = paste body + 3 retry CRs
   });
 
   test('repeat tier fires urgent at each multiple past the last finite tier', () => {
@@ -323,7 +327,7 @@ describe('createContextMonitor — tiered ladder + watermark', () => {
     expect(m.tick(null)).toBe(false); // no-op, no re-arm
     expect(m.tick(null)).toBe(false);
     expect(m.tick(280_000)).toBe(false); // still latched at now band
-    expect(spy.calls.length).toBe(2);
+    expect(spy.calls.length).toBe(4); // one notice = paste body + 3 retry CRs
   });
 
   test('null before any crossing is a no-op', () => {
@@ -366,7 +370,7 @@ describe('createContextMonitor — tiered ladder + watermark', () => {
     expect(m.tick(260_000)).toBe(true); // now, watermark = 250k
     expect(m.tick(-1)).toBe(false); // bad reading, no re-arm
     expect(m.tick(280_000)).toBe(false); // still latched at now band
-    expect(spy.calls.length).toBe(2); // one notice = two writes
+    expect(spy.calls.length).toBe(4); // one notice = paste body + 3 retry CRs
   });
 
   test('writer side effects are not captured back into the monitor', () => {
@@ -381,7 +385,7 @@ describe('createContextMonitor — tiered ladder + watermark', () => {
 
     const result = m.tick(260_000);
     expect(result).toBe(true);
-    expect(observed.length).toBe(2);
+    expect(observed.length).toBe(4); // paste body + 3 retry CRs
     expect(observed[0]).toContain('<fnc-notice>');
     expect(observed[1]).toBe('\r');
   });
@@ -703,8 +707,8 @@ describe('createCompactFollowUpGate — fixed timer (no JSONL growth dependency)
     expect(fake.calls).toEqual([1234]);
   });
 
-  test('default delay constant is 10s', () => {
-    expect(COMPACT_FOLLOWUP_DELAY_MS).toBe(10_000);
+  test('default delay constant is 60s', () => {
+    expect(COMPACT_FOLLOWUP_DELAY_MS).toBe(60_000);
   });
 });
 
