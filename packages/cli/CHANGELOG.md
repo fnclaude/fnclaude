@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.15.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.15.0...cli-v2.15.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **cli:** keep draft-guard latched through soft newlines ([#344](https://github.com/fnclaude/fnclaude/issues/344)) ([960305f](https://github.com/fnclaude/fnclaude/commit/960305fdfe27404cea76e232a8e49576ce005149))
+* **cli:** pin context monitor to real session id via /proc ([#345](https://github.com/fnclaude/fnclaude/issues/345)) ([98e3189](https://github.com/fnclaude/fnclaude/commit/98e318998fce96142c46b681915b1533a1ab168e))
+
 ## [2.15.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.14.0...cli-v2.15.0) (2026-07-13)
 
 
