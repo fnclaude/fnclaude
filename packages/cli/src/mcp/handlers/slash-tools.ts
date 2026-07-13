@@ -128,7 +128,7 @@ function followUpPointer(path: string): string {
  * `injectSubmittedLine` call — never back-to-back with `/compact`. The
  * handler returns `{ action: 'queued' }` IMMEDIATELY, then a detached promise:
  *
- *   1. awaits the follow-up gate (`followUpGate`) — by default a fixed 10s
+ *   1. awaits the follow-up gate (`followUpGate`) — by default a fixed 60s
  *      timer ({@link createCompactFollowUpGate}) that holds the follow_up
  *      until compaction is well underway. (An earlier design polled the
  *      session JSONL for byte-growth, but the first post-submit write is the

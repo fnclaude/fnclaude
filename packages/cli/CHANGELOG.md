@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.15.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.14.0...cli-v2.15.0) (2026-07-13)
+
+
+### Features
+
+* **cli:** percentage context-notice thresholds + warn on malformed notice config ([#337](https://github.com/fnclaude/fnclaude/issues/337)) ([fa55ab4](https://github.com/fnclaude/fnclaude/commit/fa55ab416cc12191ae1fbb44b89be0196a113982)), closes [#331](https://github.com/fnclaude/fnclaude/issues/331)
+
+
+### Bug Fixes
+
+* **cli:** retry submit CR for injected control messages ([#343](https://github.com/fnclaude/fnclaude/issues/343)) ([3369201](https://github.com/fnclaude/fnclaude/commit/336920188ba596a7a516714e2ac1afb1a2b8f480))
+
 ## [2.14.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.13.2...cli-v2.14.0) (2026-07-03)
 
 
