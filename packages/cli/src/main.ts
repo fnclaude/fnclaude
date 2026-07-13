@@ -73,6 +73,7 @@ import { resolveInput } from './repo/resolve-input';
 import { deriveAutoCompactThreshold } from './usage/autocompact-threshold';
 import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
 import { planOwnSession } from './usage/own-session';
+import { makeOwnSessionFileResolver } from './usage/proc-session-id';
 import { createWarningBuffer } from './warnings/buffer';
 import { shouldInjectTmux } from './worktree/auto-tmux';
 import { listWorktrees } from './worktree/git-list';
@@ -704,7 +705,13 @@ if (
         }),
         deriveThreshold: deriveNoticeThreshold,
         sendControl: send,
-        ownSessionFile: ownSessionId !== null ? () => `${ownSessionId}.jsonl` : undefined,
+        // Renderer owns the claude spawn, so claude's pid isn't available here
+        // to drive the /proc resolver — pass null so a null up-front id falls
+        // back to the legacy heuristic (unchanged renderer behavior).
+        ownSessionFile: makeOwnSessionFileResolver({
+          upfrontId: ownSessionId,
+          claudePid: null,
+        }),
       }).stop;
     },
   })
@@ -844,9 +851,14 @@ try {
       deriveThreshold: deriveNoticeThreshold,
       sendControl: ptyControl.sendControl,
       // Pin the monitor to THIS session's own JSONL by id (no oldest-mtime
-      // guess). `null` when the id isn't knowable up front (--continue/fork) —
-      // the reader then falls back to its legacy heuristic.
-      ownSessionFile: ownSessionId !== null ? () => `${ownSessionId}.jsonl` : undefined,
+      // guess). When the id is known up front, use it directly; when it isn't
+      // (`fnc resume` bare/--continue/--fork/picker), resolve the REAL id from
+      // the fnc MCP child's /proc environ (keyed on claude's pid) so the
+      // identity path is still taken instead of guessing a sibling's file.
+      ownSessionFile: makeOwnSessionFileResolver({
+        upfrontId: ownSessionId,
+        claudePid: proc.pid,
+      }),
     }).stop;
   } else {
     proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
