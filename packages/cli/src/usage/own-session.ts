@@ -27,7 +27,7 @@
  */
 
 /** Canonical 8-4-4-4-12 hex UUID shape claude requires for `--session-id`. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface OwnSessionPlan {
   /** The session id once known up front, else `null` (caller falls back). */
