@@ -97,16 +97,39 @@ function hasPrintable(s: string): boolean {
 }
 
 /**
- * The index of the last byte in `chunk` that ends the current input line:
- * a submit (CR/LF) or a line-clear (Ctrl-C `\x03`, Ctrl-U `\x15`). Returns
- * -1 when the chunk contains none. After such a byte the draft is empty, so
- * deferred control can safely flush.
+ * The index of the last byte in `chunk` that truly ENDS the current input line
+ * — a submit or a line-clear — or -1 when the chunk contains none. After such a
+ * byte the draft is empty, so deferred control can safely flush.
+ *
+ * The subtlety is that not every CR/LF ends a line. claude's multi-line editor
+ * emits CR/LF bytes for keys that ADD a newline to the prompt without
+ * submitting it, and a Unix bracketed paste carries literal `\n`s between
+ * pasted lines. Treating those as "line submitted" clears the draft guard early
+ * and splices a deferred notice into the still-open prompt. So we classify:
+ *
+ *   - `\x03` (Ctrl-C) and `\x15` (Ctrl-U) ALWAYS end the line (clear it).
+ *   - `\r` (0x0d, Enter) ends the line ONLY when it is a bare Enter — i.e. its
+ *     immediately-preceding byte is neither `\` (0x5c, backslash-continuation)
+ *     nor ESC (0x1b, Alt-Enter). Both of those are soft newlines.
+ *   - `\n` (0x0a) is NEVER a submit: it's Ctrl-J (soft newline) or a paste's
+ *     embedded newline.
+ *
+ * `prevByte` is the last byte of the PREVIOUS chunk (-1 if none), so a `\r` at
+ * index 0 can still see whether a `\`/ESC preceded it across a chunk boundary
+ * (backslash-Enter and Alt-Enter routinely arrive as two separate stdin
+ * chunks).
  */
-function lastLineEndIndex(chunk: string): number {
+function lastLineEndIndex(chunk: string, prevByte: number): number {
   let idx = -1;
   for (let i = 0; i < chunk.length; i++) {
     const c = chunk.charCodeAt(i);
-    if (c === 0x0d || c === 0x0a || c === 0x03 || c === 0x15) idx = i;
+    if (c === 0x03 || c === 0x15) {
+      idx = i;
+    } else if (c === 0x0d) {
+      const before = i === 0 ? prevByte : chunk.charCodeAt(i - 1);
+      if (before !== 0x5c && before !== 0x1b) idx = i;
+    }
+    // 0x0a (LF) is always a soft newline — never ends the line.
   }
   return idx;
 }
@@ -144,6 +167,10 @@ export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControl
     // Re-checked at each CR's fire time — skip a retry once the user drafts.
     shouldSubmit: (): boolean => !drafting,
   };
+  // Last byte of the previous non-empty chunk (-1 if none). Lets a `\r` at the
+  // start of a chunk see whether a `\`/ESC preceded it in the prior chunk, so
+  // backslash-Enter / Alt-Enter split across two stdin chunks read as soft.
+  let lastByte = -1;
 
   function inject(env: ControlEnvelope): void {
     injectSubmittedLine(env.text, injectDeps);
@@ -163,9 +190,11 @@ export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControl
     },
     noteUserInput: (chunk) => {
       if (chunk === '') return;
-      const end = lastLineEndIndex(chunk);
+      const end = lastLineEndIndex(chunk, lastByte);
+      // Record the preceding-byte context for the NEXT chunk before returning.
+      lastByte = chunk.charCodeAt(chunk.length - 1);
       if (end >= 0) {
-        // The line was submitted/cleared — the draft is empty. Flush any
+        // The line was really submitted/cleared — the draft is empty. Flush any
         // control we deferred, then re-arm drafting if the chunk started a
         // fresh partial line after the terminator.
         drafting = false;
@@ -173,7 +202,8 @@ export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControl
         drafting = hasPrintable(chunk.slice(end + 1));
         return;
       }
-      // No terminator: any visible byte means the user is building a draft.
+      // No real terminator (soft newlines included): any visible byte means the
+      // user is still building a draft.
       if (hasPrintable(chunk)) drafting = true;
     },
   };

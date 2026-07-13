@@ -160,6 +160,76 @@ describe('PTY seam — retry submit CR (long-paste swallow fix)', () => {
   });
 });
 
+describe('PTY seam — soft newlines do not read as submit', () => {
+  // claude's multi-line input keys emit CR/LF WITHOUT submitting the prompt:
+  // Ctrl-J (`\n`), Alt-Enter (`ESC`+`\r`), and backslash-continuation
+  // (`\`+`\r`). A control notice flushed on any of these splices into the
+  // still-open draft. Only a bare Enter (`\r`), Ctrl-C, or Ctrl-U really ends
+  // the line, so only those may release deferred control.
+
+  test('Ctrl-J (\\n) is a soft newline: deferred control stays queued', () => {
+    const writes: string[] = [];
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
+
+    seam.noteUserInput('first line');
+    seam.sendControl('notice', '<fnc-notice>compact soon</fnc-notice>');
+    expect(writes).toEqual([]);
+
+    // Ctrl-J adds a newline inside the multi-line prompt — it does NOT submit.
+    seam.noteUserInput('\n');
+    expect(writes).toEqual([]);
+  });
+
+  test('backslash-Enter across two chunks stays queued', () => {
+    const writes: string[] = [];
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
+
+    seam.noteUserInput('first line');
+    seam.sendControl('notice', 'N');
+    expect(writes).toEqual([]);
+
+    // `\` then `\r` arrive as separate stdin chunks — the preceding-byte check
+    // must span chunk boundaries to recognise the continuation.
+    seam.noteUserInput('\\');
+    seam.noteUserInput('\r');
+    expect(writes).toEqual([]);
+  });
+
+  test('Alt-Enter (ESC + CR) in one chunk stays queued', () => {
+    const writes: string[] = [];
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
+
+    seam.noteUserInput('first line');
+    seam.sendControl('notice', 'N');
+    expect(writes).toEqual([]);
+
+    seam.noteUserInput('\x1b\r');
+    expect(writes).toEqual([]);
+  });
+
+  test('bare Enter (\\r) still submits and releases deferred control', () => {
+    const writes: string[] = [];
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
+
+    seam.noteUserInput('first line');
+    seam.sendControl('notice', 'N');
+    expect(writes).toEqual([]);
+
+    seam.noteUserInput('\r');
+    expect(writes).toEqual(controlSubmitWrites('N'));
+  });
+
+  test('Unix multi-line paste keeps the draft: notice stays queued', () => {
+    const writes: string[] = [];
+    const seam = createPtyControlSeam({ write: (p) => writes.push(p), schedule: syncSchedule });
+
+    // A bracketed paste with embedded `\n`s must not read as a submit.
+    seam.noteUserInput('\x1b[200~a\nb\x1b[201~');
+    seam.sendControl('notice', 'N');
+    expect(writes).toEqual([]);
+  });
+});
+
 describe('renderer seam — routes through the mount API, degrades gracefully', () => {
   test('prefers handle.sendControl, delivering the kind structurally', () => {
     const calls: ControlEnvelope[] = [];
