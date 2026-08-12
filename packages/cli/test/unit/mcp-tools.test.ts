@@ -41,7 +41,7 @@ describe('MCP_TOOL_NAMES', () => {
 
 describe('buildTools — per-tool handler shape', () => {
   function makeFakeDialer(canned: WireResponse) {
-    const calls: Array<{ socketPath: string; request: WireRequest }> = [];
+    const calls: { socketPath: string; request: WireRequest }[] = [];
     const dial = async (args: {
       socketPath: string;
       request: WireRequest;
@@ -140,7 +140,7 @@ describe('buildTools — per-tool handler shape', () => {
   });
 
   test('fnc_await → op "await" with a call timeout that outlasts the 540s long-poll', async () => {
-    const calls: Array<{ request: WireRequest; callTimeoutMs?: number }> = [];
+    const calls: { request: WireRequest; callTimeoutMs?: number }[] = [];
     const dial = async (args: {
       socketPath: string;
       request: WireRequest;

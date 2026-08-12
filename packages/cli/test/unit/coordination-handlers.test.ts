@@ -65,7 +65,7 @@ interface Harness {
   registry: SessionRegistry;
   live: RegistryEntry[];
   handlers: ReturnType<typeof createCoordinationHandlers>;
-  watchCallbacks: Array<() => void>;
+  watchCallbacks: (() => void)[];
   unwatch: { count: number };
 }
 
@@ -93,7 +93,7 @@ function makeHarness(args?: { others?: RegistryEntry[]; awaitIntervalMs?: number
     live.push(...args.others);
   }
 
-  const watchCallbacks: Array<() => void> = [];
+  const watchCallbacks: (() => void)[] = [];
   const unwatch = { count: 0 };
   const handlers = createCoordinationHandlers({
     registry,
@@ -118,7 +118,7 @@ describe('fnc_sessions handler', () => {
     const h = makeHarness({ others: [makeOtherEntry()] });
     const res = await h.handlers.sessions(req('sessions'));
     expect(res.action).toBe('sessions');
-    const sessions = res.sessions as Array<{ session: { id: string }; self: boolean }>;
+    const sessions = res.sessions as { session: { id: string }; self: boolean }[];
     expect(sessions).toHaveLength(2);
     expect(sessions.find((s) => s.session.id === OWN_ID)?.self).toBe(true);
     expect(sessions.find((s) => s.session.id !== OWN_ID)?.self).toBe(false);
@@ -140,10 +140,10 @@ describe('fnc_claim handler', () => {
 
     expect(res.action).toBe('claimed');
     expect(res.claim).toEqual({ key: '/home/u/.cache', mode: 'exclusive', note: 'remounting' });
-    const conflicts = res.conflicts as Array<{
+    const conflicts = res.conflicts as {
       session: { name: string | null };
-      claims: Array<{ key: string }>;
-    }>;
+      claims: { key: string }[];
+    }[];
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]!.session.name).toBe('other-session');
     expect(conflicts[0]!.claims).toEqual([
@@ -200,12 +200,12 @@ describe('fnc_ask handler', () => {
     const h = makeHarness({ others: [makeOtherEntry()] });
     const res = await h.handlers.ask(req('ask', { key: '/home/u/src/other/deep/file' }));
     expect(res.action).toBe('stakeholders');
-    const stakeholders = res.stakeholders as Array<{
+    const stakeholders = res.stakeholders as {
       session: { name: string | null };
       pid: number;
       cwd: string;
-      claims: Array<{ implicit?: string }>;
-    }>;
+      claims: { implicit?: string }[];
+    }[];
     expect(stakeholders).toHaveLength(1);
     expect(stakeholders[0]!.session.name).toBe('other-session');
     expect(stakeholders[0]!.pid).toBe(200);
@@ -269,7 +269,7 @@ describe('fnc_await handler', () => {
     );
     expect(res.action).toBe('await');
     expect(res.released).toBe(false);
-    const holders = res.holders as Array<{ session: { name: string | null } }>;
+    const holders = res.holders as { session: { name: string | null } }[];
     expect(holders).toHaveLength(1);
     expect(holders[0]!.session.name).toBe('other-session');
   });
