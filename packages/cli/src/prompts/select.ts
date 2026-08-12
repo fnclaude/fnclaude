@@ -8,6 +8,7 @@
  *   agent-pitfall.md  — every interactive (non -p/--print) session
  *   spawn.md          — every interactive session
  *   budget.md         — every interactive session (#171 get_usage tool)
+ *   coordination.md   — every interactive session (#350 session coordination)
  *   noop-router.md    — noop fallback only
  *   project-switch.md — non-noop interactive
  *   restart.md        — non-noop interactive
@@ -69,7 +70,7 @@ export function selectFragments(args: SelectFragmentsArgs): string[] {
     return ['one-shot.md'];
   }
 
-  const out: string[] = ['agent-pitfall.md', 'spawn.md', 'budget.md'];
+  const out: string[] = ['agent-pitfall.md', 'spawn.md', 'budget.md', 'coordination.md'];
   if (args.usedNoopFallback) {
     out.push('noop-router.md');
   } else {

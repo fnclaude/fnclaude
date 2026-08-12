@@ -65,24 +65,38 @@ describe('isOneShotPrint', () => {
 });
 
 describe('selectFragments — interactive non-noop', () => {
-  test('default interactive non-noop → 5 fragments incl. budget', () => {
+  test('default interactive non-noop → 6 fragments incl. budget + coordination', () => {
     expect(
       selectFragments({ usedNoopFallback: false, passthrough: [] }),
-    ).toEqual(['agent-pitfall.md', 'spawn.md', 'budget.md', 'project-switch.md', 'restart.md']);
+    ).toEqual([
+      'agent-pitfall.md',
+      'spawn.md',
+      'budget.md',
+      'coordination.md',
+      'project-switch.md',
+      'restart.md',
+    ]);
   });
 
   test('interactive non-noop with verbose flag → same set', () => {
     expect(
       selectFragments({ usedNoopFallback: false, passthrough: ['--verbose'] }),
-    ).toEqual(['agent-pitfall.md', 'spawn.md', 'budget.md', 'project-switch.md', 'restart.md']);
+    ).toEqual([
+      'agent-pitfall.md',
+      'spawn.md',
+      'budget.md',
+      'coordination.md',
+      'project-switch.md',
+      'restart.md',
+    ]);
   });
 });
 
 describe('selectFragments — noop interactive', () => {
-  test('noop fallback interactive → agent-pitfall + spawn + budget + noop-router (no project-switch/restart)', () => {
+  test('noop fallback interactive → agent-pitfall + spawn + budget + coordination + noop-router (no project-switch/restart)', () => {
     expect(
       selectFragments({ usedNoopFallback: true, passthrough: [] }),
-    ).toEqual(['agent-pitfall.md', 'spawn.md', 'budget.md', 'noop-router.md']);
+    ).toEqual(['agent-pitfall.md', 'spawn.md', 'budget.md', 'coordination.md', 'noop-router.md']);
   });
 });
 
@@ -96,6 +110,24 @@ describe('selectFragments — budget.md always-on interactive (#171)', () => {
   test('budget.md absent in one-shot print mode', () => {
     expect(selectFragments({ usedNoopFallback: false, passthrough: ['-p'] })).not.toContain(
       'budget.md',
+    );
+  });
+});
+
+describe('selectFragments — coordination.md always-on interactive (#350)', () => {
+  test('coordination.md present in every interactive session (non-noop)', () => {
+    expect(selectFragments({ usedNoopFallback: false, passthrough: [] })).toContain(
+      'coordination.md',
+    );
+  });
+  test('coordination.md present in noop interactive session', () => {
+    expect(selectFragments({ usedNoopFallback: true, passthrough: [] })).toContain(
+      'coordination.md',
+    );
+  });
+  test('coordination.md absent in one-shot print mode', () => {
+    expect(selectFragments({ usedNoopFallback: false, passthrough: ['-p'] })).not.toContain(
+      'coordination.md',
     );
   });
 });
