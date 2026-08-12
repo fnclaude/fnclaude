@@ -58,7 +58,9 @@ Positional paths (max 2 after magic/subcommand tokens):
 Reserved subcommands:
   mcp [--noop]  — internal MCP server (invoked automatically by claude via
                   injected --mcp-config; not for direct use)
-  To use a directory literally named mcp, prefix with ./
+  sessions      — list live fnclaude sessions on this machine with their
+                  advisory resource claims (session-coordination registry)
+  To use a directory literally named mcp or sessions, prefix with ./
 
 fnclaude-owned flags (consumed by the launcher, NOT forwarded to claude):
   -A, --also <dir>      additional extra-dir (repeatable; deferred — see PRD)

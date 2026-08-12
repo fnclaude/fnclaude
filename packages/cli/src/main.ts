@@ -60,6 +60,7 @@ import { resolvePromptsDir } from './prompts/dir';
 import { injectFragments, loadFragments } from './prompts/load';
 import { isInteractiveSession, selectFragments } from './prompts/select';
 import { computeRegistryDir } from './registry/registry-path';
+import { isSessionsSubcommand, runSessionsCommand } from './registry/sessions-command';
 import { SessionRegistry, sessionNameFromArgs } from './registry/SessionRegistry';
 import { buildCloneUrl, computeCloneDestination } from './repo/clone';
 import { cloneRepo } from './repo/clone-exec';
@@ -111,6 +112,13 @@ if (wantsVersion(argv)) {
 if (isMcpSubcommand(argv)) {
   const exitCode = await runMcpServer(parseMcpFlags(argv.slice(1)));
   process.exit(exitCode);
+}
+
+// `fnc sessions` (#350): dump the live coordination-registry entries.
+// Same early-dispatch shape as `mcp` — argv[0] only, before parseArgs so
+// "sessions" is never misread as a repo reference.
+if (isSessionsSubcommand(argv)) {
+  process.exit(runSessionsCommand());
 }
 
 // Parse argv into structured launcher inputs. Magic positionals, fnclaude-eaten

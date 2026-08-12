@@ -16,14 +16,16 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
+import { readStarttime } from '../../src/registry/liveness';
 import type { RegistryEntry } from '../../src/registry/RegistryEntry';
 import { runWithFakeClaude } from '../fixtures/run-with-fake-claude';
 
 const SKIP_WINDOWS = process.platform === 'win32';
+const BIN = resolve(import.meta.dir, '..', '..', 'bin', 'fnc.js');
 
 describe.skipIf(SKIP_WINDOWS)('session-coordination registry — launch lifecycle', () => {
   test('registers with the implicit cwd claim while claude runs, unlinks on exit', async () => {
@@ -67,6 +69,52 @@ describe.skipIf(SKIP_WINDOWS)('session-coordination registry — launch lifecycl
 
       // After exit: the entry is gone.
       expect(readdirSync(registryDir)).toEqual([]);
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  }, 20_000);
+});
+
+describe.skipIf(SKIP_WINDOWS)('fnc sessions — subcommand', () => {
+  test('lists live entries, skips + GCs dead ones', () => {
+    const stateRoot = mkdtempSync(join(tmpdir(), 'fnc-sessions-e2e-'));
+    const registryDir = join(stateRoot, 'fnclaude', 'registry');
+    try {
+      mkdirSync(registryDir, { recursive: true });
+      // Live entry: THIS test process's pid + real starttime.
+      const liveEntry: RegistryEntry = {
+        session: { id: 'aaaaaaaa-1111-2222-3333-444444444444', name: 'live-session' },
+        owner: { pid: process.pid, starttime: readStarttime(process.pid) },
+        cwd: '/home/u/src/live',
+        startedAt: '2026-08-11T12:00:00.000Z',
+        claims: [{ key: '/home/u/src/live', mode: 'exclusive', implicit: 'cwd' }],
+      };
+      // Dead entry: same pid but a starttime that can't match (pid reuse shape).
+      const deadEntry: RegistryEntry = {
+        ...liveEntry,
+        session: { id: 'bbbbbbbb-1111-2222-3333-444444444444', name: 'dead-session' },
+        owner: { pid: process.pid, starttime: '1' },
+      };
+      writeFileSync(join(registryDir, `${liveEntry.session.id}.json`), JSON.stringify(liveEntry));
+      writeFileSync(join(registryDir, `${deadEntry.session.id}.json`), JSON.stringify(deadEntry));
+
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (v !== undefined) {
+          env[k] = v;
+        }
+      }
+      env.XDG_STATE_HOME = stateRoot;
+      env.FNC_ARGS_JSON = JSON.stringify(['sessions']);
+
+      const result = Bun.spawnSync([process.execPath, BIN], { env, stdout: 'pipe', stderr: 'pipe' });
+      const stdout = result.stdout.toString();
+      expect(result.exitCode).toBe(0);
+      expect(stdout).toContain('live-session');
+      expect(stdout).toContain('/home/u/src/live');
+      expect(stdout).not.toContain('dead-session');
+      // The dead entry got lazily GC'd by the read.
+      expect(readdirSync(registryDir)).toEqual([`${liveEntry.session.id}.json`]);
     } finally {
       rmSync(stateRoot, { recursive: true, force: true });
     }
