@@ -66,6 +66,13 @@ export const stubParentHandlers: ParentDispatchHandlers = {
     limits: null,
     context: { used: null, model: null },
   }),
+  // Session-coordination ops (#350). main.ts always binds the registry-backed
+  // handlers; these stubs only answer if wiring is somehow skipped.
+  sessions: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  claim: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  release: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  ask: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  await: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
 };
 
 const KNOWN_OPS = new Set<WireOp>([
@@ -78,6 +85,11 @@ const KNOWN_OPS = new Set<WireOp>([
   'set_model',
   'run_slash',
   'get_usage',
+  'sessions',
+  'claim',
+  'release',
+  'ask',
+  'await',
 ]);
 
 function isWireOp(value: unknown): value is WireOp {

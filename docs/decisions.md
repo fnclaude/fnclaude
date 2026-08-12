@@ -6,6 +6,18 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-08-11 — fnc_await long-polls in the parent; its wire deadline is a per-tool override
+
+**Decision:** The five coordination tools ([`mcp/handlers/coordination.ts`](../packages/cli/src/mcp/handlers/coordination.ts)) are one factory returning a handler record keyed by wire op, and `fnc_await`'s long-poll runs in the PARENT process (fs.watch on the registry dir + a ~2s interval fallback), not in the MCP subprocess. The wire protocol's 10s per-call deadline gains its first per-tool override: `CALL_TIMEOUT_OVERRIDES` in [`mcp/dispatch.ts`](../packages/cli/src/mcp/dispatch.ts) raises `fnc_await`'s call timeout to 560s so the socket outlasts the poll's 540s cap.
+
+**Context:** `fnc_await` must block until every overlapping claim from other live sessions is gone — up to 540s (chosen to stay under MCP tool-call timeouts). The subprocess dials the parent per call with a 10s write+read window (design.mcp.md §3.3), which would sever every await mid-poll.
+
+**Why parent-side polling + an override, not subprocess-side:** the subprocess is a per-call, stdin-driven shim with no state and no reason to grow a polling loop; the parent already owns long-lived concerns (context monitor, handoff awaiter) and its dispatcher floats each connection's handler chain, so a parked await never blocks sibling tool calls. Widening the DEFAULT deadline instead would degrade failure detection for the other thirteen tools to protect one legitimate long-poller; the per-tool map keeps 10s the norm and names the exception.
+
+**Revisit when:** a second long-running tool appears (generalize the override map), or await volume makes one fs.watch per parked call wasteful (share a single watcher across awaits).
+
+---
+
 ## 2026-08-11 — Session-coordination registry: file-per-session + kernel rename atomicity, no daemon
 
 **Decision:** The session-coordination registry ([`packages/cli/src/registry/`](../packages/cli/src/registry/), #350) is machine-global, file-based, and daemon-less: one JSON file per session at `<state dir>/fnclaude/registry/<session-id>.json`, where the session's own fnc process is the file's ONLY writer. Updates go write-temp-then-rename (`SessionRegistry.#write`), no locks anywhere. Liveness of an entry is `pid alive AND starttime matches` — starttime being field 22 of `/proc/<pid>/stat` captured at registration ([`liveness.ts`](../packages/cli/src/registry/liveness.ts)). Readers skip dead entries and unlink them lazily (GC on read, [`readLiveEntries`](../packages/cli/src/registry/SessionRegistry.ts)). The whole registry is ADVISORY — claims communicate intent between parallel sessions; nothing enforces them.

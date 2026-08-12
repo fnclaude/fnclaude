@@ -59,6 +59,11 @@ export const MCP_TOOL_NAMES = [
   'fnc_set_model',
   'fnc_run_slash_command',
   'get_usage',
+  'fnc_sessions',
+  'fnc_claim',
+  'fnc_release',
+  'fnc_ask',
+  'fnc_await',
 ] as const;
 
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
@@ -90,6 +95,21 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_set_model: 'set_model',
   fnc_run_slash_command: 'run_slash',
   get_usage: 'get_usage',
+  fnc_sessions: 'sessions',
+  fnc_claim: 'claim',
+  fnc_release: 'release',
+  fnc_ask: 'ask',
+  fnc_await: 'await',
+};
+
+/**
+ * Per-tool overrides of the wire call timeout. `fnc_await` legitimately
+ * long-polls in the parent for up to 540s (its own timeoutSeconds cap), so
+ * its wire deadline must outlast that — the default 10s would sever every
+ * await mid-poll.
+ */
+const CALL_TIMEOUT_OVERRIDES: Partial<Record<McpToolName, number>> = {
+  fnc_await: 560_000,
 };
 
 export interface BuildToolsArgs {
@@ -98,6 +118,7 @@ export interface BuildToolsArgs {
   dialAndCall?: (a: {
     socketPath: string;
     request: WireRequest;
+    callTimeoutMs?: number;
   }) => Promise<WireResponse>;
   /** Injectable env for the opt-in gate; defaults to `process.env`. */
   env?: Record<string, string | undefined>;
@@ -139,7 +160,12 @@ export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool>
         // dialAndCall's WireResponse is a `{[k:string]: unknown}` shape —
         // safe to widen to `object` for the jsonrpc-server's content
         // wrapper, which just JSON.stringify's it.
-        return (await dialer({ socketPath: args.socketPath, request })) as object;
+        const callTimeoutMs = CALL_TIMEOUT_OVERRIDES[name];
+        return (await dialer({
+          socketPath: args.socketPath,
+          request,
+          ...(callTimeoutMs !== undefined ? { callTimeoutMs } : {}),
+        })) as object;
       },
     };
   }
