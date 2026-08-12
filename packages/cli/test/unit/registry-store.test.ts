@@ -362,11 +362,28 @@ describe('sessionNameFromArgs', () => {
     expect(sessionNameFromArgs(['--name=fix-auth-bug'])).toBe('fix-auth-bug');
   });
 
+  // fnc accepts -n as the short form of --name (worktree/intercept.ts
+  // hasNameInPassthrough, preserve-args.ts) — and names are the
+  // SendMessage addresses the coordination protocol hands out, so a
+  // -n-launched session registering as unnamed dead-ends the
+  // ask→message→consent loop for its siblings.
+  test('-n value short form', () => {
+    expect(sessionNameFromArgs(['--verbose', '-n', 'fix-auth-bug'])).toBe('fix-auth-bug');
+  });
+
+  test('-n=value short form', () => {
+    expect(sessionNameFromArgs(['-n=fix-auth-bug'])).toBe('fix-auth-bug');
+  });
+
   test('absent → null', () => {
     expect(sessionNameFromArgs(['--verbose'])).toBeNull();
   });
 
   test('dangling --name with no value → null', () => {
     expect(sessionNameFromArgs(['--name'])).toBeNull();
+  });
+
+  test('dangling -n with no value → null', () => {
+    expect(sessionNameFromArgs(['-n'])).toBeNull();
   });
 });

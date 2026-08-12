@@ -294,9 +294,10 @@ export function readLiveEntries(args: ReadLiveEntriesArgs): RegistryEntry[] {
 
 /**
  * Extract the session name from the assembled claude argv — the `--name`
- * value in either `--name value` or `--name=value` form (fnc's own flag,
- * present when the user passed it or auto-naming injected it). Null when
- * unnamed.
+ * value (or its `-n` short form) in either two-token or `=` form (fnc's
+ * own flag, present when the user passed it or auto-naming injected it).
+ * Null when unnamed. Names are the SendMessage addresses the coordination
+ * protocol hands out, so both spellings must resolve.
  */
 export function sessionNameFromArgs(args: readonly string[]): string | null {
   for (let i = 0; i < args.length; i++) {
@@ -304,7 +305,10 @@ export function sessionNameFromArgs(args: readonly string[]): string | null {
     if (tok.startsWith('--name=')) {
       return tok.slice('--name='.length);
     }
-    if (tok === '--name' && i + 1 < args.length) {
+    if (tok.startsWith('-n=')) {
+      return tok.slice('-n='.length);
+    }
+    if ((tok === '--name' || tok === '-n') && i + 1 < args.length) {
       return args[i + 1]!;
     }
   }
