@@ -38,6 +38,10 @@ const CLI_ROOT = resolve(FIXTURES_DIR, '..', '..');
 const BIN = join(CLI_ROOT, 'bin', 'fnc.js');
 
 export interface FakeClaudeInvocation {
+  /** The fake's own pid. */
+  pid: number;
+  /** The fake's parent pid — the fnc process that spawned it. */
+  ppid: number;
   /** process.argv.slice(2) the fake saw — the args fnc handed claude. */
   argv: string[];
   /** process.cwd() — the launch cwd fnc spawned the fake in. */

@@ -6,6 +6,20 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-08-11 — Registry owner = fnc's own pid; minted-UUID id fallback; cwd-only implicit claims
+
+**Decision:** Three registration choices in main.ts's coordination-registry wiring:
+
+1. **`owner.pid` is fnc's OWN process (`process.pid`), not claude's child pid.** The spec requires "a process whose lifetime equals the session's". fnc qualifies in every mode: it blocks on `await proc.exited` for the PTY-spawned claude, or hosts the in-process renderer until claude exits — it never daemonizes or detaches. Claude's pid does NOT qualify: in renderer mode the renderer owns the claude spawn (fnc can't see the pid at registration time), and during an fnc_restart handoff claude dies and is re-spawned while the logical session lives on. fnc's pid is also the natural writer identity, since fnc is the file's only writer.
+2. **When the claude session id isn't knowable up front** (`--continue` / `--fork-session` / resume-picker / `--print` — `planOwnSession`'s null cases), fnc **mints a local UUID** for the registry file name rather than skipping registration. A resumed/continued session still owns its cwd; silently opting those shapes out of coordination would blind siblings exactly when Tom runs multiple sessions against one project. The trade-off — `session.id` then doesn't match any claude session id — is acceptable because nothing dereferences the id against claude state; `session.name` carries the SendMessage address.
+3. **Implicit claims are cwd-only; the scratchpad is NOT auto-claimed.** The harness's `/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad` convention is not derivable from anything fnc knows (no env var exposes it, and fnc doesn't participate in constructing it). Per the never-fabricate rule, cwd is the only implicit claim until the harness exposes the resolved path or its derivation rules become load-bearing enough to vendor.
+
+Unlink-on-exit rides `process.on('exit')` (sync, covers the renderer mount's internal `process.exit` and every early-exit path after registration) and is **ownership-checked**: on a restart handoff the replacement fnc re-registers the SAME session id with its own pid before the old process finishes exiting, so a blind unlink would destroy the replacement's registration — `unregister()` reads the file back and leaves it alone when `owner.pid` isn't its own.
+
+**Revisit when:** the harness exposes the scratchpad path (add the second implicit claim); or the minted-id fallback confuses a consumer that joins registry ids against claude session logs (switch to a `local-` prefix or skip-registration policy).
+
+---
+
 ## 2026-08-11 — fnc_await long-polls in the parent; its wire deadline is a per-tool override
 
 **Decision:** The five coordination tools ([`mcp/handlers/coordination.ts`](../packages/cli/src/mcp/handlers/coordination.ts)) are one factory returning a handler record keyed by wire op, and `fnc_await`'s long-poll runs in the PARENT process (fs.watch on the registry dir + a ~2s interval fallback), not in the MCP subprocess. The wire protocol's 10s per-call deadline gains its first per-tool override: `CALL_TIMEOUT_OVERRIDES` in [`mcp/dispatch.ts`](../packages/cli/src/mcp/dispatch.ts) raises `fnc_await`'s call timeout to 560s so the socket outlasts the poll's 540s cap.
