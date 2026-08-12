@@ -18,7 +18,7 @@ import { expandShortFlags } from './argv/short-flags';
 import { loadConfig } from './config/load';
 import { initLogging } from './log/init';
 import { bootFields } from './log/boot';
-import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter';
+import { reexecSelf, registerPreExecCleanup, startHandoffAwaiter } from './handoff/awaiter';
 import { decidePostExitTeardown } from './handoff/post-exit-teardown';
 import { handoffTrigger } from './handoff/trigger';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version';
@@ -679,14 +679,23 @@ logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
 
 // Register in the coordination registry now that the launch is committed
 // (cwd exists, logging is up) — the entry carries the implicit exclusive
-// cwd claim. Registration is best-effort and never throws. The unlink
-// rides process 'exit' so it covers EVERY termination path — the normal
-// teardown below, the renderer mount's internal process.exit, and the
-// handoff re-exec (where the ownership check inside unregister() protects
-// a replacement process's re-registration under the same session id).
-// SIGKILL leaves a stale file; readers detect it via pid+starttime and GC.
+// cwd claim. Registration is best-effort and never throws. Cleanup needs
+// BOTH hooks below: process 'exit' covers the normal teardown below, the
+// renderer mount's internal process.exit, and the handoff SPAWN-fallback —
+// but the primary handoff / cross-cwd / renderer-restart paths hand off
+// via a TRUE execve (reexecSelf), which replaces the image without running
+// any JS exit handler AND preserves pid+starttime, so a leaked entry would
+// pass the liveness probe for the replacement's whole life and never be
+// GC'd. The pre-exec cleanup runs inside reexecSelf right before the swap;
+// the replacement process re-registers itself. unregister() is idempotent
+// and ownership-checked (protects a replacement's re-registration under
+// the same session id). SIGKILL still leaves a stale file; readers detect
+// it via pid+starttime and GC.
 registry.register();
 process.on('exit', () => {
+  registry.unregister();
+});
+registerPreExecCleanup(() => {
   registry.unregister();
 });
 

@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { reexecSelf } from '../../src/handoff/awaiter';
+import { reexecSelf, registerPreExecCleanup } from '../../src/handoff/awaiter';
 
 const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 
@@ -97,6 +97,106 @@ describe('reexecSelf — #205 symptom 1: prefers execve, no spawn fallback', () 
     });
 
     expect(events).toContain('spawn');
+  });
+});
+
+describe('reexecSelf — pre-exec cleanup hooks', () => {
+  // A TRUE execve replaces the process image without running any JS exit
+  // handler, so `process.on('exit')` cleanups (e.g. the coordination
+  // registry's unlink) silently never fire on the handoff / cross-cwd /
+  // renderer-restart paths. Worse, execve preserves BOTH pid and /proc
+  // starttime, so a leaked registry entry passes the pid+starttime
+  // liveness probe for the whole life of the replacement process and is
+  // never lazily GC'd. reexecSelf must run registered pre-exec cleanups
+  // BEFORE attempting the image swap.
+  test('registered cleanup runs before the execve attempt', async () => {
+    const events: string[] = [];
+    const unregister = registerPreExecCleanup(() => {
+      events.push('cleanup');
+    });
+    try {
+      await reexecSelf({
+        argv: ['/dest', '--resume', 'x'],
+        clearScreen: () => {},
+        exec: () => {
+          events.push('exec');
+          return true as unknown as false;
+        },
+        spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+        exit: () => undefined as never,
+      });
+    } finally {
+      unregister();
+    }
+
+    expect(events).toEqual(['cleanup', 'exec']);
+  });
+
+  test('cleanup also runs before the spawn fallback', async () => {
+    const events: string[] = [];
+    const unregister = registerPreExecCleanup(() => {
+      events.push('cleanup');
+    });
+    try {
+      await reexecSelf({
+        argv: ['/dest', '--resume', 'x'],
+        clearScreen: () => {},
+        exec: () => false, // execve unavailable → spawn fallback
+        spawn: () => {
+          events.push('spawn');
+          return { exited: Promise.resolve(0) } as Pick<Bun.Subprocess, 'exited'>;
+        },
+        exit: () => undefined as never,
+      });
+    } finally {
+      unregister();
+    }
+
+    expect(events).toEqual(['cleanup', 'spawn']);
+  });
+
+  test('a throwing cleanup must not abort the re-exec', async () => {
+    const events: string[] = [];
+    const unregisterThrowing = registerPreExecCleanup(() => {
+      throw new Error('cleanup boom');
+    });
+    const unregisterRecording = registerPreExecCleanup(() => {
+      events.push('cleanup-2');
+    });
+    try {
+      await reexecSelf({
+        argv: ['/dest'],
+        clearScreen: () => {},
+        exec: () => {
+          events.push('exec');
+          return true as unknown as false;
+        },
+        spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+        exit: () => undefined as never,
+      });
+    } finally {
+      unregisterThrowing();
+      unregisterRecording();
+    }
+
+    expect(events).toEqual(['cleanup-2', 'exec']);
+  });
+
+  test('unregistered cleanup no longer runs', async () => {
+    const events: string[] = [];
+    const unregister = registerPreExecCleanup(() => {
+      events.push('cleanup');
+    });
+    unregister();
+    await reexecSelf({
+      argv: ['/dest'],
+      clearScreen: () => {},
+      exec: () => true as unknown as false,
+      spawn: () => ({ exited: Promise.resolve(0) }) as Pick<Bun.Subprocess, 'exited'>,
+      exit: () => undefined as never,
+    });
+
+    expect(events).toEqual([]);
   });
 });
 
