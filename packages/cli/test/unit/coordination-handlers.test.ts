@@ -66,6 +66,7 @@ interface Harness {
   live: RegistryEntry[];
   handlers: ReturnType<typeof createCoordinationHandlers>;
   watchCallbacks: Array<() => void>;
+  unwatch: { count: number };
 }
 
 function makeHarness(args?: { others?: RegistryEntry[]; awaitIntervalMs?: number }): Harness {
@@ -93,16 +94,19 @@ function makeHarness(args?: { others?: RegistryEntry[]; awaitIntervalMs?: number
   }
 
   const watchCallbacks: Array<() => void> = [];
+  const unwatch = { count: 0 };
   const handlers = createCoordinationHandlers({
     registry,
     listLive,
     watchDir: (_dir, onChange) => {
       watchCallbacks.push(onChange);
-      return () => {};
+      return () => {
+        unwatch.count++;
+      };
     },
     awaitIntervalMs: args?.awaitIntervalMs ?? 5,
   });
-  return { registry, live, handlers, watchCallbacks };
+  return { registry, live, handlers, watchCallbacks, unwatch };
 }
 
 function req(op: string, fields?: Record<string, unknown>): WireRequest {
@@ -282,5 +286,39 @@ describe('fnc_await handler', () => {
     const h = makeHarness();
     const res = await h.handlers.await(req('await'));
     expect(res.action).toBe('error');
+  });
+
+  // Client-disconnect abort: without it, a cancelled/abandoned await keeps
+  // polling the registry dir every ~2s for the remaining minutes of its
+  // 540s cap. The parent dispatcher signals the connection's close via the
+  // dispatch context; the parked await must settle AND tear down its
+  // interval + fs.watch immediately.
+  test('abort signal settles a parked await and stops the poll', async () => {
+    const h = makeHarness({ others: [makeOtherEntry()] });
+    const aborter = new AbortController();
+    const pending = h.handlers.await(
+      req('await', { key: '/home/u/src/other', timeoutSeconds: 0.2 }),
+      { signal: aborter.signal },
+    );
+    aborter.abort();
+    const res = await pending;
+    expect(res.action).toBe('await');
+    expect(res.released).toBe(false);
+    expect(res.aborted).toBe(true);
+    // The dir watcher's cleanup ran — no lingering poll.
+    expect(h.unwatch.count).toBe(1);
+  });
+
+  test('already-aborted signal → immediate aborted response, no watcher armed', async () => {
+    const h = makeHarness({ others: [makeOtherEntry()] });
+    const aborter = new AbortController();
+    aborter.abort();
+    const res = await h.handlers.await(
+      req('await', { key: '/home/u/src/other', timeoutSeconds: 0.2 }),
+      { signal: aborter.signal },
+    );
+    expect(res.released).toBe(false);
+    expect(res.aborted).toBe(true);
+    expect(h.watchCallbacks).toHaveLength(0);
   });
 });

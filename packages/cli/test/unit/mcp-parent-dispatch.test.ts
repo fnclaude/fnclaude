@@ -238,6 +238,48 @@ describe('createParentDispatcher — pure routing', () => {
     expect(seen[0]?.request).toEqual({ op: 'restart', session_id: 'abc' });
     expect(fake.ended).toBe(true);
   });
+
+  // A parked fnc_await polls in the parent for up to 540s. When the peer
+  // (the MCP subprocess) vanishes mid-call — wire timeout, user escape,
+  // claude teardown — the socket closes; the dispatcher must abort the
+  // in-flight handler's dispatch context so long-pollers stop instead of
+  // polling out the rest of their cap against a dead connection.
+  test('socket close mid-call aborts the handler ctx.signal', async () => {
+    let sawSignal: AbortSignal | undefined;
+    let release: (() => void) | undefined;
+    const parked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { handlers } = makeRecordingHandlers();
+    const dispatcher = createParentDispatcher({
+      handlers: {
+        ...handlers,
+        restart: async (_req: WireRequest, ctx?: { signal: AbortSignal }) => {
+          sawSignal = ctx?.signal;
+          await parked;
+          return { action: 'done' };
+        },
+      },
+    });
+
+    const fake = makeFakeSocket();
+    const sockHandlers: {
+      data?: (socket: unknown, data: Buffer) => void;
+      close?: (socket: unknown) => void;
+      error?: (socket: unknown, error: Error) => void;
+    } = {};
+    dispatcher({ socket: fake, handlers: sockHandlers });
+    sockHandlers.data?.(fake, Buffer.from(JSON.stringify({ op: 'restart' }) + '\n', 'utf8'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(sawSignal).toBeDefined();
+    expect(sawSignal!.aborted).toBe(false);
+
+    // Peer disappears mid-call.
+    sockHandlers.close?.(fake);
+    expect(sawSignal!.aborted).toBe(true);
+    release?.();
+  });
 });
 
 // ---------------------------------------------------------------

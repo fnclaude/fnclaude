@@ -170,7 +170,7 @@ export function createCoordinationHandlers(
     return { action: 'stakeholders', key, stakeholders: overlappingHolders(key) };
   };
 
-  const awaitRelease: ParentDispatchHandler = async (req): Promise<WireResponse> => {
+  const awaitRelease: ParentDispatchHandler = async (req, ctx): Promise<WireResponse> => {
     const key = stringField(req, 'key');
     if (key === null) {
       return { action: 'error', error: 'fnc_await requires a non-empty string key.' };
@@ -181,6 +181,13 @@ export function createCoordinationHandlers(
         ? Math.min(requested, AWAIT_TIMEOUT_CAP_SECONDS)
         : AWAIT_TIMEOUT_CAP_SECONDS;
 
+    // Client-disconnect abort (dispatch ctx): when the subprocess's
+    // connection is already gone, don't arm a poll nobody will read.
+    const signal = ctx?.signal;
+    if (signal?.aborted) {
+      return { action: 'await', released: false, aborted: true, timeout_seconds: timeoutSeconds };
+    }
+
     if (!overlappingHolders(key).length) {
       return { action: 'await', released: true, timeout_seconds: timeoutSeconds };
     }
@@ -190,6 +197,18 @@ export function createCoordinationHandlers(
       let interval: ReturnType<typeof setInterval> | undefined;
       let timer: ReturnType<typeof setTimeout> | undefined;
       let unwatch: (() => void) | undefined;
+
+      const onAbort = (): void => {
+        // The connection died mid-poll — settle now so the interval +
+        // fs.watch stop, instead of polling out the rest of the cap
+        // against a dead socket. The reply write is a no-op downstream.
+        finish({
+          action: 'await',
+          released: false,
+          aborted: true,
+          timeout_seconds: timeoutSeconds,
+        });
+      };
 
       const finish = (response: WireResponse): void => {
         if (settled) {
@@ -203,6 +222,7 @@ export function createCoordinationHandlers(
           clearTimeout(timer);
         }
         unwatch?.();
+        signal?.removeEventListener('abort', onAbort);
         resolve(response);
       };
 
@@ -225,6 +245,7 @@ export function createCoordinationHandlers(
           timeout_seconds: timeoutSeconds,
         });
       }, timeoutSeconds * 1000);
+      signal?.addEventListener('abort', onAbort, { once: true });
 
       // A holder may have vanished between the pre-check and the watcher
       // arming — close that window with one immediate re-check.

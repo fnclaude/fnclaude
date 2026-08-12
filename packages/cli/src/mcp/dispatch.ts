@@ -255,30 +255,79 @@ export async function runMcpServer(_flags: McpFlags): Promise<number> {
   return 0;
 }
 
+/** IO seam for the JSON-RPC line pump — injectable so unit tests can drive it. */
+export interface JsonRpcPumpIo {
+  input: AsyncIterable<Uint8Array>;
+  /** Receives one complete newline-terminated response line per call. */
+  write(line: string): void;
+}
+
 /**
- * Newline-delimited JSON-RPC pump. Reads from process.stdin, hands each
- * line to `server.handle()`, writes the resulting envelope (if any) to
- * stdout. Notifications produce `null` and are dropped silently.
+ * Newline-delimited JSON-RPC pump over an injectable IO pair. Hands each
+ * line to `server.handle()`, writes the resulting envelope (if any) via
+ * `io.write`. Notifications produce `null` and are dropped silently.
+ *
+ * Each line's handling FLOATS — the pump never awaits a handler inline.
+ * fnc_await legitimately parks for up to 540s (560s wire deadline); a
+ * serial pump would head-of-line-block every other JSON-RPC line on this
+ * stdin — sibling fnc tool calls and notifications/cancelled included —
+ * for the whole poll. JSON-RPC responses carry the request id, so
+ * out-of-order replies are legal. Interleaving is impossible mid-line:
+ * each response goes out as ONE io.write call, and the underlying stream
+ * writes each chunk contiguously. In-flight handlers are drained before
+ * returning so EOF can't drop late responses.
  */
-async function runStdinLoop(server: { handle(line: string): Promise<string | null> }): Promise<void> {
+export async function pumpJsonRpcLines(
+  server: { handle(line: string): Promise<string | null> },
+  io: JsonRpcPumpIo,
+): Promise<void> {
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
+  const inFlight = new Set<Promise<void>>();
 
-  for await (const chunk of process.stdin) {
-    buffer += decoder.decode(chunk as Uint8Array, { stream: true });
+  const dispatchLine = (line: string): void => {
+    const task = server
+      .handle(line)
+      .then((response) => {
+        if (response !== null) {
+          io.write(response + '\n');
+        }
+      })
+      .catch(() => {
+        // The JSON-RPC scaffold maps handler failures to error envelopes;
+        // anything escaping here has no request id left to answer.
+      });
+    inFlight.add(task);
+    void task.finally(() => {
+      inFlight.delete(task);
+    });
+  };
+
+  for await (const chunk of io.input) {
+    buffer += decoder.decode(chunk, { stream: true });
     let nl: number;
     while ((nl = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (line === '') continue;
-      const response = await server.handle(line);
-      if (response !== null) process.stdout.write(response + '\n');
+      dispatchLine(line);
     }
   }
   // Flush whatever bytes remain after EOF.
   const tail = buffer.trim();
   if (tail !== '') {
-    const response = await server.handle(tail);
-    if (response !== null) process.stdout.write(response + '\n');
+    dispatchLine(tail);
   }
+  // Drain: responses still in flight at EOF must not be dropped.
+  await Promise.all([...inFlight]);
+}
+
+/** Production pump: process.stdin → server.handle → process.stdout. */
+async function runStdinLoop(server: { handle(line: string): Promise<string | null> }): Promise<void> {
+  await pumpJsonRpcLines(server, {
+    input: process.stdin as AsyncIterable<Uint8Array>,
+    write(line: string): void {
+      process.stdout.write(line);
+    },
+  });
 }
