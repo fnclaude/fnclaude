@@ -314,6 +314,90 @@ const GET_USAGE: McpToolSchema = {
   },
 };
 
+const SESSIONS: McpToolSchema = {
+  description:
+    'List every live fnclaude session on this machine from the session-coordination registry, including this one — session id + name, owning pid, cwd, and the advisory claims each session holds. Session names are the SendMessage addresses. Use it to discover who else is running before touching shared state, or to see what a conflict partner currently claims. Entries whose owning process has died are skipped (and garbage-collected). Response shape: { sessions: [{ session: { id, name }, pid, cwd, started_at, claims: [{ key, mode, note?, implicit? }], self }] }.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+};
+
+const CLAIM: McpToolSchema = {
+  description:
+    'Register an advisory claim on a shared resource in the machine-global session registry, so parallel sessions can see what you depend on. Use for shared state your tools touch incidentally — build caches, package stores; you know your toolchain\'s shared state even when the command line doesn\'t show it. Args: key (a string, usually an absolute path; trailing "/" is stripped; keys overlap when equal or when one path contains the other at a "/" boundary — abstract keys like "git:stash:repo" work as exact matches), mode ("using" = shared dependency, coexists with other users\' claims; "exclusive" = others should keep out — represent a mutation-in-progress as an exclusive claim, and release it when done: the release IS the completion signal fnc_await watchers block on), note (optional free text shown to other sessions). Claims are ADVISORY — nothing is enforced; they exist so conflicts surface and sessions negotiate via SendMessage. Re-claiming a key replaces its mode/note. Your cwd is already claimed implicitly. Returns the stored claim plus every overlapping claim held by OTHER live sessions ({ conflicts: [{ session, pid, cwd, claims }] }) so conflicts surface at claim time. All claims vanish when your session exits.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description:
+          'The resource key — usually an absolute path (e.g. /home/u/.cache/go-build). Abstract non-path keys work as exact matches.',
+      },
+      mode: {
+        type: 'string',
+        enum: ['using', 'exclusive'],
+        description:
+          '"using" = shared dependency (coexists with other "using" claims); "exclusive" = others keep out (a mutation-in-progress).',
+      },
+      note: {
+        type: 'string',
+        description: 'Optional context shown to other sessions (e.g. "go build in flight").',
+      },
+    },
+    required: ['key', 'mode'],
+  },
+};
+
+const RELEASE: McpToolSchema = {
+  description:
+    'Remove your advisory claim on a key from the session registry. Releasing an exclusive claim is the COMPLETION SIGNAL other sessions wait on — fnc_await unblocks the moment no overlapping claim from another live session remains — so release promptly when the work on the resource is done. Args: key (same string you claimed; trailing "/" is stripped). Response: { removed } — false when no claim with that key was held.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description: 'The claimed resource key to release.',
+      },
+    },
+    required: ['key'],
+  },
+};
+
+const ASK: McpToolSchema = {
+  description:
+    'Stakeholder discovery for a resource you intend to mutate (move, remount, purge, reconfigure): returns every OTHER live session whose claims — including the implicit cwd claim every session holds — overlap the key, with claim details and session names. It does NOT deliver any message: the names are SendMessage addresses, so message the stakeholders yourself, wait for consent (silence from an idle session is consent; a busy session answers at its turn boundary), then take an exclusive fnc_claim for the mutation. Args: key. Response: { stakeholders: [{ session: { id, name }, pid, cwd, claims }] } — empty when nobody overlaps.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description: 'The resource key you intend to mutate (usually an absolute path).',
+      },
+    },
+    required: ['key'],
+  },
+};
+
+const AWAIT: McpToolSchema = {
+  description:
+    'Block until no OTHER live session holds a claim overlapping key — i.e. until every holder has released (or exited; a dead session\'s claims vanish). This is the wait-side of the release-as-completion-signal protocol: a mutator holds an exclusive claim for the duration and releases it when done, and your fnc_await returns at that moment. Args: key, timeoutSeconds (optional; default and cap 540). On timeout it returns { released: false, holders: [...] } rather than erroring — re-invoke to keep waiting. Response: { released, holders?, timeout_seconds }.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      key: {
+        type: 'string',
+        description: 'The resource key to wait on (usually an absolute path).',
+      },
+      timeoutSeconds: {
+        type: 'number',
+        description: 'Optional wait bound in seconds. Default 540, capped at 540.',
+      },
+    },
+    required: ['key'],
+  },
+};
+
 export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_restart: RESTART,
   fnc_switch_project: SWITCH_PROJECT,
@@ -324,4 +408,9 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_set_model: SET_MODEL,
   fnc_run_slash_command: RUN_SLASH_COMMAND,
   get_usage: GET_USAGE,
+  fnc_sessions: SESSIONS,
+  fnc_claim: CLAIM,
+  fnc_release: RELEASE,
+  fnc_ask: ASK,
+  fnc_await: AWAIT,
 };

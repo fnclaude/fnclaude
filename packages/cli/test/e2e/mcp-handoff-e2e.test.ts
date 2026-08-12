@@ -421,10 +421,15 @@ describe.skipIf(SKIP_WINDOWS)('mcp wire handoff round-trip', () => {
     expect(envelope.error).toBeUndefined();
     const names = (envelope.result?.tools ?? []).map((t) => t.name).sort();
     // fnc_run_slash_command is opt-in (FNC_ENABLE_SLASH_TOOL=1) and unset
-    // here, so it's absent; the other eight always register.
+    // here, so it's absent; the other thirteen always register.
     expect(names).toEqual([
+      'fnc_ask',
+      'fnc_await',
+      'fnc_claim',
       'fnc_copy_to_clipboard',
+      'fnc_release',
       'fnc_restart',
+      'fnc_sessions',
       'fnc_set_effort',
       'fnc_set_model',
       'fnc_spawn_session',

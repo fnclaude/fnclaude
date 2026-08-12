@@ -94,6 +94,44 @@ async function defaultExecve(argv: string[]): Promise<void> {
 }
 
 /**
+ * Pre-exec cleanup hooks — the execve analogue of `process.on('exit')`.
+ *
+ * A TRUE execve replaces the process image WITHOUT running any JS exit
+ * handler, so process-scoped state that must not outlive this fnc process
+ * (the coordination-registry entry, say) would silently leak across every
+ * restart / switch / cross-cwd relaunch. And because execve preserves both
+ * the pid and the /proc starttime, a leaked registry entry keeps passing
+ * the pid+starttime liveness probe for the whole life of the replacement
+ * process — it is indistinguishable from a live session and never lazily
+ * GC'd. Callers register cleanups here (main.ts does, right next to its
+ * `process.on('exit')` twin); `reexecSelf` runs them best-effort
+ * immediately before attempting the image swap, which covers every re-exec
+ * path — handoff awaiter, renderer-mount restart, cross-cwd relaunch — all
+ * of which funnel through `reexecSelf`. The spawn fallback is covered
+ * harmlessly twice: cleanups run pre-spawn here, and its eventual
+ * `process.exit` fires the (idempotent) 'exit' handlers as well.
+ */
+const preExecCleanups = new Set<() => void>();
+
+/** Register a cleanup to run before any re-exec. Returns its unregister. */
+export function registerPreExecCleanup(cleanup: () => void): () => void {
+  preExecCleanups.add(cleanup);
+  return (): void => {
+    preExecCleanups.delete(cleanup);
+  };
+}
+
+function runPreExecCleanups(): void {
+  for (const cleanup of [...preExecCleanups]) {
+    try {
+      cleanup();
+    } catch {
+      // Best-effort — a failing cleanup must never abort the re-exec.
+    }
+  }
+}
+
+/**
  * Process image replacement — shared between §8.5's handoff exec and
  * §9.3's cross-cwd silent relaunch.
  *
@@ -213,6 +251,12 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
     ...process.env,
     FNC_ARGS_JSON: argsJson,
   };
+
+  // Execve skips JS exit handlers — run the registered pre-exec cleanups
+  // (coordination-registry unlink etc.) before the image swap. Runs ahead
+  // of the spawn fallback too, harmlessly: its later process.exit fires
+  // the idempotent 'exit' handlers a second time.
+  runPreExecCleanups();
 
   // Clear the screen before handing off — hides the flicker of claude's
   // "This conversation is from a different directory." block that already

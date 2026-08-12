@@ -78,12 +78,17 @@ describe('dispatch — tools/list', () => {
       inputSchema: { type: string; properties: object; required?: string[] };
     }>;
     // The opt-in fnc_run_slash_command is absent without
-    // FNC_ENABLE_SLASH_TOOL=1, so eight of the nine names show here.
-    expect(tools).toHaveLength(8);
+    // FNC_ENABLE_SLASH_TOOL=1, so thirteen of the fourteen names show here.
+    expect(tools).toHaveLength(13);
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      'fnc_ask',
+      'fnc_await',
+      'fnc_claim',
       'fnc_copy_to_clipboard',
+      'fnc_release',
       'fnc_restart',
+      'fnc_sessions',
       'fnc_set_effort',
       'fnc_set_model',
       'fnc_spawn_session',

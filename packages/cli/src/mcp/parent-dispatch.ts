@@ -30,7 +30,21 @@
 import type { AcceptedSocket } from './listener';
 import type { WireOp, WireRequest, WireResponse } from './wire';
 
-export type ParentDispatchHandler = (req: WireRequest) => Promise<WireResponse>;
+/**
+ * Per-call context threaded to handlers. `signal` aborts when the
+ * subprocess's connection closes before the handler settles — wire
+ * timeout, user escape, claude teardown. Long-running handlers (the
+ * fnc_await long-poll) listen so they stop polling against a dead
+ * connection; short handlers are free to ignore it.
+ */
+export interface DispatchContext {
+  signal: AbortSignal;
+}
+
+export type ParentDispatchHandler = (
+  req: WireRequest,
+  ctx?: DispatchContext,
+) => Promise<WireResponse>;
 
 export type ParentDispatchHandlers = Record<WireOp, ParentDispatchHandler>;
 
@@ -66,6 +80,13 @@ export const stubParentHandlers: ParentDispatchHandlers = {
     limits: null,
     context: { used: null, model: null },
   }),
+  // Session-coordination ops (#350). main.ts always binds the registry-backed
+  // handlers; these stubs only answer if wiring is somehow skipped.
+  sessions: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  claim: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  release: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  ask: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
+  await: async (_req) => ({ action: 'error', error: 'coordination registry not wired' }),
 };
 
 const KNOWN_OPS = new Set<WireOp>([
@@ -78,6 +99,11 @@ const KNOWN_OPS = new Set<WireOp>([
   'set_model',
   'run_slash',
   'get_usage',
+  'sessions',
+  'claim',
+  'release',
+  'ask',
+  'await',
 ]);
 
 function isWireOp(value: unknown): value is WireOp {
@@ -94,6 +120,9 @@ export function createParentDispatcher(args: CreateParentDispatcherArgs): (accep
   return (accepted) => {
     let buffered = '';
     let consumed = false;
+    // Aborted when the connection closes — including after our own
+    // post-reply end(), where firing is harmless (the handler settled).
+    const aborter = new AbortController();
 
     const reply = async (response: WireResponse): Promise<void> => {
       // Wire-protocol contract: write exactly one ndjson line, then close.
@@ -127,7 +156,7 @@ export function createParentDispatcher(args: CreateParentDispatcherArgs): (accep
 
       // Float the handler chain — listener doesn't await us, and we don't
       // need to block sibling sockets on this connection's handler latency.
-      void dispatchOne(line, args.handlers, reply, errorReply);
+      void dispatchOne(line, args.handlers, { signal: aborter.signal }, reply, errorReply);
     };
 
     accepted.handlers.error = (_socket, _err) => {
@@ -138,8 +167,11 @@ export function createParentDispatcher(args: CreateParentDispatcherArgs): (accep
     };
 
     accepted.handlers.close = (_socket) => {
-      // Peer closed before we finished. Nothing to clean up — the
-      // dispatcher's state is per-call and goes out of scope on close.
+      // Connection is gone — either the peer closed before we finished
+      // (abandoned call: signal any in-flight handler to stop) or our own
+      // post-reply end() landed (handler already settled; abort is a
+      // no-op). Everything else is per-call state that goes out of scope.
+      aborter.abort();
     };
   };
 }
@@ -147,6 +179,7 @@ export function createParentDispatcher(args: CreateParentDispatcherArgs): (accep
 async function dispatchOne(
   line: string,
   handlers: ParentDispatchHandlers,
+  ctx: DispatchContext,
   reply: (r: WireResponse) => Promise<void>,
   errorReply: (msg: string) => Promise<void>,
 ): Promise<void> {
@@ -169,7 +202,7 @@ async function dispatchOne(
   const handler = handlers[op];
   let response: WireResponse;
   try {
-    response = await handler(request as WireRequest);
+    response = await handler(request as WireRequest, ctx);
   } catch (err) {
     await errorReply(`handler error: ${(err as Error).message}`);
     return;

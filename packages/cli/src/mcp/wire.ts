@@ -28,7 +28,12 @@ export type WireOp =
   | 'set_effort'
   | 'set_model'
   | 'run_slash'
-  | 'get_usage';
+  | 'get_usage'
+  | 'sessions'
+  | 'claim'
+  | 'release'
+  | 'ask'
+  | 'await';
 
 export interface WireRequest {
   op: WireOp;

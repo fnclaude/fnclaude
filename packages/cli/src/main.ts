@@ -18,7 +18,7 @@ import { expandShortFlags } from './argv/short-flags';
 import { loadConfig } from './config/load';
 import { initLogging } from './log/init';
 import { bootFields } from './log/boot';
-import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter';
+import { reexecSelf, registerPreExecCleanup, startHandoffAwaiter } from './handoff/awaiter';
 import { decidePostExitTeardown } from './handoff/post-exit-teardown';
 import { handoffTrigger } from './handoff/trigger';
 import { getVersion, helpText, wantsHelp, wantsVersion } from './help-version';
@@ -30,6 +30,7 @@ import { buildRendererArgs, maybeMountRenderer, shouldUseRenderer } from './laun
 import { RingBuffer } from './launch/ring-buffer';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
+import { createCoordinationHandlers } from './mcp/handlers/coordination';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
 import { createPtyWriterHolder } from './mcp/handlers/inject-slash';
 import { createControlSeamHolder, createPtyControlSeam } from './mcp/handlers/send-control';
@@ -58,6 +59,9 @@ import { ensureCwd } from './path/ensure-cwd';
 import { resolvePromptsDir } from './prompts/dir';
 import { injectFragments, loadFragments } from './prompts/load';
 import { isInteractiveSession, selectFragments } from './prompts/select';
+import { computeRegistryDir } from './registry/registry-path';
+import { isSessionsSubcommand, runSessionsCommand } from './registry/sessions-command';
+import { SessionRegistry, sessionNameFromArgs } from './registry/SessionRegistry';
 import { buildCloneUrl, computeCloneDestination } from './repo/clone';
 import { cloneRepo } from './repo/clone-exec';
 import { isRepoNotFoundError } from './repo/clone-failure';
@@ -108,6 +112,13 @@ if (wantsVersion(argv)) {
 if (isMcpSubcommand(argv)) {
   const exitCode = await runMcpServer(parseMcpFlags(argv.slice(1)));
   process.exit(exitCode);
+}
+
+// `fnc sessions` (#350): dump the live coordination-registry entries.
+// Same early-dispatch shape as `mcp` — argv[0] only, before parseArgs so
+// "sessions" is never misread as a repo reference.
+if (isSessionsSubcommand(argv)) {
+  process.exit(runSessionsCommand());
 }
 
 // Parse argv into structured launcher inputs. Magic positionals, fnclaude-eaten
@@ -557,6 +568,21 @@ const slashWriter = createPtyWriterHolder();
 // once it exists. Control messages sent before bind are queued, not dropped.
 const controlSeam = createControlSeamHolder();
 
+// Session-coordination registry (#350): this session's entry in the
+// machine-global advisory claims registry. The session id doubles as the
+// file name; when it isn't knowable up front (--continue / --fork /
+// resume-picker / --print — see planOwnSession's decision table) a local
+// UUID is minted so coordination still works for those shapes. Owner pid
+// is fnc's OWN process: its lifetime equals the session's in every mode
+// (it blocks on proc.exited, or hosts the renderer until exit).
+// Construction is side-effect-free; registration happens after ensureCwd.
+const registry = new SessionRegistry({
+  dir: computeRegistryDir({ env: process.env, platform: process.platform, home: HOME }),
+  session: { id: ownSessionId ?? randomUUID(), name: sessionNameFromArgs(claudeArgs) },
+  ownerPid: process.pid,
+  cwd,
+});
+
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
 // subprocess claude launches per --mcp-config can dial back over
 // $FNC_SOCKET. Bind failure is fatal per Go canonical — we can't run
@@ -609,6 +635,9 @@ if (mcpSocketPath !== undefined) {
         // get_usage returns structured budget data read from the session
         // JSONL; launchCWD is the encoded-cwd half of that path.
         get_usage: createGetUsageHandler({ launchCWD: cwd }),
+        // Session-coordination tools (#350): sessions/claim/release/ask/await,
+        // all sharing this session's registry entry + the live-entries reader.
+        ...createCoordinationHandlers({ registry }),
       },
     });
     const listener = await startMcpListener({
@@ -647,6 +676,28 @@ if (!ensured.ok) {
   process.exit(2);
 }
 logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
+
+// Register in the coordination registry now that the launch is committed
+// (cwd exists, logging is up) — the entry carries the implicit exclusive
+// cwd claim. Registration is best-effort and never throws. Cleanup needs
+// BOTH hooks below: process 'exit' covers the normal teardown below, the
+// renderer mount's internal process.exit, and the handoff SPAWN-fallback —
+// but the primary handoff / cross-cwd / renderer-restart paths hand off
+// via a TRUE execve (reexecSelf), which replaces the image without running
+// any JS exit handler AND preserves pid+starttime, so a leaked entry would
+// pass the liveness probe for the replacement's whole life and never be
+// GC'd. The pre-exec cleanup runs inside reexecSelf right before the swap;
+// the replacement process re-registers itself. unregister() is idempotent
+// and ownership-checked (protects a replacement's re-registration under
+// the same session id). SIGKILL still leaves a stale file; readers detect
+// it via pid+starttime and GC.
+registry.register();
+process.on('exit', () => {
+  registry.unregister();
+});
+registerPreExecCleanup(() => {
+  registry.unregister();
+});
 
 // In-process renderer mount (design.renderer.md §2–§3, spawn-args.md §(b)).
 // When FNC_RENDERER is set AND @fnclaude/renderer (an optionalDependency)

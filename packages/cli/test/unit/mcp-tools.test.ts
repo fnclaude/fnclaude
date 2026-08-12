@@ -19,7 +19,7 @@ import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch';
 import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 describe('MCP_TOOL_NAMES', () => {
-  test('exposes the original four plus the Batch-2 slash tools and get_usage', () => {
+  test('exposes the original four, the Batch-2 slash tools, get_usage, and the coordination five', () => {
     expect(MCP_TOOL_NAMES).toEqual([
       'fnc_restart',
       'fnc_switch_project',
@@ -30,13 +30,18 @@ describe('MCP_TOOL_NAMES', () => {
       'fnc_set_model',
       'fnc_run_slash_command',
       'get_usage',
+      'fnc_sessions',
+      'fnc_claim',
+      'fnc_release',
+      'fnc_ask',
+      'fnc_await',
     ]);
   });
 });
 
 describe('buildTools — per-tool handler shape', () => {
   function makeFakeDialer(canned: WireResponse) {
-    const calls: Array<{ socketPath: string; request: WireRequest }> = [];
+    const calls: { socketPath: string; request: WireRequest }[] = [];
     const dial = async (args: {
       socketPath: string;
       request: WireRequest;
@@ -117,6 +122,37 @@ describe('buildTools — per-tool handler shape', () => {
       text: 'hello',
     });
     expect(result).toEqual({ ok: true, action: 'done', clipboard_ok: true });
+  });
+
+  test('fnc_claim → op "claim", forwards args', async () => {
+    const fake = makeFakeDialer({ ok: true, action: 'claimed' });
+    const tools = buildTools({
+      socketPath: '/run/fake.sock',
+      dialAndCall: fake.dial,
+    });
+    await tools['fnc_claim']!.handler({ key: '/shared/cache', mode: 'using', note: 'dep' });
+    expect(fake.calls[0]?.request).toEqual({
+      op: 'claim',
+      key: '/shared/cache',
+      mode: 'using',
+      note: 'dep',
+    });
+  });
+
+  test('fnc_await → op "await" with a call timeout that outlasts the 540s long-poll', async () => {
+    const calls: { request: WireRequest; callTimeoutMs?: number }[] = [];
+    const dial = async (args: {
+      socketPath: string;
+      request: WireRequest;
+      callTimeoutMs?: number;
+    }): Promise<WireResponse> => {
+      calls.push({ request: args.request, callTimeoutMs: args.callTimeoutMs });
+      return { ok: true };
+    };
+    const tools = buildTools({ socketPath: '/run/fake.sock', dialAndCall: dial });
+    await tools['fnc_await']!.handler({ key: '/shared/cache', timeoutSeconds: 300 });
+    expect(calls[0]?.request).toEqual({ op: 'await', key: '/shared/cache', timeoutSeconds: 300 });
+    expect(calls[0]?.callTimeoutMs).toBeGreaterThan(540_000);
   });
 
   test('handler propagates dial rejections', async () => {

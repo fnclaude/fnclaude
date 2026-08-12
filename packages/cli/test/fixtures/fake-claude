@@ -46,11 +46,19 @@
  *     live process tree, then reaps the whole group. Mirrors a real session
  *     that self-restarts via the fnc_restart MCP tool.
  *
+ *   FAKE_CLAUDE_CAPTURE_DIR=<dir>:<out-file>
+ *     At invocation time (i.e. while the parent fnc is alive), read every
+ *     file in <dir> and write `{files: {<name>: <content>}}` as JSON to
+ *     <out-file>. Lets tests observe parent-lifetime state (the session-
+ *     coordination registry) that is unlinked again before fnc exits.
+ *     A missing/unreadable dir captures `{files: {}}`. Split at the FIRST
+ *     colon — both are absolute POSIX paths without colons in the fixtures.
+ *
  *   default
  *     Log the invocation and exit 0.
  */
 
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 
 const argv = process.argv.slice(2);
@@ -79,6 +87,32 @@ if (logPath !== undefined && logPath !== '') {
   } catch {
     // A log-write failure shouldn't change the exit behaviour the test is
     // exercising; swallow it and let the scenario play out.
+  }
+}
+
+const captureSpec = process.env.FAKE_CLAUDE_CAPTURE_DIR;
+if (captureSpec !== undefined && captureSpec !== '') {
+  const sep = captureSpec.indexOf(':');
+  if (sep >= 0) {
+    const dir = captureSpec.slice(0, sep);
+    const outFile = captureSpec.slice(sep + 1);
+    const files: Record<string, string> = {};
+    try {
+      for (const name of readdirSync(dir)) {
+        try {
+          files[name] = readFileSync(`${dir}/${name}`, 'utf8');
+        } catch {
+          // Raced away between readdir and read — skip.
+        }
+      }
+    } catch {
+      // Dir missing/unreadable — capture stays empty; the test asserts on that.
+    }
+    try {
+      writeFileSync(outFile, JSON.stringify({ files }));
+    } catch {
+      // Same policy as the invocation log: never change exit behaviour.
+    }
   }
 }
 
