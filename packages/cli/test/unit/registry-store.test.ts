@@ -269,6 +269,65 @@ describe('readLiveEntries', () => {
     expect(fake.files.has(`${DIR}/dead-1.json`)).toBe(false);
   });
 
+  test('lazy GC re-validates before unlink: a re-registered live entry survives', () => {
+    // TOCTOU race: reader A parses a stale file (dead owner) and decides to
+    // GC it. Before A's unlink lands, the SAME session id re-registers —
+    // e.g. the user resumes a SIGKILLed session, so a new fnc renames its
+    // fresh registration into the identical <session-id>.json path. A's
+    // unlink-by-path would delete the LIVE entry, and since a session only
+    // rewrites its file on register/claim/release, the victim would stay
+    // invisible to every other session with no self-heal. The reader must
+    // re-read immediately before unlinking and skip unless the owner still
+    // matches the dead owner it decided on.
+    const fake = makeFakeFs();
+    seedEntry(fake, 'sid-x', 200, '666'); // dead content, seen by the scan
+    const liveReplacement: RegistryEntry = {
+      session: { id: 'sid-x', name: 's-sid-x' },
+      owner: { pid: 100, starttime: '555' }, // live per isLive below
+      cwd: '/home/u/src/sid-x',
+      startedAt: '2026-08-11T11:30:00.000Z',
+      claims: [{ key: '/home/u/src/sid-x', mode: 'exclusive', implicit: 'cwd' }],
+    };
+    // First read returns the stale content; by the time the reader comes
+    // back to unlink, the live replacement has been renamed into place.
+    const realReadFile = fake.fs.readFile.bind(fake.fs);
+    let reads = 0;
+    fake.fs.readFile = (path: string): string => {
+      if (path === `${DIR}/sid-x.json`) {
+        reads++;
+        if (reads === 1) {
+          return realReadFile(path);
+        }
+        return JSON.stringify(liveReplacement);
+      }
+      return realReadFile(path);
+    };
+
+    const entries = readLiveEntries({
+      dir: DIR,
+      fs: fake.fs,
+      isLive: (owner) => owner.pid === 100,
+    });
+
+    // The stale content read this scan is correctly not reported live…
+    expect(entries.map((e) => e.session.id)).toEqual([]);
+    // …but the freshly re-registered file must NOT be unlinked.
+    expect(fake.files.has(`${DIR}/sid-x.json`)).toBe(true);
+  });
+
+  test('lazy GC still unlinks when the re-read confirms the same dead owner', () => {
+    const fake = makeFakeFs();
+    seedEntry(fake, 'dead-1', 200, '666');
+
+    readLiveEntries({
+      dir: DIR,
+      fs: fake.fs,
+      isLive: (owner) => owner.pid === 100,
+    });
+
+    expect(fake.files.has(`${DIR}/dead-1.json`)).toBe(false);
+  });
+
   test('missing registry dir → empty list', () => {
     const fake = makeFakeFs();
     expect(readLiveEntries({ dir: '/nope', fs: fake.fs, isLive: () => true })).toEqual([]);

@@ -263,10 +263,27 @@ export function readLiveEntries(args: ReadLiveEntriesArgs): RegistryEntry[] {
       continue;
     }
     if (!isLive(parsed.owner)) {
+      // TOCTOU guard before the unlink: between our read and this point,
+      // the SAME session id may have re-registered (user resumes a
+      // SIGKILLed session; a fresh fnc renames its live registration into
+      // the identical path). Unlinking by path would then delete the LIVE
+      // entry — and since a session only rewrites its file on
+      // register/claim/release, the victim stays invisible with no
+      // self-heal. Re-read and only unlink while the owner still matches
+      // the dead owner we decided on; a re-registered, unreadable, or
+      // already-GC'd file is left alone.
       try {
-        fs.unlink(path);
+        const recheck: unknown = JSON.parse(fs.readFile(path));
+        if (
+          isEntryShaped(recheck)
+          && recheck.owner.pid === parsed.owner.pid
+          && recheck.owner.starttime === parsed.owner.starttime
+        ) {
+          fs.unlink(path);
+        }
       } catch {
-        // Another reader GC'd it first — fine.
+        // Gone (another reader GC'd it first) or rewritten mid-read —
+        // either way, not ours to GC this scan.
       }
       continue;
     }
