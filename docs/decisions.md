@@ -6,6 +6,20 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-08-11 — Session-coordination registry: file-per-session + kernel rename atomicity, no daemon
+
+**Decision:** The session-coordination registry ([`packages/cli/src/registry/`](../packages/cli/src/registry/), #350) is machine-global, file-based, and daemon-less: one JSON file per session at `<state dir>/fnclaude/registry/<session-id>.json`, where the session's own fnc process is the file's ONLY writer. Updates go write-temp-then-rename (`SessionRegistry.#write`), no locks anywhere. Liveness of an entry is `pid alive AND starttime matches` — starttime being field 22 of `/proc/<pid>/stat` captured at registration ([`liveness.ts`](../packages/cli/src/registry/liveness.ts)). Readers skip dead entries and unlink them lazily (GC on read, [`readLiveEntries`](../packages/cli/src/registry/SessionRegistry.ts)). The whole registry is ADVISORY — claims communicate intent between parallel sessions; nothing enforces them.
+
+**Context:** Parallel Claude sessions on one machine share state their command lines never mention — build caches, package stores, sockets, mounts. The acceptance scenario: remounting `~/.cache` while a sibling session is mid-`go build`. The mutator needs to discover the compiling session, ask, hold the resource for the duration, and signal completion. That needs a registry every fnc process can read and write concurrently without coordination infrastructure.
+
+**Why file-per-session instead of a shared file or a daemon:** a single shared JSON file would need cross-process locking (flock semantics differ across platforms, and a crashed holder wedges everyone); a daemon is a lifecycle liability (who starts it, who restarts it, what happens when it dies mid-session). One-file-per-session dissolves both problems structurally: with exactly one writer per file there is nothing to lock, and POSIX `rename(2)` within a directory is atomic, so readers always see a complete document — a torn read is impossible by construction. Crash cleanup follows the same no-infrastructure principle: instead of a supervisor noticing death, every READER applies the pid+starttime probe and unlinks what failed it. Bare pid-aliveness would misread a recycled pid as a live session; the starttime equality check (stored as a string, compared verbatim — no clock-tick interpretation) makes pid reuse detectable, since the recycled pid necessarily has a different starttime.
+
+**Why advisory-only:** enforcement (fail the claim, block the operation) would require every filesystem consumer to route through fnc, which is impossible for arbitrary toolchains — and wrong for a communication tool: the model on each side is capable of negotiating once it can SEE the conflict. The registry's job ends at making conflicts visible; `mode: "exclusive"` is a message, not a mutex. The completion signal follows the same shape: a mutation-in-progress is represented as a held exclusive claim, and RELEASING it is the done-signal — `fnc_await` blocks on exactly "no other live session holds an overlapping claim", so no separate notification channel is needed.
+
+**Revisit when:** registry churn makes lazy GC insufficient (a periodic sweeper could bolt on without changing the format); or a platform without `/proc` needs starttime-equivalent liveness (macOS: `proc_pidinfo`; currently degrades to pid-aliveness there); or advisory proves too weak for some resource class and an opt-in enforcement layer is actually warranted.
+
+---
+
 ## 2026-06-26 — Renderer stays hybrid (text + targeted images), not full-canvas
 
 **Decision:** The transcript stays real selectable Ink `<Text>`; Kitty graphics images are used only for content that text cannot represent (math, mermaid diagrams, actual `<img>` content). Before any inline-image work, the transcript-history rendering should move to Ink's `<Static>` (finalized events) plus a dynamic live tail.
