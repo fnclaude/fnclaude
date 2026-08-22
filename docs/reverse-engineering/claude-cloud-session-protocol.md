@@ -19,6 +19,10 @@ This doc opens that branch. See below for how the two relate.
 > "the code says this is what should happen," not "this was observed to
 > happen." Gaps and unconfirmed points are called out inline and summarized in
 > [Gaps / not yet verified](#gaps--not-yet-verified) at the end.
+> **A live probe against a real cloud session must be run to confirm the
+> inferred parts of this protocol before any fnc client code is built against
+> it** — a hard prerequisite, not an optional cross-check. See
+> [Required next step: run the live probe](#gaps--not-yet-verified).
 >
 > Minified symbol names and byte offsets are intentionally omitted. Every
 > claim below is anchored on durable string literals — endpoint paths, header
@@ -360,6 +364,17 @@ which endpoint family and session-id prefix you're reading logs for — `env_`
 ---
 
 ## Gaps / not yet verified
+
+> **Required next step — run the live probe.** Before any fnc client code is
+> written against this protocol, a live probe against a real cloud session
+> **must** be run to close the unconfirmed points below — this is a
+> prerequisite for implementation, not an optional cross-check. Minimum probe:
+> authenticate with a `user:sessions:claude_code`-scoped token, `POST
+> /v1/code/sessions` to create a `cse_…` session, open the SSE stream at
+> `…/events/stream`, `POST` one user turn to `…/events`, and capture the exact
+> request/response bodies. That single pass confirms both the inferred
+> user-turn payload and the attach-to-existing-session behavior. Until it has
+> run, treat everything in this document as unverified.
 
 - **Nothing in this document was executed against the live API.** No cloud
   session was created, attached to, or messaged. Every claim is static
