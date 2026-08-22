@@ -153,7 +153,7 @@ Logs also reference `CCR v2` (`[bridge:session] CCR v2: registered worker`) — 
 | Teleport (remote mirror) | `/teleport-events` |
 | Archive session | `POST /v1/sessions/{sessionId}/archive` |
 
-`/v1/environment_providers/cloud/create` and `/v1/code/*` (`agent-proxy`, `sessions`) are the **opposite direction** — this CLI dispatching a job to a cloud runner ("CCR" / `task_remote_agent`) — not hosting a bridge. Don't conflate them with RC hosting.
+`/v1/environment_providers/cloud/create` and `/v1/code/*` (`agent-proxy`, `sessions`) are the **opposite direction** — this CLI dispatching a job to a cloud runner ("CCR" / `task_remote_agent`) — not hosting a bridge. Don't conflate them with RC hosting. That direction is documented separately in [`claude-cloud-session-protocol.md`](claude-cloud-session-protocol.md).
 
 ### Auth
 
