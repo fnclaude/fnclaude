@@ -17,6 +17,7 @@ Navigation index for the fnclaude documentation.
 - [proposals/design.renderer.md](proposals/design.renderer.md) — Forward-looking design for renderer↔CLI in-process integration (not yet shipped) — created 2026-05-30
 - [proposals/design.renderer-images.md](proposals/design.renderer-images.md) — Implementation guide for inline images: Kitty graphics protocol, `<Static>` foundation, `<img>`/pasted-image flows, security — created 2026-06-26
 - [proposals/multipane-orchestration-proposal.md](proposals/multipane-orchestration-proposal.md) — Design exploration for a TUI hosting Ink chrome, Neovim, and transcript side-by-side — created 2026-06-26
+- [proposals/renderer-surface-options.md](proposals/renderer-surface-options.md) — Exploration of which surface the renderer should be (stock Ink / forked Ink / Electron / local web) and which drive model (streaming vs one-shot); nothing decided — created 2026-08-22
 - [proposals/subagent-panes-idea.md](proposals/subagent-panes-idea.md) — Design for a multi-agent cockpit: per-subagent panes for watching and steering in-flight agents — created 2026-06-18, updated 2026-06-26
 
 ## Reference
@@ -35,6 +36,7 @@ Navigation index for the fnclaude documentation.
 - [reverse-engineering/claude-code-binary-internals.md](reverse-engineering/claude-code-binary-internals.md) — Runbook for grepping Claude Code's Bun-compiled binary for embedded JS and prompt strings — created 2026-06-17
 - [reverse-engineering/claude-code-compact-prompts.md](reverse-engineering/claude-code-compact-prompts.md) — Reverse-engineered compact/summary prompt strings extracted from Claude Code binary — created 2026-06-18
 - [reverse-engineering/claude-code-control-protocol.md](reverse-engineering/claude-code-control-protocol.md) — Reference for the stream-json `control_request`/`control_response` protocol: frame shape, full subtype vocabulary, CLI-side receiver, and the renderer-mode-only handle for live model/effort/permission-mode switching — created 2026-07-03
+- [reverse-engineering/claude-code-ink-fork.md](reverse-engineering/claude-code-ink-fork.md) — Claude Code's TUI is a *fork* of Ink, not stock Ink: ~660 KB first-party terminal layer (escape stack, screen manager, hit-testing, selection); why the shipped bundle isn't extractable — created 2026-08-22
 - [reverse-engineering/claude-code-prompt-strings.md](reverse-engineering/claude-code-prompt-strings.md) — Heuristic bulk extraction of all instruction-like strings from Claude Code binary — created 2026-06-18
 - [reverse-engineering/claude-code-render-modes.md](reverse-engineering/claude-code-render-modes.md) — Reference for Claude Code's three terminal render modes, escape-sequence mechanics, and implications for fnclaude — created 2026-06-26
 - [reverse-engineering/claude-code-terminal-tricks.md](reverse-engineering/claude-code-terminal-tricks.md) — Behavior-level reference for CC's terminal/TUI mechanisms: theme detection, OSC hyperlinks, image protocols, clipboard, keyboard handling, and capability detection — created 2026-06-29
