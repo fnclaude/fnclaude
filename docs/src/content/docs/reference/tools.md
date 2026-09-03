@@ -1,69 +1,68 @@
 ---
 title: Tool reference
-description: Every MCP tool fnclaude exposes to the Claude Code session it launches.
+description: Every MCP tool fnclaude gives the Claude Code session it launches.
 ---
 
-fnclaude runs an MCP server alongside each session and injects it via `--mcp-config`,
-so the model sees these tools from session start. The descriptions below mirror what
-the model is told.
+fnclaude runs an MCP server beside each session and registers it through an injected
+`--mcp-config`. The model sees these tools from the first turn. The descriptions
+below say what the model is told.
 
 ## fnc_switch_project
 
-Switch this fnclaude session to a different project, carrying a continuity summary.
-One-shot: call it once and the session is killed and re-launched at the destination.
-Because the call ends the session, the model prints a brief cancellation-window line
-and sleeps before calling, so you can interrupt.
+Switch this session to a different project, carrying a continuity summary. One-shot:
+the session is killed and relaunched at the destination. Because the call ends the
+session, the model prints a short countdown line and sleeps before calling, so you
+can interrupt.
 
-Startup flags are preserved, minus a denylist of destination-bound ones such as
-`--add-dir`, `--mcp-config`, `--from-pr`, and `--name`.
+Startup flags carry over, minus a denylist of ones that belong to the old
+destination: `--add-dir`, `--mcp-config`, `--from-pr`, `--name`, and similar.
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `destination` | yes | The verbatim user reference: short repo name, `name@owner`, `owner/name`, a URL, or an absolute path. A `+workspace` suffix is supported. |
-| `name` | yes | A 3-6 word kebab-case session topic, e.g. `fix-auth-bug`. |
+| `destination` | yes | Your reference, verbatim: a bare name, `name@owner`, `owner/name`, a URL, or an absolute path. A `+workspace` suffix works. |
+| `name` | yes | A three-to-six-word kebab-case topic, such as `fix-auth-bug`. |
 | `summary` | yes | A written summary of the conversation for the receiving session. |
-| `session_id` | no | The current session UUID, read from `$CLAUDE_CODE_SESSION_ID`. Lets fnclaude auto-capture the live permission mode from the session log. |
+| `session_id` | no | The current session UUID, read from `$CLAUDE_CODE_SESSION_ID`. Lets fnclaude read the live permission mode out of the session log. |
 | overrides | no | `model`, `effort`, `permission_mode`, `allowed_tools`, `agent`, `brief`, `chrome`, `ide`, `verbose`. |
 
-The response `action` is `done` (transfer in flight), `paste_flow` (auto-handoff
-disabled, so copy and paste the rendered command), or `error`.
+The response `action` is `done` (transfer in flight), `paste_flow` (auto-handoff is
+off, so the rendered command comes back for you to paste), or `error`.
 
 ## fnc_spawn_session
 
-Spawn a sibling fnclaude session for a different project in a new terminal window,
-while leaving the current session running. For when you discover an unrelated task
-mid-flow and do not want to abandon this one.
+Open a sibling session for a different project in a new terminal window, and leave
+this one running. For when an unrelated task turns up mid-flow and you do not want
+to drop this one.
 
-One-shot, with no countdown needed — the current session keeps running regardless.
-A spawn is a fresh start and does **not** preserve this session's startup flags.
+One-shot, with no countdown. This session keeps running either way. A spawn is a
+fresh start and does **not** carry this session's startup flags.
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `destination` | yes | Same reference forms as a switch. |
-| `name` | yes | A 3-6 word kebab-case topic for the sibling. |
+| `destination` | yes | Same forms as a switch. |
+| `name` | yes | A three-to-six-word kebab-case topic for the sibling. |
 | `summary` | yes | A written summary scoped to the sibling's task. |
-| overrides | no | Same set as a switch, applied to the sibling rather than this session. |
+| overrides | no | Same set as a switch, applied to the sibling. |
 
-Response `action` is `done`, `paste_flow` (no launcher available), or `error`.
+The response `action` is `done`, `paste_flow` (no launcher available), or `error`.
 
 ## fnc_restart
 
-Restart the current fnclaude session in place, preserving conversation context. The
-user's original startup flags are preserved; the optional overrides change individual
-flags for the restarted session.
+Restart this session in place, keeping the conversation. Your startup flags carry
+over. The overrides change one flag at a time for the restarted session.
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `session_id` | yes | The current Claude session ID, read from `$CLAUDE_CODE_SESSION_ID` via Bash. The variable is not exposed to MCP tool input directly. |
+| `session_id` | yes | The current session UUID. The model reads `$CLAUDE_CODE_SESSION_ID` through Bash, since MCP tool input cannot see it. |
 | overrides | no | `model`, `effort`, `permission_mode`, `allowed_tools`, `agent`, `brief`, `chrome`, `ide`, `verbose`. |
 
 ## get_usage
 
-Returns current budget headroom for the session: per-model cost and token breakdown,
-current context-window size, and subscription limits. Meant for high-token decision
-points — a subagent fan-out, a large read, deep exploration — not for polling.
+Returns what this session has spent: cost and tokens per model, the current context
+size, and subscription limits. For decision points that cost a lot of tokens, such as
+a subagent fan-out or a large read. Not for polling.
 
-Takes `session_id`, read from `$CLAUDE_CODE_SESSION_ID`. The response shape is:
+Takes `session_id`, read from `$CLAUDE_CODE_SESSION_ID`. The response:
 
 ```json
 {
@@ -79,30 +78,30 @@ Takes `session_id`, read from `$CLAUDE_CODE_SESSION_ID`. The response shape is:
 ```
 
 :::caution
-`limits` is `null` in this version. The rate-limit headers carrying the 5-hour,
-weekly, and per-model quotas travel over claude's own API connection, not the terminal
-fnclaude wraps, so live limits are not observable yet. Treat `null` as "not yet
-observed", never as "no limit" or zero.
+`limits` is `null` in this version. The rate-limit headers that carry the 5-hour,
+weekly, and per-model quotas travel over claude's own API connection, not the
+terminal fnclaude wraps, so fnclaude cannot see them. Read `null` as "not observed",
+never as "no limit" or zero.
 :::
 
-`context.used` is the latest assistant turn's context size in tokens, or `null` if no
-assistant turn has happened yet.
+`context.used` is the context size of the latest assistant turn in tokens, or `null`
+before the first one.
 
 ## fnc_set_model
 
-Change the session's model on the running session. Fire-and-forget: the change applies
-and nothing is returned through the tool.
+Change the running session's model. Fire-and-forget: the change applies and nothing
+comes back through the tool.
 
-Takes `model`, one of `opus`, `sonnet`, `haiku`.
+Takes `model`: `opus`, `sonnet`, or `haiku`.
 
 ## fnc_set_effort
 
-Change the session's reasoning effort on the running session. Fire-and-forget, same as
-above.
+Change the running session's reasoning effort. Fire-and-forget, like the model
+change.
 
-Takes `effort`, one of `low`, `medium`, `high`, `xhigh`, `max`, `auto`.
+Takes `effort`: `low`, `medium`, `high`, `xhigh`, `max`, or `auto`.
 
 ## fnc_copy_to_clipboard
 
-Copy text to your clipboard. Takes `text`. Useful when the model needs to hand you
-something to paste rather than run.
+Put text on your clipboard. Takes `text`. For when the model has something you
+should paste rather than run.

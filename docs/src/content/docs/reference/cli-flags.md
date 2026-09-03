@@ -1,19 +1,19 @@
 ---
 title: CLI flags
-description: The full fnc argument surface — magic words, owned flags, capital-letter shortcuts, environment, and config.
+description: The full fnc argument surface. Magic words, fnc-owned flags, capital-letter shortcuts, environment, and config.
 ---
 
 ```
 fnc [MODEL] [EFFORT] [SUBCOMMAND] [CWD [WORKTREE]] [FLAGS...] [-- PROMPT]
 ```
 
-Everything fnclaude does not claim passes through to claude verbatim. Run
-`claude --help` for that side of the surface.
+Anything fnclaude does not claim goes to claude untouched. `claude --help` covers
+that side.
 
 ## Magic positional words
 
-Order-independent for the subcommand. Model and effort are scanned left-to-right at
-the head of argv, before any flags.
+Model and effort are read left to right at the head of argv, before any flag. The
+subcommand can sit anywhere among them.
 
 | Kind | Words | Becomes |
 | --- | --- | --- |
@@ -23,38 +23,38 @@ the head of argv, before any flags.
 | Subcommand | `continue`, `con` | `--continue` |
 | Subcommand | `fork`, `fk` | `--resume --fork-session` |
 
-Effort alone in the first slot implies `opus`. To use a directory literally named one
-of these words, prefix it with `./`.
+Effort alone in the first slot implies `opus`. A directory literally named one of
+these words is reachable as `./<name>`.
 
 ## Positional paths
 
-At most two positionals survive after the magic words and subcommand:
+Two positionals survive after the magic words:
 
-1. **The cwd to launch claude in.** Any form from [Repo resolution](/reference/repo-resolution/).
-   Missing repositories are cloned. With no path at all, fnclaude falls back to
-   `$XDG_CONFIG_HOME/fnclaude/noop`.
-2. **A worktree name,** with the same semantics as `-w <name>`.
+1. **The directory to launch claude in.** Any form on
+   [Repo resolution](/reference/repo-resolution/). A missing repository is cloned.
+   With no path at all, fnclaude launches in `$XDG_CONFIG_HOME/fnclaude/noop`.
+2. **A worktree name.** Same meaning as `-w <name>`.
 
-A third positional is an error — use `-A`/`--also` for extra directories.
+A third positional is an error.
 
 ## fnclaude-owned flags
 
-Consumed by the launcher and never forwarded to claude.
+The launcher consumes these. claude never sees them.
 
 | Flag | Effect |
 | --- | --- |
-| `-A`, `--also <dir>` | Additional extra directory. Repeatable. |
-| `--no-tmux` | Suppress auto-tmux injection for this invocation. |
-| `-w`, `--worktree <name>` | Worktree intercept. Matches an existing worktree and fnclaude swaps cwd to it; no match and it forwards as a new-worktree request. |
-| `-h`, `--help` | Show help and exit. |
-| `-v`, `--version` | Print fnclaude's version and exit. This shadows claude's `-v` — use `claude --version` for that. |
+| `-A`, `--also <dir>` | Accepted and reserved. Not forwarded to claude yet. |
+| `--no-tmux` | Skip auto-tmux for this invocation. |
+| `-w`, `--worktree <name>` | Worktree intercept. An existing worktree of that name becomes the launch directory. No match, and the name goes to claude as a new-worktree request. |
+| `-h`, `--help` | Print help and exit. |
+| `-v`, `--version` | Print fnclaude's version and exit. This shadows claude's `-v`. Use `claude --version` for that. |
 
-`-v` is the only lowercase short flag fnclaude reserves. Everything else it claims is
+`-v` is the only lowercase short flag fnclaude takes. Everything else it claims is
 uppercase.
 
 ## Capital-letter shortcuts
 
-Each translates to a claude long-form flag.
+Each one is a claude long flag.
 
 | Short | Long | Short | Long |
 | --- | --- | --- | --- |
@@ -65,70 +65,68 @@ Each translates to a claude long-form flag.
 | `-G` | `--agent <agent>` | `-V` | `--verbose` |
 | `-I` | `--ide` | `-W` | `--allowedTools <tools>` |
 
-POSIX collapsing works — `-BVC` is `-B -V -C` — and only the last flag in a collapsed
-group may take a value. The value-taking flags `-G`, `-M`, and `-W` must be the final
-character of a cluster, never in the middle.
+They collapse the POSIX way: `-BVC` is `-B -V -C`. Only the last flag in a cluster
+may take a value, so `-G`, `-M`, and `-W` go at the end of one, never in the middle.
 
 ## Reserved subcommand
 
-`fnc mcp [--noop]` starts the internal MCP server. claude invokes it automatically via
-the injected `--mcp-config`; it is not for direct use. A directory literally named
-`mcp` is reachable as `./mcp`.
+`fnc mcp` starts fnclaude's internal MCP server. claude runs it itself through the
+injected `--mcp-config`. It is not for direct use. A directory literally named `mcp`
+is reachable as `./mcp`.
 
 ## Behaviours worth knowing
 
-**Cross-cwd resume.** When claude shows the resume picker and you pick a session from a
-different directory, fnclaude transparently re-launches there. Every flag from the
-original invocation is preserved.
+**Cross-cwd resume.** Pick a session from another directory in claude's resume
+picker and fnclaude relaunches itself there, with every flag from the original
+invocation. See [Resuming & continuing](/sessions/resuming/).
 
-**Auto-name.** When a `--`, a prompt, and no `--name`/`-n` are all present, fnclaude
-generates a one-to-three-word session label via Haiku. With `ANTHROPIC_API_KEY` set it
-calls the Anthropic API directly; without it, it shells out to `claude -p` and uses
-your subscription auth. Failures and timeouts fall back silently to a heuristic.
+**Auto-name.** Pass a prompt after `--` with no `--name` or `-n`, and fnclaude
+generates a one-to-three-word session label with Haiku. With `ANTHROPIC_API_KEY` set
+it calls the API directly. Without it, it shells out to `claude -p` on your
+subscription. On failure or timeout it falls back to a heuristic, silently.
 
-**Auto-tmux.** With `[auto] tmux = "worktree"` in config, `--tmux` is injected whenever
-`-w <name>` creates a new worktree. `--no-tmux` skips it for one invocation.
+**Auto-tmux.** With `[auto] tmux = "worktree"` in config, fnclaude adds `--tmux`
+whenever `-w <name>` creates a new worktree. `--no-tmux` skips that once.
 
 ## Environment variables
 
-Precedence is CLI, then environment, then config file.
+CLI beats environment, and environment beats the config file.
 
 | Variable | Effect |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Direct-API auth for auto-naming. Without it, fnclaude shells `claude -p`. |
+| `ANTHROPIC_API_KEY` | Direct-API auth for auto-naming. Without it, fnclaude shells out to `claude -p`. |
 | `XDG_CONFIG_HOME` | Config directory base. Defaults to `~/.config`. |
-| `FNC_PROMPTS_DIR` | Override the install-dir prompts location. |
-| `FNC_NOOP_TEMPLATE_PATH` | Override the handoff template used when seeding the noop directory on first launch. |
-| `FNC_LOG` | Log level: `debug`, `info`, `warn`, `error`, or `silent`/`off`/`none` to disable. Defaults to `info`. |
+| `FNC_PROMPTS_DIR` | Override where fnclaude looks for its prompt fragments. |
+| `FNC_NOOP_TEMPLATE_PATH` | Override the handoff template copied into the noop directory on first launch. |
+| `FNC_LOG` | Log level: `debug`, `info`, `warn`, `error`. `silent`, `off`, or `none` disables logging. Defaults to `info`. |
 
 ## Config file
 
 `$XDG_CONFIG_HOME/fnclaude/config.toml`:
 
 ```toml
-[name]
-model = "claude-haiku-4-5"
-timeout = "3s"
-
 [auto]
 tmux = "never"          # or "worktree"
 handoff = "never"       # or "ask", or a number of seconds
-spawn_command = "..."   # how to open a new terminal window
+spawn_command = "..."   # opens a new terminal window for a sibling session
 
 [exec.env]
 NAME = "value"          # injected into every claude child's environment
 ```
 
+`spawn_command` is split on whitespace and each token may use `{bin}`, `{dest}`,
+`{name}`, and `{summary}`. See [Spawning siblings](/sessions/spawning-siblings/).
+
 ## Repo settings
 
 `~/.claude/settings.json` supplies `cloneTemplate`, `worktreeTemplate`, and
 `branchTemplate` under `repoSettings`, shared with the claude-code-worktree-paths
-plugin. They layer across the project, local, and managed tiers in standard
-claude-settings precedence.
+plugin. The user, project, local, and managed settings files layer in the usual
+claude order.
 
 ## Logs
 
-fnclaude writes a structured JSONL log per launch under the platform state directory —
-`$XDG_STATE_HOME/fnclaude/logs` on Linux, `~/Library/Logs/fnclaude` on macOS — one file
-per process, pruned to the fifty most recent on each launch. Logging is best-effort and
-degrades silently to a no-op if the filesystem refuses.
+Each launch writes one JSONL log file under the platform's state directory:
+`$XDG_STATE_HOME/fnclaude/logs` on Linux, `~/Library/Logs/fnclaude` on macOS. On
+each launch fnclaude keeps the fifty newest and deletes the rest. Logging never
+blocks a launch. If the filesystem refuses, it turns itself off.

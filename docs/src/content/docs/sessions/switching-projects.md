@@ -1,42 +1,40 @@
 ---
 title: Switching projects
-description: Replace the current session with one rooted in another repository, carrying the conversation across.
+description: Replace this session with one in another repository, and carry the conversation across.
 ---
 
-Ask to switch projects and the model calls `fnc_switch_project`. The current session
-is killed and fnclaude re-execs at the destination, carrying a written summary of the
-conversation so the new session opens knowing what it is there for.
+Ask to switch projects and the model calls `fnc_switch_project`. This session ends
+and fnclaude relaunches at the destination with a written summary of the
+conversation, so the new session starts already briefed.
 
-This is the destructive one. To keep the current session running and open a second
-alongside it, use [Spawning siblings](/sessions/spawning-siblings/) instead. To
-restart where you are, see `fnc_restart` in the [Tool reference](/reference/tools/).
+This is the one that ends a session. To keep this one and open a second beside it,
+see [Spawning siblings](/sessions/spawning-siblings/). To restart where you are, see
+`fnc_restart` in the [Tool reference](/reference/tools/).
 
-## The cancellation window
+## The countdown
 
-The call ends the session, so it is one-shot and it warns you first. Before calling,
-the model prints a short line such as *"Transferring in 3 seconds. Ctrl-C to cancel"*
-and runs a sleep. If the sleep completes uninterrupted, the switch fires. Interrupt it
-and nothing happens.
+The call ends the session, so the model warns you first. It prints a line like
+*"Transferring in 3 seconds. Ctrl-C to cancel"* and sleeps. If the sleep finishes,
+the switch fires. Interrupt it and nothing happens.
 
 ## The summary that travels
 
-Before the call, the model writes a summary of the conversation so far: what you asked
-for in your own words, the decisions made and their reasoning, the files read or
-edited, what was finished, what was still in flight, and any open questions. In-flight
-work is the load-bearing part — it is what lets the receiving session pick up the
-thread instead of starting over.
+Before calling, the model writes a summary of the conversation so far: what you
+asked for in your own words, the decisions made and why, the files read or edited,
+what is finished, what is still in flight, and any open questions. In-flight work is
+the part that matters most. It is what lets the new session pick up the thread
+instead of starting over.
 
-Alongside it goes a `name`, a three-to-six-word kebab-case topic such as
-`fix-auth-bug`, used to label the session at the destination.
+With it goes a `name`, a three-to-six-word kebab-case topic such as `fix-auth-bug`,
+which labels the session at the destination.
 
 ## What you pass
 
-You pass a destination the way you would say it out loud. Resolution happens inside
-fnclaude, not in the model — the reference goes through verbatim, and fnclaude's
-resolver finds it, cloning if necessary:
+Say the destination the way you would say it out loud. The model passes it through
+verbatim and fnclaude's resolver finds it, cloning if it has to:
 
 ```sh
-# all of these are valid destinations
+# all valid destinations
 arch-setup
 arch-setup@fnrhombus
 fnrhombus/arch-setup
@@ -47,22 +45,22 @@ arch-setup+fix-lid-sync
 
 The full grammar is on [Repo resolution](/reference/repo-resolution/).
 
-If the request is ambiguous to the *model* — "switch me to the other one", with no
-name — it asks you which, rather than guessing.
+If the request is ambiguous to the model, say "switch me to the other one" with no
+name, it asks which rather than guessing.
 
 ## What carries over
 
-fnclaude preserves the flags you started the original session with, minus a denylist
-of ones that belong to the old destination (`--add-dir`, `--mcp-config`, `--from-pr`,
-`--name`, and friends). The live permission mode is captured from the session's own
-log rather than assumed.
+The flags you started this session with carry over, minus a denylist of ones that
+belong to the old destination: `--add-dir`, `--mcp-config`, `--from-pr`, `--name`,
+and similar. The live permission mode is read from the session's own log rather
+than assumed.
 
-Individual flags can be overridden for the destination when you ask for it: model,
-effort, permission mode, allowed tools, agent, and the `--brief` / `--chrome` /
-`--ide` / `--verbose` switches.
+Ask for a change and the model overrides that one flag for the destination: model,
+effort, permission mode, allowed tools, agent, or the `--brief`, `--chrome`, `--ide`,
+and `--verbose` switches.
 
 ## When auto-handoff is off
 
-With auto-handoff disabled in config, the tool returns a `paste_flow` result instead
-of transferring: fnclaude renders the equivalent command and you paste it yourself.
-`fnc_copy_to_clipboard` exists to make that one keystroke.
+With auto-handoff disabled in config, the tool returns `paste_flow` instead of
+transferring. fnclaude renders the equivalent command and puts it on your clipboard,
+and you run it yourself.

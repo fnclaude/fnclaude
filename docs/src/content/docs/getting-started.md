@@ -1,88 +1,84 @@
 ---
 title: Getting Started
-description: Install fnclaude, start your first session, and learn the repo references fnc understands.
+description: Install fnc, launch a session by repo name, and see what the session can do from inside.
 ---
 
-**fnclaude** wraps Claude Code with session control. You can move a running session
-to another repository, or open a second one beside it, and neither has to start from
-a cold context — fnclaude carries a written continuity summary across the boundary.
+**fnclaude** is a launcher for Claude Code. The binary is `fnc`. Give it a repo
+reference instead of a directory and it finds the clone, or makes one, and starts
+claude there. The session it launches gets tools to switch to another repo, open a
+sibling, restart, and change model or effort while it runs.
 
-The binary is called `fnc`. Everything below assumes it is on your `PATH`.
+Everything below assumes `fnc` is on your `PATH`.
 
 ## Install
-
-fnclaude publishes to npm. Install it globally and you get the `fnc` binary:
 
 ```sh
 npm i -g fnclaude
 ```
 
-Confirm it resolved:
+Check it:
 
 ```sh
 fnc --version
 ```
 
 :::note
-`-v` and `--version` print *fnclaude's* version. `fnc` claims the flag before claude
-sees it, so reach claude's own version with `claude --version` directly.
+`-v` and `--version` print fnclaude's version. `fnc` claims the flag before claude
+sees it. For claude's own version, run `claude --version`.
 :::
 
-See [Installation](/installation/) for the other package managers, the runtime
-requirements, and the platforms that are actually exercised.
+`fnc` needs Bun and the `claude` CLI. See [Installation](/installation/).
 
-## Your first session
+## First session
 
-Point `fnc` at a repository and it launches claude there:
+Name a repository and `fnc` launches claude in it:
 
 ```sh
 fnc arch-setup
 ```
 
-You are not limited to where your terminal happens to be. The reference is resolved
-independently of the current directory, so any repository is one word away from any
-prompt.
+Your shell's directory does not matter. The name is resolved on its own, so any
+repository is one word away from any prompt. Run `fnc` with no argument and it
+starts in a neutral scratch directory instead of wherever your shell happens to be.
 
-To pick work back up rather than start fresh, `fnc resume`, `fnc continue`, and
-`fnc fork` cover the three shapes — see [Resuming & continuing](/sessions/resuming/).
+To pick a session back up rather than start fresh, use `fnc resume`, `fnc continue`,
+or `fnc fork`. See [Resuming & continuing](/sessions/resuming/).
 
 ## Repo reference forms
 
-You never have to spell out a path. `fnc` resolves any of these, cloning the
-repository if it is not on disk yet:
+`fnc` accepts any of these, and clones the repository if it is not on disk:
 
 | Form | Example |
 | --- | --- |
-| Short name, searched across your GitHub orgs | `fnc arch-setup` |
+| Bare name, matched against your clones, then your GitHub user and orgs | `fnc arch-setup` |
 | `name@owner` | `fnc arch-setup@fnrhombus` |
 | `owner/name` | `fnc fnrhombus/arch-setup` |
 | `gh:owner/name` | `fnc gh:fnrhombus/arch-setup` |
 | HTTPS or SSH URL | `fnc https://github.com/fnrhombus/arch-setup` |
-| A path you already have | `fnc ~/src/dots` |
-| Any of the above plus a `+workspace` suffix | `fnc arch-setup+fix-lid-sync` |
+| A path | `fnc ~/src/dots` |
+| Any of the above plus `+workspace` | `fnc arch-setup+fix-lid-sync` |
 
-Clones land at the `cloneTemplate` path from `~/.claude/settings.json`, which
-fnclaude shares with the claude-code-worktree-paths plugin. Full rules on
-[Repo resolution](/reference/repo-resolution/).
+Clones land at the `cloneTemplate` path under `repoSettings` in
+`~/.claude/settings.json`, the same setting the claude-code-worktree-paths plugin
+reads. The rules are on [Repo resolution](/reference/repo-resolution/).
 
-The `+workspace` suffix resolves the base repository and adds a worktree beside it,
-branched and ready to commit. See [Worktrees](/sessions/worktrees/).
+The `+workspace` suffix resolves the repository, then adds a worktree beside it on
+its own branch. See [Worktrees](/sessions/worktrees/).
 
-## What a session handoff is
+## The summary that travels
 
-A handoff is the continuity summary fnclaude carries from one session to the next.
-When you ask to switch projects, the model writes a summary of the conversation —
-what you asked for, decisions made and why, files touched, work still in flight, open
-questions — and fnclaude hands that to the session it launches at the destination.
+When you ask the session to switch project or spawn a sibling, the model first
+writes a continuity summary: what you asked for, the decisions made and why, the
+files touched, the work still in flight, and the open questions. fnclaude hands that
+summary to the session it launches.
 
-The receiving session starts already knowing what it is there for, so the first
-message you send it is a continuation rather than a re-briefing. The same mechanism
-backs spawning a sibling session; the difference is only whether the current session
-survives.
+The new session starts already briefed. Your first message to it continues the work
+instead of re-explaining it. Switching and spawning share this mechanism. The
+difference is whether the current session survives.
 
-## Where to go next
+## Next
 
-- [Switching projects](/sessions/switching-projects/) — replace this session with one elsewhere.
-- [Spawning siblings](/sessions/spawning-siblings/) — keep this one and open a second.
-- [Tool reference](/reference/tools/) — every tool fnclaude exposes to the model.
-- [CLI flags](/reference/cli-flags/) — the full `fnc` surface.
+- [Switching projects](/sessions/switching-projects/) replaces this session with one elsewhere.
+- [Spawning siblings](/sessions/spawning-siblings/) keeps this one and opens a second.
+- [Tool reference](/reference/tools/) lists every tool the session gets.
+- [CLI flags](/reference/cli-flags/) is the full `fnc` surface.
