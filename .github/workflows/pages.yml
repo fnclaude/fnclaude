@@ -1,0 +1,53 @@
+name: Pages
+
+# Only the docs site and the version string it renders. Everything else on
+# main leaves the published site untouched, so there's no reason to rebuild it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'packages/fnclaude/package.json'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A deploy that's already uploading must finish — cancelling it mid-flight can
+# leave the Pages environment pointing at a half-published artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          # mise.toml at the repo root drives the tool list.
+          experimental: true
+      # Install from the workspace root: the docs package resolves its deps
+      # through the root lockfile like every other package here.
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+        working-directory: docs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
