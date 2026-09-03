@@ -16,6 +16,14 @@ Deployment is automatic: `.github/workflows/pages.yml` builds this package and p
 `dist/` to GitHub Pages on every push to `main` that touches it. `public/CNAME` holds
 the custom domain.
 
+## The @bruits/satteri-* optional deps
+
+Astro bundles Starlight's syntax highlighter into the prerender chunk, which moves its
+napi `require()` out of its own package directory and breaks the lookup for the
+platform binding. Declaring the bindings on this package puts them somewhere the
+bundled require can still resolve. Without them, importing anything from
+`@astrojs/starlight/components` fails the build under Bun.
+
 ## docs/ vs specs/
 
 `docs/` is this — the site users read. `specs/` at the repo root holds internal design

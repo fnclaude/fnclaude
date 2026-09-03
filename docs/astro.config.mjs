@@ -56,13 +56,12 @@ export default defineConfig({
           items: [
             { label: 'Getting Started', slug: 'getting-started' },
             { label: 'Installation', slug: 'installation' },
-            { label: 'The noop landing zone', slug: 'noop-landing-zone' },
-            { label: 'Continuity summaries', slug: 'continuity-summaries' },
           ],
         },
         {
           label: 'Sessions',
           items: [
+            { label: 'Resuming & continuing', slug: 'sessions/resuming' },
             { label: 'Switching projects', slug: 'sessions/switching-projects' },
             { label: 'Spawning siblings', slug: 'sessions/spawning-siblings' },
             { label: 'Worktrees', slug: 'sessions/worktrees' },

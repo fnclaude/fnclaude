@@ -100,7 +100,6 @@ Precedence is CLI, then environment, then config file.
 | `FNC_PROMPTS_DIR` | Override the install-dir prompts location. |
 | `FNC_NOOP_TEMPLATE_PATH` | Override the handoff template used when seeding the noop directory on first launch. |
 | `FNC_LOG` | Log level: `debug`, `info`, `warn`, `error`, or `silent`/`off`/`none` to disable. Defaults to `info`. |
-| `FNC_ENABLE_SLASH_TOOL` | Set to `1` to register the generic `fnc_run_slash_command` tool. |
 
 ## Config file
 

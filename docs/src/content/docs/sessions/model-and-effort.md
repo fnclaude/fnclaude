@@ -29,14 +29,13 @@ happens to be named `opus` is reachable as `./opus`.
 
 ## Mid-session
 
-Two tools change the live session in place by injecting the corresponding claude slash
-command:
+Two tools change the live session in place, with no restart and no lost context:
 
 - **`fnc_set_model`** — `opus`, `sonnet`, or `haiku`.
 - **`fnc_set_effort`** — `low`, `medium`, `high`, `xhigh`, `max`, or `auto`.
 
-Both are fire-and-forget. The command is queued as if you had typed it, and no output
-comes back through the tool.
+Both are fire-and-forget — the change applies to the running session and nothing comes
+back through the tool.
 
 ## Across a restart
 

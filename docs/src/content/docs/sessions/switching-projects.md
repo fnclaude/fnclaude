@@ -4,9 +4,8 @@ description: Replace the current session with one rooted in another repository, 
 ---
 
 Ask to switch projects and the model calls `fnc_switch_project`. The current session
-is killed and fnclaude re-execs at the destination, carrying a
-[continuity summary](/continuity-summaries/) so the new session opens knowing what it
-is there for.
+is killed and fnclaude re-execs at the destination, carrying a written summary of the
+conversation so the new session opens knowing what it is there for.
 
 This is the destructive one. To keep the current session running and open a second
 alongside it, use [Spawning siblings](/sessions/spawning-siblings/) instead. To
@@ -18,6 +17,17 @@ The call ends the session, so it is one-shot and it warns you first. Before call
 the model prints a short line such as *"Transferring in 3 seconds. Ctrl-C to cancel"*
 and runs a sleep. If the sleep completes uninterrupted, the switch fires. Interrupt it
 and nothing happens.
+
+## The summary that travels
+
+Before the call, the model writes a summary of the conversation so far: what you asked
+for in your own words, the decisions made and their reasoning, the files read or
+edited, what was finished, what was still in flight, and any open questions. In-flight
+work is the load-bearing part — it is what lets the receiving session pick up the
+thread instead of starting over.
+
+Alongside it goes a `name`, a three-to-six-word kebab-case topic such as
+`fix-auth-bug`, used to label the session at the destination.
 
 ## What you pass
 

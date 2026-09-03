@@ -11,11 +11,10 @@ The binary is called `fnc`. Everything below assumes it is on your `PATH`.
 
 ## Install
 
-fnclaude publishes to npm as `@fnclaude/cli`. Install it through your version manager
-so the pinned version travels with your setup:
+fnclaude publishes to npm. Install it globally and you get the `fnc` binary:
 
 ```sh
-mise use -g npm:@fnclaude/cli
+npm i -g fnclaude
 ```
 
 Confirm it resolved:
@@ -40,11 +39,12 @@ Point `fnc` at a repository and it launches claude there:
 fnc arch-setup
 ```
 
-Run `fnc` with no argument and you land in the *noop* directory instead — a marker
-directory with no project state, at `$XDG_CONFIG_HOME/fnclaude/noop/`. It is not a
-scratch workspace, it is a router: describe what you want and the session decides
-where the work belongs, writing a handoff and moving you there if the answer is
-"another repo". See [The noop landing zone](/noop-landing-zone/).
+You are not limited to where your terminal happens to be. The reference is resolved
+independently of the current directory, so any repository is one word away from any
+prompt.
+
+To pick work back up rather than start fresh, `fnc resume`, `fnc continue`, and
+`fnc fork` cover the three shapes — see [Resuming & continuing](/sessions/resuming/).
 
 ## Repo reference forms
 
@@ -71,14 +71,14 @@ branched and ready to commit. See [Worktrees](/sessions/worktrees/).
 ## What a session handoff is
 
 A handoff is the continuity summary fnclaude carries from one session to the next.
-When you ask to switch projects, the model writes a `/compact`-style summary — what
-you asked for, decisions made and why, files touched, work still in flight, open
+When you ask to switch projects, the model writes a summary of the conversation —
+what you asked for, decisions made and why, files touched, work still in flight, open
 questions — and fnclaude hands that to the session it launches at the destination.
 
 The receiving session starts already knowing what it is there for, so the first
 message you send it is a continuation rather than a re-briefing. The same mechanism
 backs spawning a sibling session; the difference is only whether the current session
-survives. See [Continuity summaries](/continuity-summaries/).
+survives.
 
 ## Where to go next
 

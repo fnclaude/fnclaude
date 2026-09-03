@@ -23,8 +23,8 @@ the same set as a switch: model, effort, permission mode, allowed tools, agent, 
 the `--brief` / `--chrome` / `--ide` / `--verbose` switches — all applied to the
 sibling, never to the session you are in.
 
-It still carries a [continuity summary](/continuity-summaries/), scoped to the
-sibling's task: what you want done over there, with enough context to start cold.
+It still carries a written summary, scoped to the sibling's task: what you want done
+over there, with enough context to start cold.
 
 ## Opening the window
 

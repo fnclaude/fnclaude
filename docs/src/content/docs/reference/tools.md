@@ -21,7 +21,7 @@ Startup flags are preserved, minus a denylist of destination-bound ones such as
 | --- | --- | --- |
 | `destination` | yes | The verbatim user reference: short repo name, `name@owner`, `owner/name`, a URL, or an absolute path. A `+workspace` suffix is supported. |
 | `name` | yes | A 3-6 word kebab-case session topic, e.g. `fix-auth-bug`. |
-| `summary` | yes | A `/compact`-style continuity summary for the receiving session. |
+| `summary` | yes | A written summary of the conversation for the receiving session. |
 | `session_id` | no | The current session UUID, read from `$CLAUDE_CODE_SESSION_ID`. Lets fnclaude auto-capture the live permission mode from the session log. |
 | overrides | no | `model`, `effort`, `permission_mode`, `allowed_tools`, `agent`, `brief`, `chrome`, `ide`, `verbose`. |
 
@@ -41,7 +41,7 @@ A spawn is a fresh start and does **not** preserve this session's startup flags.
 | --- | --- | --- |
 | `destination` | yes | Same reference forms as a switch. |
 | `name` | yes | A 3-6 word kebab-case topic for the sibling. |
-| `summary` | yes | A `/compact`-style summary scoped to the sibling's task. |
+| `summary` | yes | A written summary scoped to the sibling's task. |
 | overrides | no | Same set as a switch, applied to the sibling rather than this session. |
 
 Response `action` is `done`, `paste_flow` (no launcher available), or `error`.
@@ -90,47 +90,19 @@ assistant turn has happened yet.
 
 ## fnc_set_model
 
-Change the session's model in place via claude's `/model` slash command. Fire-and-forget:
-the command is queued into the live session as if typed, and no output is returned.
+Change the session's model on the running session. Fire-and-forget: the change applies
+and nothing is returned through the tool.
 
 Takes `model`, one of `opus`, `sonnet`, `haiku`.
 
 ## fnc_set_effort
 
-Change the session's reasoning effort in place via claude's `/effort` slash command.
-Fire-and-forget, same as above.
+Change the session's reasoning effort on the running session. Fire-and-forget, same as
+above.
 
 Takes `effort`, one of `low`, `medium`, `high`, `xhigh`, `max`, `auto`.
 
-## request_compact
-
-Compact the conversation in place by triggering claude's `/compact`, optionally with
-custom instructions. Fire-and-forget: the summary does not come back through the tool.
-
-The model is told to **drain first** — finish every queued prompt before calling,
-since prompts not yet processed are lost from the compaction summary.
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `instructions` | no | Short *additional* steering, e.g. "focus on the auth refactor, drop the unrelated debugging". `/compact` writes the summary itself, so this is not where a summary goes. |
-| `follow_up` | no | A prompt submitted as a normal user message after compaction completes, so work resumes without waiting for you. Being a normal message, an `@/path/to/file.md` reference works here. |
-
 ## fnc_copy_to_clipboard
 
-Copy text to your clipboard. Takes `text`. Mainly useful for paste-flow handoffs, when
-auto-switching is disabled and the model needs to hand you a command.
-
-## fnc_run_slash_command
-
-Run an arbitrary claude slash command by injecting it into the live TUI input. The
-generic escape hatch for slash commands with no dedicated fnc tool. Fire-and-forget.
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `command` | yes | The slash command name, with or without a leading slash. |
-| `args` | no | Positional arguments appended after the command. |
-
-:::note
-This one is opt-in. It is registered only when `FNC_ENABLE_SLASH_TOOL=1` is set in the
-environment; without it the tool is omitted from the tool list entirely.
-:::
+Copy text to your clipboard. Takes `text`. Useful when the model needs to hand you
+something to paste rather than run.

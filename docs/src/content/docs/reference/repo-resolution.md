@@ -52,5 +52,6 @@ fail hard exactly as before.
 
 ## No argument at all
 
-With no positional path, `fnc` falls back to `$XDG_CONFIG_HOME/fnclaude/noop` — see
-[The noop landing zone](/noop-landing-zone/).
+With no positional path, `fnc` falls back to a marker directory at
+`$XDG_CONFIG_HOME/fnclaude/noop`, so a bare `fnc` starts somewhere neutral rather than
+wherever your shell happened to be.

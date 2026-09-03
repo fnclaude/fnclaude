@@ -3,40 +3,22 @@ title: Installation
 description: Install the fnc binary, plus the runtime and platform requirements fnclaude expects.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+fnclaude publishes to npm. Install it globally and you get the `fnc` binary:
 
-fnclaude publishes two packages. `@fnclaude/cli` is the launcher and the `fnc`
-binary. `fnclaude` is an umbrella package that bundles the CLI together with
-`@fnclaude/renderer`. Install the CLI unless you specifically want the renderer.
+```sh
+npm i -g fnclaude
+```
 
-## Install the CLI
-
-<Tabs syncKey="installer">
-  <TabItem label="mise">
-    ```sh
-    mise use -g npm:@fnclaude/cli
-    ```
-
-    Pinned in your global mise config and on `PATH` everywhere, so the version
-    travels with your setup rather than living in a global `node_modules`.
-  </TabItem>
-  <TabItem label="npm">
-    ```sh
-    npm install -g @fnclaude/cli
-    ```
-  </TabItem>
-  <TabItem label="bun">
-    ```sh
-    bun add -g @fnclaude/cli
-    ```
-  </TabItem>
-</Tabs>
-
-Then confirm the binary resolved:
+Then confirm it resolved:
 
 ```sh
 fnc --version
 ```
+
+:::note
+`-v` and `--version` print *fnclaude's* version. `fnc` claims the flag before claude
+sees it, so reach claude's own version with `claude --version` directly.
+:::
 
 ## Requirements
 
@@ -59,7 +41,7 @@ fnclaude reads two files, both optional:
 
 | Path | What it holds |
 | --- | --- |
-| `$XDG_CONFIG_HOME/fnclaude/config.toml` | Auto-naming model, auto-tmux and auto-handoff behaviour, the spawn command for new terminal windows, environment injected into every claude child. |
+| `$XDG_CONFIG_HOME/fnclaude/config.toml` | Auto-naming model, auto-tmux behaviour, the spawn command for new terminal windows, environment injected into every claude child. |
 | `~/.claude/settings.json` | `cloneTemplate`, `worktreeTemplate`, and `branchTemplate` under `repoSettings` — shared with the claude-code-worktree-paths plugin. |
 
 The keys are listed in full on [CLI flags](/reference/cli-flags/).
