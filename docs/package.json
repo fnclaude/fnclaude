@@ -1,0 +1,26 @@
+{
+  "name": "@fnclaude/docs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The published fnclaude documentation site (Astro Starlight)",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "lint": "echo 'lint stub (docs, no linter configured)' && exit 0",
+    "test": "echo 'no unit tests (the astro build is the gate)' && exit 0"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.0",
+    "astro": "^7.2.10"
+  },
+  "optionalDependencies": {
+    "@bruits/satteri-darwin-arm64": "0.10.5",
+    "@bruits/satteri-darwin-x64": "0.10.5",
+    "@bruits/satteri-linux-arm64-gnu": "0.10.5",
+    "@bruits/satteri-linux-arm64-musl": "0.10.5",
+    "@bruits/satteri-linux-x64-gnu": "0.10.5",
+    "@bruits/satteri-linux-x64-musl": "0.10.5"
+  }
+}

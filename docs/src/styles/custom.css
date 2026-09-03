@@ -1,0 +1,201 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   fnclaude — Starlight theme
+   Drop at src/styles/custom.css and register it:
+
+     starlight({
+       customCss: ['./src/styles/custom.css'],
+     })
+
+   Palette sampled from the Claude Code TUI. Dark is the true theme; light
+   is a warm paper translation that keeps the terracotta working on a pale
+   ground rather than naively inverting.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap");
+
+/* ── Light: warm paper, terracotta darkened enough to hold contrast ─────── */
+
+:root {
+  --sl-color-accent-low:  #f3ddd4;
+  --sl-color-accent:      #a8543a;
+  --sl-color-accent-high: #5c2c1e;
+
+  --sl-color-white:   #241f1c;   /* "white" is the high-contrast text token */
+  --sl-color-gray-1:  #332c28;
+  --sl-color-gray-2:  #4b423d;
+  --sl-color-gray-3:  #6d625b;
+  --sl-color-gray-4:  #948880;
+  --sl-color-gray-5:  #c9beb6;
+  --sl-color-gray-6:  #e7ded7;
+  --sl-color-gray-7:  #f3ece6;
+  --sl-color-black:   #fbf7f3;   /* ...and "black" is the page ground */
+
+  --sl-color-bg-inline-code: #eee5dd;
+}
+
+/* ── Dark: the terminal. Applies to system-dark and to an explicit choice ── */
+
+:root:not([data-theme="light"]) {
+  --sl-color-accent-low:  #3a2119;
+  --sl-color-accent:      #d07455;
+  --sl-color-accent-high: #edb69f;
+
+  --sl-color-white:   #e6e6e6;
+  --sl-color-gray-1:  #d4d4d4;
+  --sl-color-gray-2:  #c0c0c0;
+  --sl-color-gray-3:  #8d8d8d;
+  --sl-color-gray-4:  #6d6d6d;
+  --sl-color-gray-5:  #3f3d3c;
+  --sl-color-gray-6:  #2b2928;
+  --sl-color-gray-7:  #232120;
+  --sl-color-black:   #1e1e1e;
+
+  --sl-color-bg-inline-code: #2b2928;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --sl-color-accent-low:  #f3ddd4;
+    --sl-color-accent:      #a8543a;
+    --sl-color-accent-high: #5c2c1e;
+
+    --sl-color-white:   #241f1c;
+    --sl-color-gray-1:  #332c28;
+    --sl-color-gray-2:  #4b423d;
+    --sl-color-gray-3:  #6d625b;
+    --sl-color-gray-4:  #948880;
+    --sl-color-gray-5:  #c9beb6;
+    --sl-color-gray-6:  #e7ded7;
+    --sl-color-gray-7:  #f3ece6;
+    --sl-color-black:   #fbf7f3;
+
+    --sl-color-bg-inline-code: #eee5dd;
+  }
+}
+
+[data-theme="dark"] {
+  --sl-color-accent-low:  #3a2119;
+  --sl-color-accent:      #d07455;
+  --sl-color-accent-high: #edb69f;
+
+  --sl-color-white:   #e6e6e6;
+  --sl-color-gray-1:  #d4d4d4;
+  --sl-color-gray-2:  #c0c0c0;
+  --sl-color-gray-3:  #8d8d8d;
+  --sl-color-gray-4:  #6d6d6d;
+  --sl-color-gray-5:  #3f3d3c;
+  --sl-color-gray-6:  #2b2928;
+  --sl-color-gray-7:  #232120;
+  --sl-color-black:   #1e1e1e;
+
+  --sl-color-bg-inline-code: #2b2928;
+}
+
+/* ── Type ──────────────────────────────────────────────────────────────── */
+
+:root {
+  --sl-font:      "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sl-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Headings take the terminal face; prose keeps the humanist one.
+   Starlight puts its own rules in a cascade layer, so plain selectors win. */
+:where(h1, h2, h3, h4, h5, h6),
+.site-title,
+.sl-markdown-content :where(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--sl-font-mono);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sl-markdown-content h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--sl-color-hairline-light);
+}
+
+/* Section headings read as TUI labels. */
+.sl-markdown-content h3::before {
+  content: "▸ ";
+  color: var(--sl-color-accent);
+}
+
+/* ── Sidebar: a file tree, not a nav list ──────────────────────────────── */
+
+.sidebar-content a {
+  font-family: var(--sl-font-mono);
+  font-size: 0.875rem;
+}
+
+.sidebar-content a[aria-current="page"] {
+  font-weight: 700;
+}
+
+.sidebar-content summary .group-label .large {
+  font-family: var(--sl-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+}
+
+/* ── Code: flush terminal blocks, no floating card ─────────────────────── */
+
+.expressive-code .frame pre {
+  border-radius: 3px;
+}
+
+.sl-markdown-content code:not(:where(.expressive-code *)) {
+  font-size: 0.9em;
+  padding: 0.15em 0.4em;
+  border-radius: 2px;
+}
+
+/* ── Asides keep the terminal's status-line vocabulary ─────────────────── */
+
+.starlight-aside {
+  border-inline-start-width: 2px;
+  border-radius: 0 3px 3px 0;
+}
+
+.starlight-aside__title {
+  font-family: var(--sl-font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Hero (if you use Starlight's splash layout on a subpage) ──────────── */
+
+.hero h1 {
+  font-family: var(--sl-font-mono);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+.hero .tagline {
+  font-family: var(--sl-font);
+  color: var(--sl-color-gray-2);
+}
+
+/* ── Tabs, so synced OS tabs match the rest ────────────────────────────── */
+
+.tab > [role="tab"] {
+  font-family: var(--sl-font-mono);
+  font-size: 0.85rem;
+}
+
+.tab > [role="tab"][aria-selected="true"] {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-white);
+}
+
+/* ── Pagination cards: quieter, terminal-flat ──────────────────────────── */
+
+.pagination-links a {
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+.pagination-links a:hover {
+  border-color: var(--sl-color-accent);
+}

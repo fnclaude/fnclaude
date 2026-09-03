@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "description": "fnclaude monorepo root (private; individual packages publish to npm)",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "docs"
   ],
   "scripts": {
     "lint": "moon run :lint",

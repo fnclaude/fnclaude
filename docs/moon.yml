@@ -1,0 +1,27 @@
+# https://moonrepo.dev/docs/config/project
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+layer: 'application'
+language: 'typescript'
+
+tasks:
+  lint:
+    command: 'bun run lint'
+    options:
+      cache: false
+  test:
+    command: 'bun run test'
+    options:
+      cache: false
+  build:
+    # The real gate for this package. Astro validates every page's frontmatter
+    # against Starlight's Zod schema and compiles every page, so a bad key or a
+    # broken link target fails here rather than in production.
+    command: 'bun run build'
+    inputs:
+      - 'src/**/*'
+      - 'public/**/*'
+      - 'astro.config.*'
+      - 'package.json'
+    outputs:
+      - 'dist'
