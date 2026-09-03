@@ -1,0 +1,206 @@
+---
+import Mascot from '../components/Mascot.astro';
+import pkg from '../../../packages/fnclaude/package.json';
+import '../styles/landing.css';
+
+// The header version is the umbrella package's, read at build time so a
+// release bump propagates without anyone editing this page.
+const { version } = pkg;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fnclaude</title>
+    <meta
+      name="description"
+      content="Session control for Claude Code: move a running session to another repository, or open a sibling beside it, each starting from a written continuity summary."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap"
+    />
+  </head>
+
+  <body>
+    <header class="session-head wrap">
+      <Mascot class="rhombus" />
+
+      <div class="head-lines">
+        <h1 class="head-name">fnclaude<span class="ver">v{version}</span></h1>
+        <div class="head-meta">
+          Session control for Claude Code &middot; <span class="on">fnc</span> for short
+        </div>
+        <div class="head-meta">~/src/fnclaude@fnclaude</div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <h1>Change projects without <em>losing the thread.</em></h1>
+
+        <p>
+          Claude Code is rooted in one directory. <span class="lit">fnclaude</span> makes
+          that a thing you can move. Hand the session to another repo, or open a sibling
+          beside it &mdash; each one starts from a written continuity summary instead of a
+          cold context.
+        </p>
+
+        <div class="prompt">
+          <span class="caret" aria-hidden="true">&rsaquo;</span>
+          <code>mise use -g npm:@fnclaude/cli</code>
+          <span class="cursor" aria-hidden="true"></span>
+        </div>
+
+        <p class="hint">
+          Then <kbd>fnc</kbd> anywhere &mdash; or <kbd>fnc &lt;repo&gt;</kbd> to start somewhere
+          specific.
+        </p>
+
+        <div class="actions">
+          <a class="btn btn-primary" href="/getting-started/">Get Started</a>
+          <a class="btn btn-ghost" href="https://github.com/fnclaude/fnclaude">GitHub</a>
+        </div>
+      </section>
+
+      <section class="transcript wrap">
+        <h2 class="section-label">What it adds to a session</h2>
+
+        <dl class="calls">
+          <div class="call">
+            <dt>fnc_switch_project</dt>
+            <dd>
+              Replaces this session with one rooted in another repo. Writes the handoff
+              first, so the new session opens knowing what it&rsquo;s there for.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc_spawn_session</dt>
+            <dd>
+              Keeps this session running and opens a sibling in a new window. Two tracks in
+              parallel, neither waiting on the other.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>Repo references, resolved</dt>
+            <dd>
+              <code>arch-setup</code>, <code>name@owner</code>, <code>owner/name</code>, a
+              URL, or a path. Searches your GitHub orgs and clones it if it has to.
+              <span class="note">You type the short name. It finds the thing.</span>
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>Worktrees with a <code>+</code></dt>
+            <dd>
+              <code>fnc arch-setup+fix-lid-sync</code> resolves the base repo and adds a
+              worktree alongside it, branched and ready.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>get_usage</dt>
+            <dd>
+              Session cost, per-model token breakdown, and live context size &mdash; read
+              from data fnclaude already holds. No extra API calls to ask.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>The noop landing zone</dt>
+            <dd>
+              Start nowhere. <code>fnc</code> with no argument drops you in a router that
+              reads the ask and sends it to the repo it belongs in.
+            </dd>
+          </div>
+        </dl>
+
+        <div class="outro">
+          <span>MIT licensed</span>
+          <span>Linux and macOS</span>
+          <a href="/installation/">Installation</a>
+          <a href="/reference/tools/">Tool reference</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <div class="status-left">
+        <span class="perm"
+          >&#9656;&#9656; bypass permissions on <span class="muted">(shift+tab to cycle)</span
+          ></span
+        >
+      </div>
+
+      <div class="status-right">
+        <div class="burndowns" aria-hidden="true">
+          <div class="burn">
+            <svg viewBox="0 0 44 16"
+              ><g fill="#6d6d6d">
+                <rect x="2" y="3" width="1" height="1" /><rect x="7" y="4" width="1" height="1" />
+                <rect x="12" y="6" width="1" height="1" /><rect x="17" y="7" width="1" height="1" />
+                <rect x="22" y="9" width="1" height="1" /><rect
+                  x="27"
+                  y="10"
+                  width="1"
+                  height="1"
+                />
+                <rect x="32" y="12" width="1" height="1" /><rect
+                  x="37"
+                  y="13"
+                  width="1"
+                  height="1"
+                />
+              </g></svg
+            >
+            <span>5h</span>
+          </div>
+          <div class="burn">
+            <svg viewBox="0 0 44 16">
+              <rect x="2" y="2" width="1" height="1" fill="#c9b458" />
+              <g fill="#6d6d6d">
+                <rect x="7" y="4" width="1" height="1" /><rect x="12" y="5" width="1" height="1" />
+                <rect x="17" y="7" width="1" height="1" /><rect x="22" y="8" width="1" height="1" />
+                <rect x="27" y="10" width="1" height="1" /><rect
+                  x="32"
+                  y="11"
+                  width="1"
+                  height="1"
+                />
+                <rect x="37" y="13" width="1" height="1" />
+              </g>
+            </svg>
+            <span>7d</span>
+          </div>
+          <div class="burn">
+            <svg viewBox="0 0 44 16">
+              <rect x="2" y="3" width="1" height="1" fill="#b7bdf7" />
+              <g fill="#6d6d6d">
+                <rect x="7" y="5" width="1" height="1" /><rect x="12" y="6" width="1" height="1" />
+                <rect x="17" y="8" width="1" height="1" /><rect x="22" y="9" width="1" height="1" />
+                <rect x="27" y="11" width="1" height="1" /><rect
+                  x="32"
+                  y="12"
+                  width="1"
+                  height="1"
+                />
+                <rect x="37" y="13" width="1" height="1" />
+              </g>
+            </svg>
+            <span>opus</span>
+          </div>
+        </div>
+
+        <span class="model">Opus 5 <span class="eff">high</span></span>
+        <span class="rc">/rc</span>
+      </div>
+    </footer>
+  </body>
+</html>
