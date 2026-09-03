@@ -1,5 +1,6 @@
 ---
 import Mascot from '../components/Mascot.astro';
+import { INDEXABLE } from '../site';
 import pkg from '../../../packages/fnclaude/package.json';
 import '../styles/landing.css';
 
@@ -18,6 +19,7 @@ const { version } = pkg;
       name="description"
       content="Session control for Claude Code: move a running session to another repository, or open a sibling beside it, each starting from a written continuity summary."
     />
+    {!INDEXABLE && <meta name="robots" content="noindex, nofollow" />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -42,18 +44,18 @@ const { version } = pkg;
 
     <main>
       <section class="hero wrap">
-        <h1>Change projects without <em>losing the thread.</em></h1>
+        <h1>Start a session <em>anywhere.</em> Move it mid-flight.</h1>
 
         <p>
-          Claude Code is rooted in one directory. <span class="lit">fnclaude</span> makes
-          that a thing you can move. Hand the session to another repo, or open a sibling
-          beside it &mdash; each one starts from a written continuity summary instead of a
-          cold context.
+          Claude Code starts in the directory you are standing in and stays there.
+          <span class="lit">fnclaude</span> takes a repo reference instead &mdash; a short
+          name, an <span class="lit">owner/name</span>, a URL &mdash; finds it or clones it,
+          and launches there. Once you are in, it hands the session tools to move itself.
         </p>
 
         <div class="prompt">
           <span class="caret" aria-hidden="true">&rsaquo;</span>
-          <code>mise use -g npm:@fnclaude/cli</code>
+          <code>npm i -g fnclaude</code>
           <span class="cursor" aria-hidden="true"></span>
         </div>
 
@@ -69,58 +71,172 @@ const { version } = pkg;
       </section>
 
       <section class="transcript wrap">
-        <h2 class="section-label">What it adds to a session</h2>
+        <h2 class="section-label">Launching</h2>
 
         <dl class="calls">
           <div class="call">
-            <dt>fnc_switch_project</dt>
+            <dt>fnc ~/src/proj</dt>
             <dd>
-              Replaces this session with one rooted in another repo. Writes the handoff
-              first, so the new session opens knowing what it&rsquo;s there for.
+              Not bound to where you are. Pass any directory and the session starts there,
+              from whatever terminal you happen to have open.
             </dd>
           </div>
 
           <div class="call">
-            <dt>fnc_spawn_session</dt>
+            <dt>fnc arch-setup</dt>
             <dd>
-              Keeps this session running and opens a sibling in a new window. Two tracks in
-              parallel, neither waiting on the other.
-            </dd>
-          </div>
-
-          <div class="call">
-            <dt>Repo references, resolved</dt>
-            <dd>
-              <code>arch-setup</code>, <code>name@owner</code>, <code>owner/name</code>, a
-              URL, or a path. Searches your GitHub orgs and clones it if it has to.
+              A bare name is enough. fnclaude looks for a matching clone on disk, and if
+              there isn&rsquo;t one, searches your GitHub organisations and clones it.
               <span class="note">You type the short name. It finds the thing.</span>
             </dd>
           </div>
 
           <div class="call">
-            <dt>Worktrees with a <code>+</code></dt>
+            <dt>fnc fnrhombus/arch-setup</dt>
             <dd>
-              <code>fnc arch-setup+fix-lid-sync</code> resolves the base repo and adds a
-              worktree alongside it, branched and ready.
+              Qualify it when you want to skip the search: <code>name@owner</code>,
+              <code>owner/name</code>, <code>gh:owner/name</code>, an HTTPS URL, or an SSH
+              URL. All resolve to the same clone destination.
             </dd>
           </div>
 
           <div class="call">
-            <dt>get_usage</dt>
+            <dt>fnc opus max</dt>
             <dd>
-              Session cost, per-model token breakdown, and live context size &mdash; read
-              from data fnclaude already holds. No extra API calls to ask.
+              Model and effort are bare words in the first two slots, not flags with
+              spelled-out values. <code>opus</code>, <code>sonnet</code>,
+              <code>haiku</code>, <code>fable</code>; <code>low</code> through
+              <code>max</code>.
             </dd>
           </div>
 
           <div class="call">
-            <dt>The noop landing zone</dt>
+            <dt>fnc high ~/src/proj</dt>
             <dd>
-              Start nowhere. <code>fnc</code> with no argument drops you in a router that
-              reads the ask and sends it to the repo it belongs in.
+              An effort level on its own implies <code>opus</code>, because that is the
+              only reason you were reaching for it.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume</dt>
+            <dd>
+              Picking up where you left off is one word. <code>continue</code> takes the
+              most recent session, <code>fork</code> branches off one. Short forms:
+              <code>res</code>, <code>con</code>, <code>fk</code>.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume ~/src/proj</dt>
+            <dd>
+              The picker, scoped to a project you are not currently in. Resume a session
+              somewhere else without going there first.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume &nbsp;&rarr;&nbsp; Ctrl-A</dt>
+            <dd>
+              In the picker, <kbd>Ctrl-A</kbd> widens the list to sessions from every
+              directory. Choose one from another project and fnclaude relaunches itself
+              there, carrying every flag from the original invocation.
+              <span class="note">Plain claude prints the cd-and-resume line and leaves you to run it.</span>
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc arch-setup+fix-lid-sync</dt>
+            <dd>
+              A <code>+</code> suffix resolves the base repo and adds a worktree beside it,
+              branched and ready.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc -w fix-lid-sync</dt>
+            <dd>
+              Names an existing worktree and fnclaude swaps its cwd to it. Names a new one
+              and it passes through as a create request.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc -BVC</dt>
+            <dd>
+              A capital letter per claude long flag, collapsing the POSIX way. That one is
+              <code>--brief --verbose --chrome</code>.
             </dd>
           </div>
         </dl>
+      </section>
+
+      <section class="transcript wrap">
+        <h2 class="section-label">Once you are in a session</h2>
+
+        <div class="exchanges">
+          <div class="exchange">
+            <p class="ask">switch me over to arch-setup</p>
+            <p class="tool">fnc_switch_project</p>
+            <p class="said">
+              Ends this session and re-launches at the destination, carrying a written
+              continuity summary so the new one opens knowing what it is there for. You get
+              a few seconds to <kbd>Ctrl-C</kbd> out of it.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">also open a session for fncode</p>
+            <p class="tool">fnc_spawn_session</p>
+            <p class="said">
+              Opens a sibling in a new terminal window and leaves this session running. Two
+              tracks in parallel, neither waiting on the other.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">restart yourself</p>
+            <p class="tool">fnc_restart</p>
+            <p class="said">
+              Restarts in place with the conversation intact and your original flags
+              preserved. Name a flag to change and only that one changes.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">what&rsquo;s this session cost so far?</p>
+            <p class="tool">get_usage</p>
+            <p class="said">
+              Cost, a per-model token breakdown, and the live context size &mdash; read from
+              data fnclaude already holds. No extra API calls to ask.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">drop to sonnet for the rest of this</p>
+            <p class="tool">fnc_set_model</p>
+            <p class="said">
+              Changes the model on the running session. No restart, no losing the thread.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">crank the effort up to max</p>
+            <p class="tool">fnc_set_effort</p>
+            <p class="said">
+              Same, for reasoning effort: <code>low</code>, <code>medium</code>,
+              <code>high</code>, <code>xhigh</code>, <code>max</code>, <code>auto</code>.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">put that command on my clipboard</p>
+            <p class="tool">fnc_copy_to_clipboard</p>
+            <p class="said">
+              Hands you text without a round trip through select-and-copy.
+            </p>
+          </div>
+        </div>
 
         <div class="outro">
           <span>MIT licensed</span>

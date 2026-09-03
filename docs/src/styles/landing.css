@@ -353,3 +353,68 @@ a { color: inherit; }
   .rhombus { width: 3.5rem; }
   .status-right { gap: 0.75rem; }
 }
+
+/* ── exchanges: what you ask for, and what the session calls ── */
+
+.exchanges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 0.35rem 3rem;
+}
+
+.exchange {
+  padding: 1rem 0 1.35rem;
+  min-width: 0;
+}
+
+.exchange .ask {
+  display: flex;
+  gap: 1ch;
+  margin: 0 0 0.55rem;
+  font-family: var(--prose);
+  font-size: 0.92rem;
+  color: var(--bright);
+}
+
+.exchange .ask::before {
+  content: "\203A";
+  color: var(--dim);
+  flex: none;
+}
+
+.exchange .tool {
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.exchange .tool::before {
+  content: "\25B8";
+  color: var(--accent-lo);
+  flex: none;
+}
+
+.exchange .said {
+  margin: 0 0 0 2ch;
+  font-family: var(--prose);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 46ch;
+}
+
+.exchange .said code {
+  font-family: var(--mono);
+  color: var(--bright);
+  font-size: 0.94em;
+}
+
+/* A second section label further down the page needs air above it. */
+.transcript + .transcript .section-label {
+  margin-top: clamp(1rem, 3vw, 2rem);
+}
