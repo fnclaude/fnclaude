@@ -628,7 +628,7 @@ if (mcpSocketPath !== undefined) {
 // resume/cross-cwd transition into a removed dir is observable at the exact
 // boundary where terminal logging is unusable. initLogging never throws; on
 // any fs failure it returns a no-op logger. Default level INFO, FNC_LOG
-// overrides. design: docs/decisions.md.
+// overrides. design: specs/decisions.md.
 const { logger } = initLogging({
   env: process.env,
   platform: process.platform,

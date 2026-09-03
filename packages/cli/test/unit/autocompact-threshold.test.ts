@@ -5,7 +5,7 @@
  * derived threshold — 100% is the exact token count at which Claude Code
  * auto-compacts, computed per active model / surface / env. The formula and
  * its constants are reverse-engineered from Claude Code v2.1.200 and
- * documented in docs/reverse-engineering/claude-code-autocompact-thresholds.md.
+ * documented in specs/reverse-engineering/claude-code-autocompact-thresholds.md.
  *
  * The whole point is that ONE percentage config self-adjusts to the correct
  * absolute token count across models and surfaces with no re-tuning: 94% is

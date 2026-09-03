@@ -1,0 +1,420 @@
+/* ─────────────────────────────────────────────────────────────
+   fnclaude — landing page
+   Palette sampled directly from the Claude Code TUI.
+   Deliberately single-theme: this page is a terminal.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  --bg:        #1e1e1e;   /* terminal ground, sampled */
+  --surface:   #232120;   /* raised block, warmed a hair toward the accent */
+  --rule:      #333130;
+  --rule-soft: #2a2827;
+
+  --ink:       #c0c0c0;   /* body */
+  --bright:    #e6e6e6;   /* headings */
+  --dim:       #6d6d6d;   /* meta, comments */
+  --dimmer:    #4a4948;
+
+  --accent:    #d07455;   /* terracotta — the monster */
+  --accent-lo: #8d4e39;
+  --peri:      #b7bdf7;   /* cursor */
+  --green:     #409552;
+  --red:       #c96a6a;
+
+  --mono:  "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --prose: "IBM Plex Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --ch: 1ch;
+  --gut: clamp(1.25rem, 4vw, 3rem);
+  --maxw: 78rem;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 5.5rem;             /* clearance for the fixed status bar */
+}
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--peri);
+  outline-offset: 3px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--gut);
+}
+
+/* ── session header ─────────────────────────────────────────── */
+
+.session-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding-top: clamp(1.5rem, 4vw, 2.75rem);
+  padding-bottom: clamp(2.5rem, 7vw, 5rem);
+}
+
+.rhombus {
+  flex: none;
+  width: 5.25rem;
+  height: auto;
+  color: var(--accent);
+}
+
+.head-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-top: 0.15rem;
+  min-width: 0;
+}
+
+.head-name {
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--bright);
+  margin: 0;
+}
+
+.head-name .ver {
+  font-weight: 400;
+  color: var(--dim);
+  margin-left: 0.6ch;
+  font-size: 0.82em;
+}
+
+.head-meta {
+  color: var(--dim);
+  font-size: 0.95rem;
+}
+
+.head-meta .on { color: var(--ink); }
+
+/* ── hero ───────────────────────────────────────────────────── */
+
+.hero { padding-bottom: clamp(3rem, 8vw, 5.5rem); }
+
+.hero h1 {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 5.2vw, 3.35rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  color: var(--bright);
+  text-wrap: balance;
+  margin: 0 0 1.25rem;
+  max-width: 20ch;
+}
+
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.hero p {
+  font-family: var(--prose);
+  font-size: clamp(0.95rem, 1.4vw, 1.075rem);
+  line-height: 1.7;
+  color: var(--ink);
+  max-width: 62ch;
+  margin: 0 0 2.5rem;
+}
+
+.hero p .lit { color: var(--bright); }
+
+/* ── the input row: install command ─────────────────────────── */
+
+.prompt {
+  border-block: 1px solid var(--rule);
+  padding: 0.85rem 0;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  overflow-x: auto;
+}
+
+.prompt .caret { color: var(--dim); flex: none; }
+
+.prompt code {
+  font-family: var(--mono);
+  font-size: clamp(0.9rem, 1.6vw, 1.075rem);
+  color: var(--bright);
+  white-space: pre;
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.62em;
+  height: 1.15em;
+  background: var(--peri);
+  translate: 0 0.19em;
+  flex: none;
+  animation: blink 1.15s steps(1) infinite;
+}
+
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor { animation: none; }
+}
+
+.hint {
+  color: var(--dim);
+  font-size: 0.875rem;
+  margin: 0 0 2.25rem;
+}
+
+.hint kbd {
+  font: inherit;
+  color: var(--ink);
+}
+
+/* ── actions ────────────────────────────────────────────────── */
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+.btn {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 0.55rem 1.15rem;
+  border: 1px solid var(--accent-lo);
+  border-radius: 3px;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #22160f;
+  font-weight: 700;
+}
+
+.btn-primary:hover { background: #e08361; border-color: #e08361; }
+
+.btn-ghost { color: var(--accent); }
+.btn-ghost:hover { background: #2b201b; border-color: var(--accent); }
+
+/* ── transcript / features ──────────────────────────────────── */
+
+.transcript { padding-bottom: clamp(2rem, 6vw, 3.5rem); }
+
+.section-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 1.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.calls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.35rem 3rem;
+  margin: 0;
+}
+
+.call {
+  padding: 1rem 0 1.35rem;
+  min-width: 0;
+}
+
+.call dt {
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.98rem;
+  margin-bottom: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.call dt::before {
+  content: "▸";
+  color: var(--accent-lo);
+  flex: none;
+}
+
+.call dd {
+  margin: 0 0 0 2ch;
+  font-family: var(--prose);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 46ch;
+}
+
+.call dd code {
+  font-family: var(--mono);
+  color: var(--bright);
+  font-size: 0.94em;
+}
+
+.call dd .note {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* ── closing line ───────────────────────────────────────────── */
+
+.outro {
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 1.5rem;
+  color: var(--dim);
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+}
+
+.outro a { color: var(--accent); text-decoration-color: var(--accent-lo); }
+
+/* ── status bar ─────────────────────────────────────────────── */
+
+.statusbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  background: var(--bg);
+  border-top: 1px solid var(--rule);
+  padding: 0.5rem var(--gut) 0.6rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  font-size: 0.8rem;
+}
+
+.status-left { display: flex; flex-direction: column; gap: 0.2rem; }
+
+.perm { color: var(--red); }
+.perm .muted { color: var(--dim); }
+
+.status-right {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.15rem;
+  margin-left: auto;
+}
+
+.model {
+  font-family: var(--prose);
+  font-style: italic;
+  color: var(--bright);
+  white-space: nowrap;
+}
+
+.model .eff { color: var(--accent); }
+
+.burndowns { display: flex; gap: 0.6rem; }
+
+.burn { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+
+.burn svg {
+  width: 5.5rem;
+  height: 2.1rem;
+  border: 1px dotted var(--dimmer);
+  display: block;
+}
+
+.burn span {
+  color: var(--dim);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc { color: var(--green); white-space: nowrap; }
+
+@media (max-width: 60rem) {
+  .burndowns { display: none; }
+}
+
+@media (max-width: 40rem) {
+  .session-head { gap: 1rem; }
+  .rhombus { width: 3.5rem; }
+  .status-right { gap: 0.75rem; }
+}
+
+/* ── exchanges: what you ask for, and what the session calls ── */
+
+.exchanges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 0.35rem 3rem;
+}
+
+.exchange {
+  padding: 1rem 0 1.35rem;
+  min-width: 0;
+}
+
+.exchange .ask {
+  display: flex;
+  gap: 1ch;
+  margin: 0 0 0.55rem;
+  font-family: var(--prose);
+  font-size: 0.92rem;
+  color: var(--bright);
+}
+
+.exchange .ask::before {
+  content: "\203A";
+  color: var(--dim);
+  flex: none;
+}
+
+.exchange .tool {
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.exchange .tool::before {
+  content: "\25B8";
+  color: var(--accent-lo);
+  flex: none;
+}
+
+.exchange .said {
+  margin: 0 0 0 2ch;
+  font-family: var(--prose);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 46ch;
+}
+
+.exchange .said code {
+  font-family: var(--mono);
+  color: var(--bright);
+  font-size: 0.94em;
+}
+
+/* A second section label further down the page needs air above it. */
+.transcript + .transcript .section-label {
+  margin-top: clamp(1rem, 3vw, 2rem);
+}

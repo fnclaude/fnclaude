@@ -23,9 +23,9 @@
  * stable analog under Bun is `Bun.spawn(process.execPath, [bin, ...argv])`
  * — a child that inherits stdio and that the parent waits on. The
  * decision to use spawn-and-wait instead of true execve is documented
- * in docs/decisions.md ("Process image replacement via Bun.spawn").
+ * in specs/decisions.md ("Process image replacement via Bun.spawn").
  *
- * Design: docs/design.mcp.md §6.1, §6.2.
+ * Design: specs/design.mcp.md §6.1, §6.2.
  */
 
 export type SignalName = 'SIGTERM' | 'SIGKILL';
@@ -46,7 +46,7 @@ export interface KillAndExecArgs {
   /**
    * Process-image-replacement. Injected so tests don't actually re-exec.
    * Production wires this to a `Bun.spawn` + `await child.exited` →
-   * `process.exit(<code>)` sequence (see docs/decisions.md for why
+   * `process.exit(<code>)` sequence (see specs/decisions.md for why
    * Bun.spawn instead of native execve).
    */
   execve: (argv: string[]) => void | Promise<void>;

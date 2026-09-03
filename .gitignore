@@ -21,3 +21,6 @@ coverage/
 # moon's task cache + hashed inputs/outputs
 .moon/cache/
 .moon/docker/
+
+# Astro build cache for the docs site.
+docs/.astro/

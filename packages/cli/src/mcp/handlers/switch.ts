@@ -1,7 +1,7 @@
 /**
  * §8.2 — `fnc_switch_project` handler.
  *
- * Spec (docs/design.mcp.md §4.2):
+ * Spec (specs/design.mcp.md §4.2):
  *   - Required args: `destination`, `name`, `summary`.
  *   - Optional: override fields (`model`, `effort`, `permission_mode`,
  *     `allowed_tools`, `agent`, `brief`, `chrome`, `ide`, `verbose`) and

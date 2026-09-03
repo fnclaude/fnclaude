@@ -18,7 +18,7 @@
  *      ran before the await was created. Multiple awaiters are fine —
  *      all resolve on the same fire.
  *
- * Design: docs/design.mcp.md §6.1, §8 (concurrent-dispatch race).
+ * Design: specs/design.mcp.md §6.1, §8 (concurrent-dispatch race).
  */
 
 export interface HandoffTrigger {

@@ -24,7 +24,7 @@
  * then, default stubs return a placeholder `{ action: 'done',
  * message: '§8.X not yet implemented' }` so the wire still round-trips.
  *
- * Design: docs/design.mcp.md §2.3, §3.
+ * Design: specs/design.mcp.md §2.3, §3.
  */
 
 import type { AcceptedSocket } from './listener';

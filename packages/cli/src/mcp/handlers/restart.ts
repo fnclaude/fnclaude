@@ -11,7 +11,7 @@
  * lockstep on the #205 single-`--resume` guarantee, overrides, and live
  * permission-mode capture.
  *
- * Design: docs/design.mcp.md §4.1, §5; docs/design.md §12-13.
+ * Design: specs/design.mcp.md §4.1, §5; specs/design.md §12-13.
  */
 
 import type { OverrideRequest } from '../../argv/preserve-args';

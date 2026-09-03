@@ -7,13 +7,13 @@
  *   3. If still alive, sends SIGKILL.
  *   4. Awaits proc.exited.
  *   5. Calls execve with the stashed argv (Bun.spawn-based re-exec
- *      under the hood; see docs/decisions.md for the deviation from
+ *      under the hood; see specs/decisions.md for the deviation from
  *      Go's true execve).
  *
  * All side-effecting bits — signal delivery, sleep, execve — are
  * injectable so tests can run them as pure callbacks.
  *
- * Design: docs/design.mcp.md §6.
+ * Design: specs/design.mcp.md §6.
  */
 
 import { describe, expect, test } from 'bun:test';

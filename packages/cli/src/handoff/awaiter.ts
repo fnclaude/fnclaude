@@ -3,7 +3,7 @@
  *
  * `startHandoffAwaiter` is the parent-side glue that hooks the trigger
  * (fired by MCP dispatch) up to the kill sequence + process re-exec.
- * Spec: docs/design.mcp.md §6.
+ * Spec: specs/design.mcp.md §6.
  *
  * The returned promise is "fire-and-forget" by design — if no handoff
  * ever fires, the awaiter sits idle for the lifetime of the session,

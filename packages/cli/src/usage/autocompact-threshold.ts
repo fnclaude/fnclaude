@@ -10,7 +10,7 @@
  * on a 500k `local-agent` surface.
  *
  * ── Formula (reverse-engineered, Claude Code v2.1.200) ────────────────────
- * See docs/reverse-engineering/claude-code-autocompact-thresholds.md.
+ * See specs/reverse-engineering/claude-code-autocompact-thresholds.md.
  *
  *   autoCompactThreshold = configuredWindow − offset
  *     offset = min(maxOutputTokens, 20000) + 13000   (= 33000 by default)

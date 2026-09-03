@@ -1,0 +1,304 @@
+---
+import Mascot from '../components/Mascot.astro';
+import { INDEXABLE } from '../site';
+import pkg from '../../../packages/fnclaude/package.json';
+import '../styles/landing.css';
+
+// The header version is the umbrella package's, read at build time so a
+// release bump propagates without anyone editing this page.
+const { version } = pkg;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fnclaude</title>
+    <meta
+      name="description"
+      content="fnc launches Claude Code in any repository by name, then gives the session tools to switch project, open a sibling, and restart while it runs."
+    />
+    {!INDEXABLE && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap"
+    />
+  </head>
+
+  <body>
+    <header class="session-head wrap">
+      <Mascot class="rhombus" />
+
+      <div class="head-lines">
+        <h1 class="head-name">fnclaude<span class="ver">v{version}</span></h1>
+        <div class="head-meta">
+          Session control for Claude Code &middot; <span class="on">fnc</span> for short
+        </div>
+        <div class="head-meta">~/src/fnclaude@fnclaude</div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <h1>Launch claude <em>anywhere.</em> Move it while it runs.</h1>
+
+        <p>
+          Claude Code starts where your shell is. <span class="lit">fnc</span> starts where
+          you say: a repo name, an <span class="lit">owner/name</span>, a URL, a path. It
+          finds the clone or makes one, and launches there. Inside, the session gets tools
+          to switch repos, open a sibling, or restart itself.
+        </p>
+
+        <div class="prompt">
+          <span class="caret" aria-hidden="true">&rsaquo;</span>
+          <code>npm i -g fnclaude</code>
+          <span class="cursor" aria-hidden="true"></span>
+        </div>
+
+        <p class="hint">
+          Then <kbd>fnc</kbd> from any directory, or <kbd>fnc &lt;repo&gt;</kbd> for a
+          specific one.
+        </p>
+
+        <div class="actions">
+          <a class="btn btn-primary" href="/getting-started/">Get Started</a>
+          <a class="btn btn-ghost" href="https://github.com/fnclaude/fnclaude">GitHub</a>
+        </div>
+      </section>
+
+      <section class="transcript wrap">
+        <h2 class="section-label">Launching</h2>
+
+        <dl class="calls">
+          <div class="call">
+            <dt>fnc ~/src/proj</dt>
+            <dd>
+              Not bound to your cwd. Give it a directory and the session starts there, from
+              whatever terminal you have open.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc arch-setup</dt>
+            <dd>
+              A bare name is enough. fnc checks your existing clones first, then your
+              GitHub user and orgs, and clones if it has to.
+              <span class="note">Say the repo. It finds it.</span>
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc fnrhombus/arch-setup</dt>
+            <dd>
+              Name the owner to skip the search. <code>name@owner</code>,
+              <code>owner/name</code>, <code>gh:owner/name</code>, an HTTPS URL, and an SSH
+              URL all land in the same clone directory.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc opus max</dt>
+            <dd>
+              Model and effort are bare words at the front, not flags. <code>opus</code>,
+              <code>sonnet</code>, <code>haiku</code>, <code>fable</code>;
+              <code>low</code>, <code>medium</code>, <code>high</code>,
+              <code>xhigh</code>, <code>max</code>, <code>auto</code>.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc high ~/src/proj</dt>
+            <dd>
+              Effort on its own implies <code>opus</code>.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume</dt>
+            <dd>
+              One word to pick up where you left off. <code>resume</code> opens the
+              picker, <code>continue</code> takes the latest session, <code>fork</code>
+              branches off one. <code>res</code>, <code>con</code>, <code>fk</code> for
+              short.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume ~/src/proj</dt>
+            <dd>
+              The picker for a project you are not in. Resume there without going there.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc resume &nbsp;&rarr;&nbsp; Ctrl-A</dt>
+            <dd>
+              In the picker, <kbd>Ctrl-A</kbd> lists sessions from every directory. Pick
+              one from another project and fnc relaunches itself there, with every flag
+              you started with.
+              <span class="note">Plain claude prints a cd-and-resume line and leaves you to run it.</span>
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc arch-setup+fix-lid-sync</dt>
+            <dd>
+              A <code>+</code> suffix resolves the repo, then adds a worktree beside it on
+              its own branch.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc -w fix-lid-sync</dt>
+            <dd>
+              An existing worktree by name, and fnc launches in it. A new name passes
+              through to claude as a create request.
+            </dd>
+          </div>
+
+          <div class="call">
+            <dt>fnc -BVC</dt>
+            <dd>
+              One capital letter per claude long flag, collapsing the POSIX way. This one
+              is <code>--brief --verbose --chrome</code>.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="transcript wrap">
+        <h2 class="section-label">Once you are in a session</h2>
+
+        <div class="exchanges">
+          <div class="exchange">
+            <p class="ask">switch me over to arch-setup</p>
+            <p class="tool">fnc_switch_project</p>
+            <p class="said">
+              Ends this session and relaunches at the destination with a written summary of
+              the conversation, so the new one starts already briefed. You get a few seconds
+              to <kbd>Ctrl-C</kbd>.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">also open a session for fncode and fix the cwd bug</p>
+            <p class="tool">fnc_spawn_session</p>
+            <p class="said">
+              Opens a sibling in a new terminal window, briefed for its own task. This
+              session keeps running.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">restart yourself</p>
+            <p class="tool">fnc_restart</p>
+            <p class="said">
+              Restarts in place. The conversation and your startup flags survive. Ask for
+              one flag to change and only that one changes.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">how much has this session cost?</p>
+            <p class="tool">get_usage</p>
+            <p class="said">
+              Cost, tokens per model, and current context size, read from the session log on
+              disk. No API call.
+            </p>
+          </div>
+
+          <div class="exchange">
+            <p class="ask">copy that to my clipboard</p>
+            <p class="tool">fnc_copy_to_clipboard</p>
+            <p class="said">
+              Puts text on your clipboard. No selecting it out of the terminal.
+            </p>
+          </div>
+        </div>
+
+        <div class="outro">
+          <span>MIT licensed</span>
+          <span>Linux and macOS</span>
+          <a href="/installation/">Installation</a>
+          <a href="/reference/tools/">Tool reference</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <div class="status-left">
+        <span class="perm"
+          >&#9656;&#9656; bypass permissions on <span class="muted">(shift+tab to cycle)</span
+          ></span
+        >
+      </div>
+
+      <div class="status-right">
+        <div class="burndowns" aria-hidden="true">
+          <div class="burn">
+            <svg viewBox="0 0 44 16"
+              ><g fill="#6d6d6d">
+                <rect x="2" y="3" width="1" height="1" /><rect x="7" y="4" width="1" height="1" />
+                <rect x="12" y="6" width="1" height="1" /><rect x="17" y="7" width="1" height="1" />
+                <rect x="22" y="9" width="1" height="1" /><rect
+                  x="27"
+                  y="10"
+                  width="1"
+                  height="1"
+                />
+                <rect x="32" y="12" width="1" height="1" /><rect
+                  x="37"
+                  y="13"
+                  width="1"
+                  height="1"
+                />
+              </g></svg
+            >
+            <span>5h</span>
+          </div>
+          <div class="burn">
+            <svg viewBox="0 0 44 16">
+              <rect x="2" y="2" width="1" height="1" fill="#c9b458" />
+              <g fill="#6d6d6d">
+                <rect x="7" y="4" width="1" height="1" /><rect x="12" y="5" width="1" height="1" />
+                <rect x="17" y="7" width="1" height="1" /><rect x="22" y="8" width="1" height="1" />
+                <rect x="27" y="10" width="1" height="1" /><rect
+                  x="32"
+                  y="11"
+                  width="1"
+                  height="1"
+                />
+                <rect x="37" y="13" width="1" height="1" />
+              </g>
+            </svg>
+            <span>7d</span>
+          </div>
+          <div class="burn">
+            <svg viewBox="0 0 44 16">
+              <rect x="2" y="3" width="1" height="1" fill="#b7bdf7" />
+              <g fill="#6d6d6d">
+                <rect x="7" y="5" width="1" height="1" /><rect x="12" y="6" width="1" height="1" />
+                <rect x="17" y="8" width="1" height="1" /><rect x="22" y="9" width="1" height="1" />
+                <rect x="27" y="11" width="1" height="1" /><rect
+                  x="32"
+                  y="12"
+                  width="1"
+                  height="1"
+                />
+                <rect x="37" y="13" width="1" height="1" />
+              </g>
+            </svg>
+            <span>opus</span>
+          </div>
+        </div>
+
+        <span class="model">Opus 5 <span class="eff">high</span></span>
+        <span class="rc">/rc</span>
+      </div>
+    </footer>
+  </body>
+</html>

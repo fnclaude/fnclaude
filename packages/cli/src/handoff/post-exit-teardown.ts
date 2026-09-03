@@ -28,7 +28,7 @@
  * Pure: takes the post-exit inputs, returns the decision. The side-
  * effects (termios, stdin pause, awaiting the awaiter) live in main.ts.
  *
- * Design: docs/design.mcp.md §6; docs/decisions.md
+ * Design: specs/design.mcp.md §6; specs/decisions.md
  * ("setRawMode EIO on spawn-based re-exec handoff").
  */
 

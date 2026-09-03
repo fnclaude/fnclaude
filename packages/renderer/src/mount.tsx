@@ -8,7 +8,7 @@
  *
  * Lifting subscription creation out of `App` (it used to self-subscribe in a
  * `useEffect`) is what lets fnc reach `sendUserTurn`/`close` — see
- * docs/design.renderer.md §7 and /tmp/renderer-parity/spawn-args.md §(c).
+ * specs/proposals/design.renderer.md §7 and /tmp/renderer-parity/spawn-args.md §(c).
  *
  * This module is import-safe: importing it has NO side effects (no top-level
  * `render()`), so `import("@fnclaude/renderer")` can resolve to a real

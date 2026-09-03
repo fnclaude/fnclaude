@@ -5,7 +5,7 @@
  * Tests use Bun.listen({ unix }) to stand up tiny servers and verify
  * dialAndCall's round-trip + timeout semantics.
  *
- * Design: docs/design.mcp.md §3.
+ * Design: specs/design.mcp.md §3.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';

@@ -6,7 +6,7 @@ Background research feeding the post-wipe CLI rewrite. Captured 2026-05-27.
 
 - **MVP**: `Bun.spawn(["claude", …], { stdin: "inherit", stdout: "inherit", stderr: "inherit" })`. The child sees `isTTY === true` because the parent's TTY fds pass through unchanged. No PTY layer, no open Bun bugs, no node-pty. Right default for a launcher.
 - **Future**, once we need output capture / programmatic input / SIGWINCH relay: `Bun.Terminal` (landed v1.3.5, December 2025).
-- **Do not** use `node-pty`. Confirmed broken under Bun on macOS arm64 (`onData` never fires — [oven-sh/bun#25822](https://github.com/oven-sh/bun/issues/25822)); the SIGHUP race we hit on Linux (see [`docs/fnc-silent-exit-investigation.md`](../fnc-silent-exit-investigation.md)) is the same class.
+- **Do not** use `node-pty`. Confirmed broken under Bun on macOS arm64 (`onData` never fires — [oven-sh/bun#25822](https://github.com/oven-sh/bun/issues/25822)); the SIGHUP race we hit on Linux (see [`specs/archive/fnc-silent-exit-investigation.md`](archive/fnc-silent-exit-investigation.md)) is the same class.
 
 ## `inherit` semantics
 
