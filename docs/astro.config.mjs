@@ -1,6 +1,7 @@
 // @ts-check
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
+import { INDEXABLE } from './src/site';
 
 // Custom domain, so the site is served from the root rather than /fnclaude/.
 // docs/public/CNAME is what tells GitHub Pages about it.
@@ -14,6 +15,17 @@ export default defineConfig({
       // The two faces the theme is built on. Preconnect first so the
       // stylesheet request doesn't pay for a cold TLS handshake.
       head: [
+        // Pre-launch: keep the site out of search results. The meta tag is the
+        // whole mechanism — a robots.txt Disallow would stop crawlers reading
+        // this and let the bare URL get indexed anyway.
+        ...(INDEXABLE
+          ? []
+          : [
+              {
+                tag: /** @type {const} */ ('meta'),
+                attrs: { name: 'robots', content: 'noindex, nofollow' },
+              },
+            ]),
         {
           tag: 'link',
           attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
