@@ -6,7 +6,7 @@ description: Install fnc, launch a session by repo name, and see what the sessio
 **fnclaude** is a launcher for Claude Code. The binary is `fnc`. Give it a repo
 reference instead of a directory and it finds the clone, or makes one, and starts
 claude there. The session it launches gets tools to switch to another repo, open a
-sibling, restart, and change model or effort while it runs.
+sibling, and restart while it runs.
 
 Everything below assumes `fnc` is on your `PATH`.
 

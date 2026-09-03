@@ -87,20 +87,6 @@ never as "no limit" or zero.
 `context.used` is the context size of the latest assistant turn in tokens, or `null`
 before the first one.
 
-## fnc_set_model
-
-Change the running session's model. Fire-and-forget: the change applies and nothing
-comes back through the tool.
-
-Takes `model`: `opus`, `sonnet`, or `haiku`.
-
-## fnc_set_effort
-
-Change the running session's reasoning effort. Fire-and-forget, like the model
-change.
-
-Takes `effort`: `low`, `medium`, `high`, `xhigh`, `max`, or `auto`.
-
 ## fnc_copy_to_clipboard
 
 Put text on your clipboard. Takes `text`. For when the model has something you

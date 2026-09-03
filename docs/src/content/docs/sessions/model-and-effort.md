@@ -1,12 +1,7 @@
 ---
 title: Model & effort
-description: Set model and effort at launch, or change either while the session runs.
+description: Set model and effort at launch with bare words instead of flags.
 ---
-
-Pick the model and effort when the session starts, or change them while it runs. The
-two paths are separate mechanisms and accept slightly different words.
-
-## At launch
 
 The first two positional slots take a model alias and an effort level. `fnc` turns
 them into flags before claude sees the arguments:
@@ -25,15 +20,6 @@ fnc ~/src/proj              # no model flag; claude picks its default
 
 The words are read left to right at the head of argv, before any flag. A directory
 named `opus` is reachable as `./opus`.
-
-## Mid-session
-
-Two tools change the running session in place. No restart, nothing lost:
-
-- **`fnc_set_model`** takes `opus`, `sonnet`, or `haiku`.
-- **`fnc_set_effort`** takes `low`, `medium`, `high`, `xhigh`, `max`, or `auto`.
-
-Both are fire-and-forget. The change applies and nothing comes back through the tool.
 
 ## Across a restart
 

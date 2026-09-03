@@ -17,7 +17,7 @@ const { version } = pkg;
     <title>fnclaude</title>
     <meta
       name="description"
-      content="fnc launches Claude Code in any repository by name, then gives the session tools to switch project, open a sibling, restart, and change model or effort while it runs."
+      content="fnc launches Claude Code in any repository by name, then gives the session tools to switch project, open a sibling, and restart while it runs."
     />
     {!INDEXABLE && <meta name="robots" content="noindex, nofollow" />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -208,23 +208,6 @@ const { version } = pkg;
             <p class="said">
               Cost, tokens per model, and current context size, read from the session log on
               disk. No API call.
-            </p>
-          </div>
-
-          <div class="exchange">
-            <p class="ask">drop to sonnet for the rest of this</p>
-            <p class="tool">fnc_set_model</p>
-            <p class="said">
-              Changes the model on the running session. Nothing restarts, nothing is lost.
-            </p>
-          </div>
-
-          <div class="exchange">
-            <p class="ask">crank effort to max</p>
-            <p class="tool">fnc_set_effort</p>
-            <p class="said">
-              Same for effort: <code>low</code>, <code>medium</code>, <code>high</code>,
-              <code>xhigh</code>, <code>max</code>, <code>auto</code>.
             </p>
           </div>
 
