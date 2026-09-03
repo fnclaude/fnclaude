@@ -12,7 +12,7 @@
  * stand up an actual AF_UNIX socket for the integration case; mocks would
  * hide exactly the wire-protocol bugs this layer exists to prevent.
  *
- * Design: docs/design.mcp.md §2.3, §3.
+ * Design: specs/design.mcp.md §2.3, §3.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';

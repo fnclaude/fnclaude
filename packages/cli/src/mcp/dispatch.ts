@@ -1,7 +1,7 @@
 /**
  * MCP subcommand dispatch. fnc's first arg of "mcp" routes to the embedded
  * JSON-RPC subprocess (the one claude invokes via the injected
- * --mcp-config; see docs/design.mcp.md §2).
+ * --mcp-config; see specs/design.mcp.md §2).
  *
  * §2.7 contributed the routing wrapper. §7.5 wires the entry point and
  * the per-tool wire handlers. §7.3 wrote the JSON-RPC scaffold

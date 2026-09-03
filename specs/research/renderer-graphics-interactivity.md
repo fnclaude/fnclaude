@@ -8,8 +8,8 @@ After closing the GFM rendering gaps, two research sweeps examined what it would
 
 Cross-references (do not duplicate):
 
-- [`docs/design.renderer.md`](../design.renderer.md) — in-process renderer↔CLI integration design; the architecture these features land into.
-- [`docs/decisions.md`](../decisions.md) — dated decisions driven by the findings here.
+- [`specs/proposals/design.renderer.md`](../proposals/design.renderer.md) — in-process renderer↔CLI integration design; the architecture these features land into.
+- [`specs/decisions.md`](../decisions.md) — dated decisions driven by the findings here.
 
 ---
 
@@ -150,7 +150,7 @@ Mouse tracking must be an opt-in, transient "nav mode," never global.
 
 Format: `\x1b]8;;URL\x1b\\text\x1b]8;;\x1b\\` (BEL `\x07` is also a valid terminator). Ghostty supports OSC 8 (since PR #1928, 2024).
 
-**A confirmed `string-width` bug gates their use.** `string-width` (Ink's internal column-width measurer) strips CSI escape sequences but not OSC sequences. OSC 8 bytes inflate the measured column width, causing broken wrapping and misaligned table borders in any cell that contains a link. This bit fnclaude directly: the `TableBlock` component added in PR #261 used a `visibleWidth` regex that consumed only the `ESC]` prefix and left `8;;<url>\x07` counted as visible characters, misaligning columns with links. PR #263 removed OSC 8 to fix the regression. See the corresponding decision in [`docs/decisions.md`](../decisions.md).
+**A confirmed `string-width` bug gates their use.** `string-width` (Ink's internal column-width measurer) strips CSI escape sequences but not OSC sequences. OSC 8 bytes inflate the measured column width, causing broken wrapping and misaligned table borders in any cell that contains a link. This bit fnclaude directly: the `TableBlock` component added in PR #261 used a `visibleWidth` regex that consumed only the `ESC]` prefix and left `8;;<url>\x07` counted as visible characters, misaligning columns with links. PR #263 removed OSC 8 to fix the regression. See the corresponding decision in [`specs/decisions.md`](../decisions.md).
 
 ### ctrl+click on links — who owns it
 

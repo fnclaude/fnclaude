@@ -11,7 +11,7 @@
  * filter — Ink reconciles the screen diff.
  *
  * The live `ClaudeSubscription` is now CREATED by `mountRenderer` and
- * INJECTED via the `subscription` prop (docs/design.renderer.md §7) — App no
+ * INJECTED via the `subscription` prop (specs/proposals/design.renderer.md §7) — App no
  * longer self-subscribes. The subscription exposes `.events` (the async
  * iterable), `.sendUserTurn(text)`, and `.close()`; App consumes `.events`
  * and drives turns, but the OWNER (mountRenderer/fnc) owns lifecycle, so App

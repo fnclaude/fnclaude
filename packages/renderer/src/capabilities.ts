@@ -16,7 +16,7 @@
  * assuming support (all booleans false, images `none`, color `16`).
  *
  * Capability matrix sourced from
- * docs/reverse-engineering/claude-code-terminal-tricks.md.
+ * specs/reverse-engineering/claude-code-terminal-tricks.md.
  */
 
 /** A read-only view of the process environment. */

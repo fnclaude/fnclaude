@@ -3,7 +3,7 @@
  *
  * `createHandoffTrigger()` is the one-shot signal the parent's MCP
  * dispatcher fires when a `restart` or non-`never`-mode `switch` arrives.
- * Per docs/design.mcp.md §6.1:
+ * Per specs/design.mcp.md §6.1:
  *   - stashArgv mutex: first stash wins; subsequent stashes are dropped
  *     silently (concurrent restart+switch races; rare in practice).
  *   - fire() is idempotent — second fire is a no-op. Wraps a sync.Once-

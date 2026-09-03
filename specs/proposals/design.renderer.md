@@ -90,7 +90,7 @@ flowchart LR
 
 A second unix socket (`FNC_RENDERER_SOCKET`) or an inherited control fd, with a register/handshake/liveness/ack protocol and a versioned wire handshake for skew.
 
-**Rejected.** In-process collapses the IPC channel to a function call, version-skew handling to a semver dependency range, capability detection to "did the import resolve," and liveness to "is the object there." All the invented IPC machinery disappears. The inherited-fd variant was additionally risky given Bun's spawn-fd story — see [`docs/research/bun-pty-spawn.md`](research/bun-pty-spawn.md).
+**Rejected.** In-process collapses the IPC channel to a function call, version-skew handling to a semver dependency range, capability detection to "did the import resolve," and liveness to "is the object there." All the invented IPC machinery disappears. The inherited-fd variant was additionally risky given Bun's spawn-fd story — see [`specs/bun-pty-spawn.md`](../bun-pty-spawn.md).
 
 ### 5.2. Reusing the claude↔fnc MCP socket for the fnc→renderer edge
 

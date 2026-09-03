@@ -5,7 +5,7 @@
  * When invoked under Node first, `bin/fnc.js`'s preflight stuffs the raw
  * argv into `FNC_ARGS_JSON` and re-execs under Bun. By the time main.ts
  * runs, `process.argv` may have lost its `--` sentinel (bun 1.3.14 still
- * strips it; see `docs/decisions.md`), so we prefer the env var.
+ * strips it; see `specs/decisions.md`), so we prefer the env var.
  *
  * Direct `bun fnc.js` invocations (no preflight) still work — there's
  * just no way to recover `--` in that path.

@@ -2,7 +2,7 @@
  * Magic-positional state machine.
  *
  * Walks the prefix of argv consuming model/effort/subcommand tokens per
- * the rules in docs/design.md §1. Subcommands are order-independent and
+ * the rules in specs/design.md §1. Subcommands are order-independent and
  * do not advance the model/effort state; model+effort move through a
  * three-state machine:
  *

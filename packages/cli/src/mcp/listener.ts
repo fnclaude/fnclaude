@@ -1,7 +1,7 @@
 /**
  * AF_UNIX MCP listener — parent half of the in-process transport.
  *
- * Per docs/design.mcp.md §2.1, the launcher binds + listens BEFORE
+ * Per specs/design.mcp.md §2.1, the launcher binds + listens BEFORE
  * spawning claude, so the MCP subprocess (which claude spawns from the
  * injected --mcp-config) can dial back via $FNC_SOCKET on every tool
  * call. The accept loop runs `onConnection` per incoming dial; the

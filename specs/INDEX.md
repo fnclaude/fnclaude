@@ -1,4 +1,4 @@
-# docs/
+# specs/
 
 Navigation index for the fnclaude documentation.
 

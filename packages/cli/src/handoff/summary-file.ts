@@ -27,7 +27,7 @@
  * tests. Production callers use the defaults (`defaultBaseDir`,
  * `defaultRandomHex`).
  *
- * Design: docs/design.mcp.md §4.2, docs/design.md §14.
+ * Design: specs/design.mcp.md §4.2, specs/design.md §14.
  */
 
 import { randomBytes } from 'node:crypto';
