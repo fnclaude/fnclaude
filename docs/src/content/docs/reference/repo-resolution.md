@@ -25,6 +25,25 @@ Any of them may carry a `+workspace` suffix — `arch-setup+fix-lid-sync` — wh
 resolves the base repository and then adds a worktree beside it. See
 [Worktrees](/sessions/worktrees/).
 
+## Resolution order
+
+1. **No argument.** Falls back to the marker directory (below).
+2. **An explicit path** — anything starting `/`, `~`, `~/`, `.`, `..`, `./`, or `../` —
+   short-circuits everything else and launches there. Existence is not checked: you
+   said go here, so it goes here.
+3. **Anything else** is checked two ways at once: as a directory named `<input>` inside
+   your current directory, and as a repo reference.
+   - The reference does not parse: the local directory is used if it exists, otherwise
+     you get a parse error.
+   - **A bare name with a local directory of the same name** is ambiguous, and fnclaude
+     says so rather than guessing. Write `./name` for the local directory.
+   - **A bare name with no local directory** is matched against your existing clones
+     under `cloneTemplate`. Exactly one match launches it. More than one is ambiguous
+     and fnclaude lists them. None falls through to a GitHub org lookup, then a clone.
+   - **An owner-qualified reference** goes straight to its clone destination. If both
+     that and a local directory of the same name exist and are genuinely different
+     places, that is ambiguous too; if they are the same place, it just launches.
+
 ## Cloning
 
 If the repository is not on disk, fnclaude clones it. The destination comes from
