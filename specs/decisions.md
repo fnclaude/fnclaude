@@ -6,6 +6,20 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 ---
 
+## 2026-09-03 — Docs site is Astro Starlight on GitHub Pages; internal docs move to specs/
+
+**Decision:** The published documentation site lives in `docs/` and is built with Astro + Starlight, deployed to GitHub Pages at `https://fnclaude.rhombus.rocks` by a dedicated `pages.yml` workflow. The internal design docs, specs, and reverse-engineering notes that used to occupy `docs/` moved wholesale to `specs/`, which is not published. The site's moon `build` task is the CI gate for it; there is no unit test.
+
+**Context:** The repo had no published documentation and `docs/` was already taken by internal material — an unusual arrangement that would confuse anyone arriving from a conventional repo, and one that blocks the tooling default of building a site from `docs/`. The rename is a pure `git mv` so `git log --follow` and GitHub both still show it as a rename rather than a delete-plus-add.
+
+**Why Starlight over VitePress and Nextra:** this site will be mostly Claude-maintained, so the deciding axis is how much a generator catches at build time rather than how it looks. Starlight validates every page's frontmatter against a Zod schema, which turns a hallucinated or misspelled key into a build failure instead of a silently-ignored field. It exposes 28 named override components (0.42) through a `components:` config map, so customising a slot is a declared swap rather than a fork of the theme. And its `<Tabs syncKey>` synchronises by tab *label* across the whole site, so an installer choice made on one page holds on the next without any state plumbing. VitePress and Nextra are both fine at rendering markdown; neither turns a bad page into a red build.
+
+**Why GitHub Pages:** the artifact is static, the repo already runs its release automation on GitHub Actions, and Pages deployment authenticates through OIDC with no long-lived secret — the same reason npm publishing here is trusted-publisher rather than token-based. The custom domain ships in `docs/public/CNAME` so it travels with the artifact rather than being repo state someone has to remember to re-set.
+
+**Revisit when:** the site outgrows a static build (search that needs a server, per-user content), or Starlight's schema validation stops being the thing that catches bad pages because a stronger check lands upstream.
+
+---
+
 ## 2026-06-26 — Renderer stays hybrid (text + targeted images), not full-canvas
 
 **Decision:** The transcript stays real selectable Ink `<Text>`; Kitty graphics images are used only for content that text cannot represent (math, mermaid diagrams, actual `<img>` content). Before any inline-image work, the transcript-history rendering should move to Ink's `<Static>` (finalized events) plus a dynamic live tail.
