@@ -1,13 +1,13 @@
 # Regenerates the pixel grid and <rect> list behind the SVG in
 # src/components/Mascot.astro (and public/favicon.svg).
-BODY_W, BODY_H = 10, 7
+BODY_W, BODY_H = 11, 7
 LEAN   = 1                      # px shift per row, bottom -> top
 LEG_H  = 2
-LEGS   = (2, 7)                 # x offsets within the bottom row
+LEGS   = (2, 8)                 # x offsets within the bottom row
 EYES   = (3, 7)                 # x offsets within the eye row
 EYE_ROW, EYE_H = 1, 2           # row index within body, height
-MOUTH  = {4: (4, 5, 6, 7),      # half-disc smile: flat top row ...
-          5: (6, 7)}            # ... rounded bottom row; row -> x offsets
+MOUTH  = {4: (3, 4, 5, 6),      # half-disc smile: flat top row ...
+          5: (5, 6)}            # ... rounded bottom row; row -> x offsets
 
 W = BODY_W + LEAN * (BODY_H - 1)
 H = BODY_H + LEG_H
