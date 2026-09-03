@@ -17,7 +17,7 @@ const { version } = pkg;
     <title>fnclaude</title>
     <meta
       name="description"
-      content="Session control for Claude Code: move a running session to another repository, or open a sibling beside it, each starting from a written continuity summary."
+      content="fnc launches Claude Code in any repository by name, then gives the session tools to switch project, open a sibling, restart, and change model or effort while it runs."
     />
     {!INDEXABLE && <meta name="robots" content="noindex, nofollow" />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -44,13 +44,13 @@ const { version } = pkg;
 
     <main>
       <section class="hero wrap">
-        <h1>Start a session <em>anywhere.</em> Move it mid-flight.</h1>
+        <h1>Launch claude <em>anywhere.</em> Move it while it runs.</h1>
 
         <p>
-          Claude Code starts in the directory you are standing in and stays there.
-          <span class="lit">fnclaude</span> takes a repo reference instead &mdash; a short
-          name, an <span class="lit">owner/name</span>, a URL &mdash; finds it or clones it,
-          and launches there. Once you are in, it hands the session tools to move itself.
+          Claude Code starts where your shell is. <span class="lit">fnc</span> starts where
+          you say: a repo name, an <span class="lit">owner/name</span>, a URL, a path. It
+          finds the clone or makes one, and launches there. Inside, the session gets tools
+          to switch repos, open a sibling, or restart itself.
         </p>
 
         <div class="prompt">
@@ -60,8 +60,8 @@ const { version } = pkg;
         </div>
 
         <p class="hint">
-          Then <kbd>fnc</kbd> anywhere &mdash; or <kbd>fnc &lt;repo&gt;</kbd> to start somewhere
-          specific.
+          Then <kbd>fnc</kbd> from any directory, or <kbd>fnc &lt;repo&gt;</kbd> for a
+          specific one.
         </p>
 
         <div class="actions">
@@ -77,95 +77,94 @@ const { version } = pkg;
           <div class="call">
             <dt>fnc ~/src/proj</dt>
             <dd>
-              Not bound to where you are. Pass any directory and the session starts there,
-              from whatever terminal you happen to have open.
+              Not bound to your cwd. Give it a directory and the session starts there, from
+              whatever terminal you have open.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc arch-setup</dt>
             <dd>
-              A bare name is enough. fnclaude looks for a matching clone on disk, and if
-              there isn&rsquo;t one, searches your GitHub organisations and clones it.
-              <span class="note">You type the short name. It finds the thing.</span>
+              A bare name is enough. fnc checks your existing clones first, then your
+              GitHub user and orgs, and clones if it has to.
+              <span class="note">Say the repo. It finds it.</span>
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc fnrhombus/arch-setup</dt>
             <dd>
-              Qualify it when you want to skip the search: <code>name@owner</code>,
-              <code>owner/name</code>, <code>gh:owner/name</code>, an HTTPS URL, or an SSH
-              URL. All resolve to the same clone destination.
+              Name the owner to skip the search. <code>name@owner</code>,
+              <code>owner/name</code>, <code>gh:owner/name</code>, an HTTPS URL, and an SSH
+              URL all land in the same clone directory.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc opus max</dt>
             <dd>
-              Model and effort are bare words in the first two slots, not flags with
-              spelled-out values. <code>opus</code>, <code>sonnet</code>,
-              <code>haiku</code>, <code>fable</code>; <code>low</code> through
-              <code>max</code>.
+              Model and effort are bare words at the front, not flags. <code>opus</code>,
+              <code>sonnet</code>, <code>haiku</code>, <code>fable</code>;
+              <code>low</code>, <code>medium</code>, <code>high</code>,
+              <code>xhigh</code>, <code>max</code>, <code>auto</code>.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc high ~/src/proj</dt>
             <dd>
-              An effort level on its own implies <code>opus</code>, because that is the
-              only reason you were reaching for it.
+              Effort on its own implies <code>opus</code>.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc resume</dt>
             <dd>
-              Picking up where you left off is one word. <code>continue</code> takes the
-              most recent session, <code>fork</code> branches off one. Short forms:
-              <code>res</code>, <code>con</code>, <code>fk</code>.
+              One word to pick up where you left off. <code>resume</code> opens the
+              picker, <code>continue</code> takes the latest session, <code>fork</code>
+              branches off one. <code>res</code>, <code>con</code>, <code>fk</code> for
+              short.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc resume ~/src/proj</dt>
             <dd>
-              The picker, scoped to a project you are not currently in. Resume a session
-              somewhere else without going there first.
+              The picker for a project you are not in. Resume there without going there.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc resume &nbsp;&rarr;&nbsp; Ctrl-A</dt>
             <dd>
-              In the picker, <kbd>Ctrl-A</kbd> widens the list to sessions from every
-              directory. Choose one from another project and fnclaude relaunches itself
-              there, carrying every flag from the original invocation.
-              <span class="note">Plain claude prints the cd-and-resume line and leaves you to run it.</span>
+              In the picker, <kbd>Ctrl-A</kbd> lists sessions from every directory. Pick
+              one from another project and fnc relaunches itself there, with every flag
+              you started with.
+              <span class="note">Plain claude prints a cd-and-resume line and leaves you to run it.</span>
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc arch-setup+fix-lid-sync</dt>
             <dd>
-              A <code>+</code> suffix resolves the base repo and adds a worktree beside it,
-              branched and ready.
+              A <code>+</code> suffix resolves the repo, then adds a worktree beside it on
+              its own branch.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc -w fix-lid-sync</dt>
             <dd>
-              Names an existing worktree and fnclaude swaps its cwd to it. Names a new one
-              and it passes through as a create request.
+              An existing worktree by name, and fnc launches in it. A new name passes
+              through to claude as a create request.
             </dd>
           </div>
 
           <div class="call">
             <dt>fnc -BVC</dt>
             <dd>
-              A capital letter per claude long flag, collapsing the POSIX way. That one is
-              <code>--brief --verbose --chrome</code>.
+              One capital letter per claude long flag, collapsing the POSIX way. This one
+              is <code>--brief --verbose --chrome</code>.
             </dd>
           </div>
         </dl>
@@ -179,18 +178,18 @@ const { version } = pkg;
             <p class="ask">switch me over to arch-setup</p>
             <p class="tool">fnc_switch_project</p>
             <p class="said">
-              Ends this session and re-launches at the destination, carrying a written
-              continuity summary so the new one opens knowing what it is there for. You get
-              a few seconds to <kbd>Ctrl-C</kbd> out of it.
+              Ends this session and relaunches at the destination with a written summary of
+              the conversation, so the new one starts already briefed. You get a few seconds
+              to <kbd>Ctrl-C</kbd>.
             </p>
           </div>
 
           <div class="exchange">
-            <p class="ask">also open a session for fncode</p>
+            <p class="ask">also open a session for fncode and fix the cwd bug</p>
             <p class="tool">fnc_spawn_session</p>
             <p class="said">
-              Opens a sibling in a new terminal window and leaves this session running. Two
-              tracks in parallel, neither waiting on the other.
+              Opens a sibling in a new terminal window, briefed for its own task. This
+              session keeps running.
             </p>
           </div>
 
@@ -198,17 +197,17 @@ const { version } = pkg;
             <p class="ask">restart yourself</p>
             <p class="tool">fnc_restart</p>
             <p class="said">
-              Restarts in place with the conversation intact and your original flags
-              preserved. Name a flag to change and only that one changes.
+              Restarts in place. The conversation and your startup flags survive. Ask for
+              one flag to change and only that one changes.
             </p>
           </div>
 
           <div class="exchange">
-            <p class="ask">what&rsquo;s this session cost so far?</p>
+            <p class="ask">how much has this session cost?</p>
             <p class="tool">get_usage</p>
             <p class="said">
-              Cost, a per-model token breakdown, and the live context size &mdash; read from
-              data fnclaude already holds. No extra API calls to ask.
+              Cost, tokens per model, and current context size, read from the session log on
+              disk. No API call.
             </p>
           </div>
 
@@ -216,24 +215,24 @@ const { version } = pkg;
             <p class="ask">drop to sonnet for the rest of this</p>
             <p class="tool">fnc_set_model</p>
             <p class="said">
-              Changes the model on the running session. No restart, no losing the thread.
+              Changes the model on the running session. Nothing restarts, nothing is lost.
             </p>
           </div>
 
           <div class="exchange">
-            <p class="ask">crank the effort up to max</p>
+            <p class="ask">crank effort to max</p>
             <p class="tool">fnc_set_effort</p>
             <p class="said">
-              Same, for reasoning effort: <code>low</code>, <code>medium</code>,
-              <code>high</code>, <code>xhigh</code>, <code>max</code>, <code>auto</code>.
+              Same for effort: <code>low</code>, <code>medium</code>, <code>high</code>,
+              <code>xhigh</code>, <code>max</code>, <code>auto</code>.
             </p>
           </div>
 
           <div class="exchange">
-            <p class="ask">put that command on my clipboard</p>
+            <p class="ask">copy that to my clipboard</p>
             <p class="tool">fnc_copy_to_clipboard</p>
             <p class="said">
-              Hands you text without a round trip through select-and-copy.
+              Puts text on your clipboard. No selecting it out of the terminal.
             </p>
           </div>
         </div>
