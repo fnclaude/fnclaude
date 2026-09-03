@@ -1,10 +1,13 @@
-# Regenerates the pixel grid behind the SVG in src/components/Mascot.astro.
-BODY_W, BODY_H = 10, 5
+# Regenerates the pixel grid and <rect> list behind the SVG in
+# src/components/Mascot.astro (and public/favicon.svg).
+BODY_W, BODY_H = 10, 7
 LEAN   = 1                      # px shift per row, bottom -> top
 LEG_H  = 2
-LEGS   = (1, 3, 6, 8)           # x offsets within the bottom row
+LEGS   = (2, 7)                 # x offsets within the bottom row
 EYES   = (3, 7)                 # x offsets within the eye row
 EYE_ROW, EYE_H = 1, 2           # row index within body, height
+MOUTH  = {4: (4, 5, 6, 7),      # half-disc smile: flat top row ...
+          5: (6, 7)}            # ... rounded bottom row; row -> x offsets
 
 W = BODY_W + LEAN * (BODY_H - 1)
 H = BODY_H + LEG_H
@@ -27,8 +30,22 @@ for off in EYES:                # upright slots, placed on the eye row
     for y in range(EYE_ROW, EYE_ROW + EYE_H):
         g[y][x] = 'k'
 
+for row, offs in MOUTH.items(): # the smile is background showing through
+    for off in offs:
+        g[row][row_x0(row) + off] = 'k'
+
 for row in g:
     print(''.join({'o':'██','k':'▒▒','.':'  '}[c] for c in row))
 print()
-print('\n'.join(''.join(r) for r in g))
-print(f'\n{W}x{H}')
+
+for y, row in enumerate(g):     # run-length merge each row into <rect>s
+    x = 0
+    while x < W:
+        if row[x] != 'o':
+            x += 1
+            continue
+        x0 = x
+        while x < W and row[x] == 'o':
+            x += 1
+        print(f'<rect x="{x0}" y="{y}" width="{x - x0}" height="1" />')
+print(f'\nviewBox="0 0 {W} {H}"')
