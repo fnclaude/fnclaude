@@ -14,21 +14,21 @@ Navigation index for the fnclaude documentation.
 
 ## Proposals
 
-- [proposals/design.renderer.md](proposals/design.renderer.md) — Forward-looking design for renderer↔CLI in-process integration (not yet shipped) — created 2026-05-30
-- [proposals/design.renderer-images.md](proposals/design.renderer-images.md) — Implementation guide for inline images: Kitty graphics protocol, `<Static>` foundation, `<img>`/pasted-image flows, security — created 2026-06-26
-- [proposals/multipane-orchestration-proposal.md](proposals/multipane-orchestration-proposal.md) — Design exploration for a TUI hosting Ink chrome, Neovim, and transcript side-by-side — created 2026-06-26
+- [renderer/design.renderer.md](renderer/design.renderer.md) — Forward-looking design for renderer↔CLI in-process integration (not yet shipped) — created 2026-05-30
+- [renderer/design.renderer-images.md](renderer/design.renderer-images.md) — Implementation guide for inline images: Kitty graphics protocol, `<Static>` foundation, `<img>`/pasted-image flows, security — created 2026-06-26
+- [renderer/multipane-orchestration-proposal.md](renderer/multipane-orchestration-proposal.md) — Design exploration for a TUI hosting Ink chrome, Neovim, and transcript side-by-side — created 2026-06-26
 - [proposals/renderer-surface-options.md](proposals/renderer-surface-options.md) — Exploration of which surface the renderer should be (stock Ink / forked Ink / Electron / local web) and which drive model (streaming vs one-shot); nothing decided — created 2026-08-22
-- [proposals/subagent-panes-idea.md](proposals/subagent-panes-idea.md) — Design for a multi-agent cockpit: per-subagent panes for watching and steering in-flight agents — created 2026-06-18, updated 2026-06-26
+- [renderer/subagent-panes-idea.md](renderer/subagent-panes-idea.md) — Design for a multi-agent cockpit: per-subagent panes for watching and steering in-flight agents — created 2026-06-18, updated 2026-06-26
 
 ## Reference
 
 - [decisions.md](decisions.md) — Dated log of technical decisions made during the rewrite, with rationale — created 2026-05-27, updated 2026-06-26
-- [renderer-component-hierarchy.md](renderer-component-hierarchy.md) — React/Ink component composition tree and event→renderer dispatch map (Mermaid) — created 2026-06-30
+- [renderer/component-hierarchy.md](renderer/component-hierarchy.md) — React/Ink component composition tree and event→renderer dispatch map (Mermaid) — created 2026-06-30
 
 ## Research
 
 - [bun-pty-spawn.md](bun-pty-spawn.md) — Research on spawning interactive TUI children from Bun; recommends Bun.Terminal over node-pty — created 2026-05-27
-- [research/renderer-graphics-interactivity.md](research/renderer-graphics-interactivity.md) — Feasibility memo on inline images, math, Mermaid, mouse/link interactivity, and scrolling architecture for the renderer — created 2026-06-26
+- [renderer/research.graphics-interactivity.md](renderer/research.graphics-interactivity.md) — Feasibility memo on inline images, math, Mermaid, mouse/link interactivity, and scrolling architecture for the renderer — created 2026-06-26
 
 ## Reverse Engineering
 
