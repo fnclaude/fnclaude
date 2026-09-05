@@ -11,6 +11,11 @@ tasks:
       cache: false
   test:
     command: 'bun run test'
+    # The tiers spawn bin/fnc.js, whose dev path rebuilds dist/ on a cold checkout. Building
+    # first (rather than letting each spawned shim build concurrently and time out) is the
+    # durable fix — `moon run :test` anywhere lowers dist once before the tests run.
+    deps:
+      - '~:build'
     inputs:
       - 'src/**/*'
       - 'test/**/*'

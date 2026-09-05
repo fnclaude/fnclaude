@@ -58,9 +58,24 @@ jobs:
           # mise.toml at the repo root drives the tool list.
           experimental: true
       - run: bun install --frozen-lockfile
+      # The ttsc/Go transform host is compiled once (41–72 s) into this repo-local cache
+      # (tools/ttsc-build.ts roots every Go/ttsc cache here). Persisting it keyed on the
+      # ttsc/typescript pins and the vendored transform source pays that compile once per
+      # key instead of on every run. Object caches are content-keyed, so a stale restore
+      # is safe — a key miss just recompiles.
+      - uses: actions/cache@v4
+        with:
+          path: packages/cli/.cache/ttsc
+          key: ttsc-host-${{ runner.os }}-${{ hashFiles('packages/cli/package.json', 'packages/cli/vendor/transforms/**') }}
+          restore-keys: |
+            ttsc-host-${{ runner.os }}-
       - run: moon run :lint
-      - run: moon run :test
+      # Build BEFORE test: the e2e/unit tiers spawn bin/fnc.js, whose dev path would
+      # otherwise rebuild dist inside every spawned process concurrently and time out.
+      # (packages/cli's `test` task also declares `~:build` as a dep, so this ordering is
+      # belt-and-suspenders.)
       - run: moon run :build
+      - run: moon run :test
       # The composition tier is authored in the registration dialect, so it runs
       # through its own ttsc lowering lane rather than the plain `bun test` unit tier.
       - name: composition tier
