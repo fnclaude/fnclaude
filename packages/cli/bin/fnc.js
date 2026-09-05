@@ -71,13 +71,20 @@ function newestMtime(dir) {
   return newest;
 }
 
-/** Rebuilds `dist/` when any source file is newer than the sentinel. */
+/**
+ * Rebuilds `dist/` when any source file is newer than the sentinel.
+ *
+ * The mtime check is a warm fast-path that avoids spawning a builder on every launch.
+ * On a stale dist it delegates to `build-dist.ts --if-stale`, whose on-disk lock keeps
+ * several `fnc` processes starting at once from racing two rm/rebuilds — the loser waits
+ * for the winner's sentinel instead of building a second time.
+ */
 function ensureFreshDist() {
   const sentinelMtime = existsSync(distLowered) ? statSync(distLowered).mtimeMs : 0;
   if (newestMtime(join(pkgDir, 'src')) <= sentinelMtime) {
     return;
   }
-  const built = Bun.spawnSync(['bun', join(pkgDir, 'tools', 'build-dist.ts')], { stdio: ['inherit', 'inherit', 'inherit'] });
+  const built = Bun.spawnSync(['bun', join(pkgDir, 'tools', 'build-dist.ts'), '--if-stale'], { stdio: ['inherit', 'inherit', 'inherit'] });
   if (built.exitCode !== 0) {
     process.stderr.write('fnc: dist rebuild failed\n');
     process.exit(built.exitCode ?? 1);
