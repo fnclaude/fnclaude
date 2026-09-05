@@ -50,4 +50,7 @@ if (!existsSync(distMain)) {
 
 // The sentinel is written LAST, so a partial or bare-tsc dist is never treated as lowered.
 writeFileSync(sentinel, `lowered ${new Date().toISOString()}\n`);
-console.log('build-dist: wrote dist/main.js + dist/.lowered (0 typefor survivors)');
+// stderr, not stdout: bin/fnc.js runs this inline on a stale dev dist with stdio
+// inherited, so anything on stdout would corrupt a launch's own stdout (e.g. the
+// FNC_INTERNAL_DUMP_ARGV JSON the argv-preflight e2e reads back).
+console.error('build-dist: wrote dist/main.js + dist/.lowered (0 typefor survivors)');
