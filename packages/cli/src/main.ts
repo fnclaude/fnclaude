@@ -26,7 +26,6 @@ import { composeEnv } from './launch/compose-env';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch';
 import { findClaude } from './launch/find-claude';
 import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader';
-import { buildRendererArgs, maybeMountRenderer, shouldUseRenderer } from './launch/renderer-mount';
 import { RingBuffer } from './launch/ring-buffer';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
@@ -494,12 +493,6 @@ const deriveNoticeThreshold = (model: string): number =>
 // is the bun runtime that will exec the subprocess script. Decision: bun
 // + script-path is a two-element shape because fnc.js is a bun script,
 // not a self-contained binary — see decisions.md 2026-05-27 entry.
-// Renderer mode: fnc hosts the Ink app and OWNS the claude spawn, driving a
-// headless `claude --print` child (renderer-mount.ts). The renderer is itself
-// a `--print` session, but it still WANTS the self-MCP config so claude can
-// dial fnc back over $FNC_SOCKET (spawn-args.md §2) — so we force the MCP
-// injection past the print gate when the renderer is selected.
-const useRenderer = shouldUseRenderer(process.env);
 if (mcpSocketPath !== undefined) {
   const binPathForMcp = process.argv[1] ?? '';
   const fncBin = binPathForMcp !== '' ? realpathSync(binPathForMcp) : '';
@@ -509,7 +502,6 @@ if (mcpSocketPath !== undefined) {
     fncBin,
     noop: usedNoopFallback,
     interactive: isInteractiveSession(claudeArgs),
-    forceInject: useRenderer,
   });
 }
 
@@ -551,10 +543,10 @@ if (!claudeBin.ok) {
 const slashWriter = createPtyWriterHolder();
 
 // Deferred-binding tagged control-injection seam (#299) for control traffic
-// (context notices, /compact, follow-up handoffs). Built BEFORE the launch
-// mode (PTY vs renderer) is decided; the /compact handler takes
-// `controlSeam.sendControl` now and the real seam (PTY or renderer) binds
-// once it exists. Control messages sent before bind are queued, not dropped.
+// (context notices, /compact, follow-up handoffs). Built BEFORE the terminal
+// exists; the /compact handler takes `controlSeam.sendControl` now and the
+// real PTY seam binds once the terminal spawns. Control messages sent before
+// bind are queued, not dropped.
 const controlSeam = createControlSeamHolder();
 
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
@@ -647,79 +639,6 @@ if (!ensured.ok) {
   process.exit(2);
 }
 logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
-
-// In-process renderer mount (design.renderer.md §2–§3, spawn-args.md §(b)).
-// When FNC_RENDERER is set AND @fnclaude/renderer (an optionalDependency)
-// resolves with a `mountRenderer` export, fnc hosts the Ink app in its own
-// process, OWNS the claude spawn, and skips BOTH launch-fork branches below.
-//
-// fnc threads its full pipeline into the renderer: the resolved claudeBin and
-// composed childEnv (via the injected SpawnFn), the launch cwd, the
-// CLAUDE-native args (claudeArgs minus --tmux/--print-family/prompt-tail, plus
-// an explicit --permission-mode), and the prompt — delivered as the renderer's
-// first sendUserTurn since a positional prompt is ignored under
-// --input-format stream-json (verified live). Ultracode rides as two turns:
-// `/effort ultracode` then the real seed (/effort,/model are TUI-only and
-// can't be forwarded, but `/effort ultracode` is honored as the boot turn).
-//
-// When the selector is unset or the renderer is absent/old, maybeMountRenderer
-// returns false (logging one line on the requested-but-unavailable path) and
-// execution falls through to the normal PTY/inherit launch — everything-else-
-// as-is. An old mountRenderer that ignores opts / lacks close() still mounts
-// cleanly. mountRenderer owns the TTY for its lifetime; on a §7 handle we exit
-// with claude's real code, else exit 0 (as before this PR).
-const rendererArgs = buildRendererArgs(claudeArgs);
-// The first turn: `/effort ultracode` for ultracode, else the prompt body.
-const rendererInitialPrompt = isUltracode
-  ? '/effort ultracode'
-  : promptBody(claudeArgs).join(' ').trim();
-// The second turn (ultracode only): the real captured seed prompt.
-const rendererFollowUp = isUltracode ? ultracodeSeedPrompt : '';
-if (
-  await maybeMountRenderer({
-    env: process.env,
-    claudeBin: claudeBin.path,
-    childEnv,
-    cwd,
-    rendererArgs,
-    // fnc-native `//` slash commands (e.g. `//restart`) resolve + dispatch
-    // through the shared registry: thread the original argv, the shared handoff
-    // trigger, and the live permission-mode reader so `//restart` rebuilds the
-    // same resume argv the MCP fnc_restart handler would.
-    origArgs: argv,
-    trigger: handoffTrigger,
-    livePermissionModeReader: (sid: string) => readLivePermissionMode(cwd, sid),
-    ...(rendererInitialPrompt !== '' ? { initialPrompt: rendererInitialPrompt } : {}),
-    ...(rendererFollowUp !== '' ? { followUpPrompt: rendererFollowUp } : {}),
-    // #299: bind the control seam to the renderer mount API and start the
-    // context monitor in renderer mode — wiring notices, /compact, and
-    // follow-up handoffs in renderer mode for the first time. The /compact MCP
-    // handler already routes through controlSeam.sendControl.
-    onControlSeam: (send) => {
-      controlSeam.bind(send);
-      return startContextMonitor({
-        launchCWD: cwd,
-        ladder: resolveContextNoticeLadder({
-          configLadder: config.contextNoticeLadder,
-          configThreshold: config.contextNoticeThreshold,
-        }),
-        deriveThreshold: deriveNoticeThreshold,
-        sendControl: send,
-        // Renderer owns the claude spawn, so claude's pid isn't available here
-        // to drive the /proc resolver — pass null so a null up-front id falls
-        // back to the legacy heuristic (unchanged renderer behavior).
-        ownSessionFile: makeOwnSessionFileResolver({
-          upfrontId: ownSessionId,
-          claudePid: null,
-        }),
-      }).stop;
-    },
-  })
-) {
-  // maybeMountRenderer process.exits with claude's code on a §7 handle; this
-  // exit(0) covers the old-handle path that returns without exiting.
-  process.exit(0);
-}
 
 // §9.0: spawn claude via Bun.Terminal on POSIX so the launcher can tee PTY
 // output through a ring buffer for cross-cwd resume detection (§9.1+). On

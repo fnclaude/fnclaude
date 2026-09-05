@@ -117,17 +117,17 @@ jobs:
         id: checkout-1
         continue-on-error: true
         with:
-          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] }}
       - uses: actions/checkout@v4
         if: ${{ steps.release.outputs.releases_created == 'true' && steps.checkout-1.outcome == 'failure' }}
         id: checkout-2
         continue-on-error: true
         with:
-          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] }}
       - uses: actions/checkout@v4
         if: ${{ steps.release.outputs.releases_created == 'true' && steps.checkout-1.outcome == 'failure' && steps.checkout-2.outcome == 'failure' }}
         with:
-          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] || steps.release.outputs['packages/renderer--sha'] }}
+          ref: ${{ steps.release.outputs['packages/cli--sha'] || steps.release.outputs['packages/fnclaude--sha'] }}
 
       - uses: actions/setup-node@v4
         if: ${{ steps.release.outputs.releases_created == 'true' }}
@@ -165,8 +165,7 @@ jobs:
           set -euo pipefail
           map=$(jq -s 'map({(.name): .version}) | add' \
             packages/cli/package.json \
-            packages/fnclaude/package.json \
-            packages/renderer/package.json)
+            packages/fnclaude/package.json)
           echo "Resolved siblings:"
           echo "$map" | jq .
           # Multiline GITHUB_OUTPUT via heredoc delimiter.
@@ -177,8 +176,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Topo-sort `paths_released` so dependents are published *after* their
-      # dependencies. In this repo, `fnclaude` depends on `@fnclaude/cli` and
-      # `@fnclaude/renderer`; `cli` and `renderer` have no inter-dependencies.
+      # dependencies. In this repo, `fnclaude` depends on `@fnclaude/cli`.
       # When release-please emits a multi-package release, the order is
       # whatever jq happens to produce — sometimes `fnclaude` first, which
       # briefly publishes a package referencing sibling versions that don't
@@ -310,7 +308,7 @@ jobs:
               [.dependencies // {}, .devDependencies // {}, .peerDependencies // {}, .optionalDependencies // {}]
               | map(to_entries) | add
               | .[]
-              | select(.key | IN("@fnclaude/cli","@fnclaude/renderer","fnclaude"))
+              | select(.key | IN("@fnclaude/cli","fnclaude"))
               | "\(.key) \(.value)"
             ' "$pkg_json")
             echo "::endgroup::"

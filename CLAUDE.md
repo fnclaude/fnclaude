@@ -21,7 +21,7 @@ Anything that lands in `fnrhombus/fnclaude` is misplaced by definition — trans
 
 ## Release flow
 
-This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 3-package monorepo (`fnclaude`, `@fnclaude/cli`, `@fnclaude/renderer`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
+This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 2-package monorepo (`fnclaude`, `@fnclaude/cli`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
   `CI` workflow's `release-please` job via `googleapis/release-please-action`.
@@ -169,12 +169,13 @@ should call out which test would have failed pre-fix.
 
 ## Before committing — verify hook tooling
 
-`.githooks/pre-commit` (auto-registered via `mise.toml`'s `[hooks] enter`,
-or manually with `git config core.hooksPath .githooks` for non-mise users)
-must be able to find its tooling on PATH. Subagent worktrees routinely
-lack mise's activation and will fail loudly if your hook depends on
-mise-managed tools. Before any `git commit`, verify the formatter/linter
-your hook runs is actually reachable:
+There is currently no `pre-commit` hook in `.githooks/`: the only one that
+existed formatted the renderer package's TypeScript with biome, and the
+renderer was excised. `mise.toml`'s `[hooks] enter` still points git at
+`.githooks/`, so dropping a hook in there is all it takes to add one back.
+
+If you do add a hook, make sure its tooling is reachable before you commit —
+subagent worktrees routinely lack mise's activation and will fail loudly:
 
 ```sh
 command -v <your-formatter> >/dev/null && echo "ok: $(which <your-formatter>)" \

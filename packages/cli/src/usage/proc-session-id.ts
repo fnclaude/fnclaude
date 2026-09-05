@@ -198,8 +198,8 @@ export function createProcSessionIdResolver(
  *     REAL id from the fnc MCP child's `/proc` environ. The resolver returns
  *     `null` until the id is known, keeping the monitor silent rather than
  *     guessing a sibling's file.
- *   - `upfrontId` null and no `claudePid` (e.g. renderer mode, where the spawn
- *     is owned by the renderer) → `undefined`, so the reader falls back to its
+ *   - `upfrontId` null and no `claudePid` (a caller that does not own the
+ *     claude spawn) → `undefined`, so the reader falls back to its
  *     legacy heuristic exactly as before.
  */
 export function makeOwnSessionFileResolver(args: {

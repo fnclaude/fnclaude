@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-fnclaude (`fnc`) is a launcher that wraps the Claude Code CLI (`claude`). You invoke `fnc` instead of `claude` and it adds features on top: magic shorthand words for common flags, automatic directory/repository resolution, worktree navigation, session name generation, context-budget notices, in-session tools for restarting or switching projects, and an optional visual renderer.
+fnclaude (`fnc`) is a launcher that wraps the Claude Code CLI (`claude`). You invoke `fnc` instead of `claude` and it adds features on top: magic shorthand words for common flags, automatic directory/repository resolution, worktree navigation, session name generation, context-budget notices, and in-session tools for restarting or switching projects.
 
 Supported platforms: Linux and macOS. Windows has a partial fallback but is untested and likely broken.
 
@@ -281,8 +281,6 @@ When you type `fnc ultracode [path] [-- prompt]`:
 2. The first thing sent to claude is `/effort ultracode` (as an initial message, not via `--effort`).
 3. If you also provided a `-- prompt`, it is delivered as a **follow-up** turn after claude processes the effort command.
 
-In renderer mode (see §17), both turns are sent through the renderer's conversation pipeline.
-
 ---
 
 ## 9. Configuration File
@@ -373,7 +371,6 @@ Malformed JSON in a tier is silently skipped; that tier is treated as absent. No
 | `FNC_NOOP_TEMPLATE_PATH` | Override the source path for `handoff.template.md` seeded on first noop launch |
 | `FNC_LOG` | Log level override (`debug`, `info`, `warn`, `error`) |
 | `FNCLAUDE_HANDOFF` | Override handoff mode for this session (`never`, `ask`, or seconds); set automatically from config |
-| `FNC_RENDERER` | When set, activates the visual renderer (see §17) |
 | `FNC_ENABLE_SLASH_TOOL` | When set to `1`, enables the `fnc_run_slash_command` in-session tool (see §12.8) |
 
 ---
@@ -538,144 +535,12 @@ The log captures boot fields (argv, CWD, parent PID), the claude spawn, and any 
 
 ---
 
-## 17. Renderer (`FNC_RENDERER`)
+## 17. (removed — Renderer)
 
-When `FNC_RENDERER` is set in the environment, fnclaude activates a visual TUI renderer instead of the default terminal passthrough.
-
-In renderer mode, fnclaude owns the claude process directly and displays its events in a filtered, formatted view.
-
-### 17.1 Status Line
-
-A status line at the top shows the current preset name (e.g., `preset: normal`) and the count of active per-element overrides (e.g., `1 override`).
-
-### 17.2 Input Area
-
-The input area shows `> ` followed by the draft text and a placeholder `type a message and press Enter` when the draft is empty.
-
-### 17.3 Submitting and Typing
-
-| Action | Key |
-|---|---|
-| Submit the draft | Enter |
-| Insert a newline (line continuation) | Shift+Enter |
-| Insert a newline (terminal fallback) | `\` followed immediately by Enter |
-| Close stdin (send EOF to claude) | Ctrl+D |
-| Interrupt | Ctrl+C |
-| Repaint the display | Ctrl+L |
-
-After submission, the message appears in the transcript with a `›` marker, rendered as markdown. The raw text (with markdown syntax) is what's sent to claude.
-
-### 17.4 Presets
-
-Four display presets control which content is visible. Cycle presets with **Alt+0** (forward) and **Alt+9** (backward). Cycling clears all per-element overrides.
-
-| Element | `quiet` | `normal` | `verbose` | `debug` |
-|---|---|---|---|---|
-| Thinking | hidden | dimmed | dimmed | shown |
-| Bash command | summary | shown | shown | shown |
-| Bash output | hidden | hidden | shown | shown |
-| Edit diff | summary | shown | shown | shown |
-| Read content | hidden | hidden | summary | shown |
-| Write content | summary | summary | shown | shown |
-| Task (nested) | summary | summary | shown | shown |
-| Errors | shown | shown | shown | shown |
-| Meta/noise | hidden | hidden | hidden | shown |
-
-### 17.5 Per-Element Toggles
-
-Individual elements can be toggled independently of the preset. These overrides persist until the preset is cycled (cycling clears all overrides).
-
-Pressing a toggle key when no override is active sets the element opposite to its preset default (visible ↔ hidden). Pressing it again clears the override, reverting to the preset.
-
-| Key | Toggles |
-|---|---|
-| Alt+1 | Thinking |
-| Alt+2 | Bash command input |
-| Alt+3 | Bash output |
-| Alt+4 | Edit diff |
-| Alt+5 | Read content |
-| Alt+6 | Write content |
-| Alt+7 | Task (nested agent prompt) |
-| Alt+8 | Errors |
-| Alt+m | Meta (system/rate-limit/session noise) |
-
-### 17.6 Visibility Modes per Element
-
-Each element supports four display modes (determined by the preset and overrides):
-
-- **show**: full content displayed
-- **summary**: condensed view (see per-element details below)
-- **dim**: full content, visually de-emphasized (dimmed)
-- **hide**: completely hidden (no output at all)
-
-### 17.7 Per-Element Display Details
-
-**Thinking blocks**:
-- `show`/`dim`: full thought text, dimmed styling
-- `summary`: first sentence + "(thinking continues)"
-- `hide`: nothing
-
-**Bash command**:
-- `show`: full command shown
-- `summary`: first 5 lines; if more lines exist, shows "N more line(s)" indicator
-- `dim`: full command, dimmed
-- `hide`: shows only a "Bash" header (no command)
-
-**Bash output**:
-- `show`: full output
-- `summary`: first 5 lines + "N lines hidden"
-- `dim`: full output, dimmed
-- `hide`: nothing
-
-**Edit diff**:
-- `show`: file path + full diff (removed/added lines)
-- `summary`: file path + change summary (`-N` removed, `+N` added), no diff body
-- `dim`: file path + full diff, dimmed
-- `hide`: file path only (no diff)
-
-**Read content**:
-- `show`: full file content
-- `summary`: file path + "N lines"
-- `dim`: full content, dimmed
-- `hide`: nothing (completely empty)
-
-**Write content**:
-- `show`: file path + full content
-- `summary`: file path + "N lines"
-- `dim`: file path + content, dimmed
-- `hide`: file path only (no content)
-
-**Task (nested agent)**:
-- `show`: full prompt
-- `summary`: first line + "N lines" count
-- `dim`: full prompt, dimmed
-- `hide`: "Task" header + description only
-
-### 17.8 Markdown Rendering
-
-All text content (assistant messages, user messages in the transcript) is rendered as markdown:
-
-- `**bold**` → bold text (no literal `**`)
-- `*italic*` → italic text
-- `# Heading` → bold text; H1 also underlined; no `#` characters
-- `` `code` `` → inline code; no backticks
-- ` ```lang\n...\n``` ` → syntax-highlighted code block; no fence markers
-- `- item` → list item; no leading dash
-- `[text](url)` → text styled blue+underline for http/https/mailto URLs; plain for anchor (`#`) and relative paths; no OSC 8 hyperlinks
-- Tables → rendered with box-drawing characters (no pipe characters)
-- `> [!NOTE]` (and other GitHub alert types) → renders "Note" label + body; no raw `[!NOTE]`
-- Plain blockquotes → body text rendered
-- `- [x] done` / `- [ ] todo` → ☑ / ☐ (no literal `[x]`/`[ ]`)
-- HTML entities (`&copy;`, `&mdash;`, etc.) → decoded to their Unicode characters
-- Streaming/partial markdown (unclosed bold, unclosed fences) → rendered as best-effort, no leaked markers
-
-### 17.9 Other Event Displays
-
-**Session init**: shows session ID, working directory, and model on one line.
-
-**Tool results and errors**: errors are styled in red. `Unknown command: /foo` results are styled in yellow (soft warning). Other results display in normal styling.
-
-**Code blocks**: syntax-highlighted via language-aware highlighter (Python, JavaScript, etc.).
+The visual TUI renderer and its `FNC_RENDERER` selector were excised from the
+project on 2026-09-05. Its design and behavior are preserved as history under
+[`specs/renderer/`](renderer/). Section numbering is left as-is so existing
+cross-references keep pointing at the right sections.
 
 ---
 

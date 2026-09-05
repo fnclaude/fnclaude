@@ -7,34 +7,29 @@
  * raw PTY input via {@link injectSubmittedLine} — the exact same keystroke
  * seam the user's own typing goes through. Two problems followed:
  *
- *   1. **No structural marker.** From claude's (and the renderer's) point of
- *      view an injected control message is indistinguishable from a typed
- *      turn; downstream consumers had to string-sniff the body to classify it,
- *      which drifts as body formats change.
+ *   1. **No structural marker.** From claude's point of view an injected
+ *      control message is indistinguishable from a typed turn; downstream
+ *      consumers had to string-sniff the body to classify it, which drifts as
+ *      body formats change.
  *   2. **In-flight corruption.** Because the write lands at whatever cursor
  *      position the terminal happens to be at, a notice that fires while the
  *      user is mid-typing splices its bytes into the partial draft (observed
  *      live on 2.13.2 — see the issue).
  *
  * `sendControl(kind, text)` is the dedicated path that fixes both. Every
- * control message carries an explicit {@link ControlKind} — the STRUCTURAL
- * marker the renderer-side filter (#288) keys off, which a user typing the
- * same body text can never spoof (it never goes through this seam). The PTY
+ * control message carries an explicit {@link ControlKind} — a STRUCTURAL
+ * marker downstream consumers can classify on, which a user typing the same
+ * body text can never spoof (it never goes through this seam). The PTY
  * implementation additionally defers a control message while a user draft is
  * in flight, flushing it only once the line is submitted or cleared, so it
  * can never interleave into a partially-typed prompt.
  *
- * Two seam implementations share the {@link SendControl} shape:
- *   - {@link createPtyControlSeam} — PTY-launch mode. Wraps
- *     {@link injectSubmittedLine}; tracks draft state via {@link noteUserInput}.
- *   - {@link createRendererControlSeam} — renderer mode. Routes through the
- *     renderer mount API's matching `sendControl(kind, text)` surface (falling
- *     back to a plain user turn on an old handle), so control messages are
- *     wired in renderer mode for the first time.
+ * {@link createPtyControlSeam} is the seam implementation: it wraps
+ * {@link injectSubmittedLine} and tracks draft state via {@link noteUserInput}.
  *
  * {@link createControlSeamHolder} bridges the wiring gap: the MCP `/compact`
- * handler is built BEFORE the launch mode is decided / the terminal exists, so
- * it takes the holder's `sendControl` now and the real seam is bound later.
+ * handler is built BEFORE the terminal exists, so it takes the holder's
+ * `sendControl` now and the real seam is bound later.
  */
 
 import { DEFAULT_CR_INTERVAL_MS, injectSubmittedLine, type PtyWriter } from './inject-slash';
@@ -152,8 +147,7 @@ function lastLineEndIndex(chunk: string, prevByte: number): number {
  * skipped so a late Return can't submit their fresh draft.
  *
  * The PTY wire carries only the body bytes (behavior unchanged for the user);
- * the {@link ControlKind} marker is the in-process contract this seam upholds
- * and is what travels structurally in renderer mode.
+ * the {@link ControlKind} marker is the in-process contract this seam upholds.
  */
 export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControlSeam {
   let drafting = false;
@@ -210,40 +204,10 @@ export function createPtyControlSeam(args: CreatePtyControlSeamArgs): PtyControl
 }
 
 /**
- * The subset of the renderer mount handle this seam drives. The renderer's
- * `sendControl(kind, text)` (landing alongside #288) is preferred; an older
- * handle exposes only `sendUserTurn`, which we degrade to so the control
- * message still reaches claude (unhidden) rather than being silently dropped.
- */
-export interface RendererControlTarget {
-  sendControl?: (kind: ControlKind, text: string) => void;
-  sendUserTurn?: (text: string) => void;
-}
-
-/**
- * Build the renderer-mode control seam over a mount handle. Delivers the
- * {@link ControlKind} structurally through `handle.sendControl` when available
- * — that field is the marker #288's filter classifies on — and falls back to a
- * plain user turn on an old handle.
- */
-export function createRendererControlSeam(target: RendererControlTarget): SendControl {
-  return (kind, text) => {
-    if (typeof target.sendControl === 'function') {
-      target.sendControl(kind, text);
-      return;
-    }
-    if (typeof target.sendUserTurn === 'function') {
-      target.sendUserTurn(text);
-    }
-  };
-}
-
-/**
  * Deferred-binding holder for the {@link SendControl} seam.
  *
  * The MCP `/compact` handler is wired into the parent dispatcher BEFORE the
- * launch mode (PTY vs renderer) is decided and before the terminal/renderer
- * exists. Hand it `holder.sendControl` at wiring time; call `holder.bind(seam)`
+ * terminal exists. Hand it `holder.sendControl` at wiring time; call `holder.bind(seam)`
  * once the real seam is constructed. Unlike the fire-and-forget keystroke
  * holder, control messages sent before bind are QUEUED and replayed on bind —
  * a control message is worth keeping, not dropping.

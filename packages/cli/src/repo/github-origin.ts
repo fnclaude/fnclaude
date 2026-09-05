@@ -1,6 +1,6 @@
 /**
  * Resolve the launch cwd's `origin` remote to a GitHub owner/repo so the
- * renderer can autolink `@mentions`, `#refs`, and commit SHAs the way GitHub
+ * callers can autolink `@mentions`, `#refs`, and commit SHAs the way GitHub
  * does. ONLY github.com remotes resolve — any other host (or no origin)
  * yields `null`, and refs stay plain text.
  *

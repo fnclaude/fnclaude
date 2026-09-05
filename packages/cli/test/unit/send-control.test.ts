@@ -4,9 +4,9 @@
  * `sendControl(kind, text)` is the dedicated path control traffic (context
  * notices, `/compact`, follow-up handoffs) routes through instead of the raw
  * keystroke injector `injectSubmittedLine`. It carries a STRUCTURAL marker
- * (the `kind` field) end-to-end so the renderer-side filter (#288) can
- * classify + hide control messages without string-sniffing the body — and so
- * the marker can't be spoofed by a user typing the same body text.
+ * (the `kind` field) end-to-end so downstream consumers can classify + hide
+ * control messages without string-sniffing the body — and so the marker can't
+ * be spoofed by a user typing the same body text.
  *
  * The PTY seam additionally guards against splicing a control message into a
  * line the user is mid-typing: while a draft is in flight, control messages
@@ -18,9 +18,9 @@ import { describe, expect, test } from 'bun:test';
 import { injectSubmittedLine, type PtyWriter } from '../../src/mcp/handlers/inject-slash';
 import {
   type ControlEnvelope,
+  type SendControl,
   createControlSeamHolder,
   createPtyControlSeam,
-  createRendererControlSeam,
 } from '../../src/mcp/handlers/send-control';
 
 /** Synchronous schedule so the separate CR write lands deterministically. */
@@ -51,9 +51,7 @@ describe('structural marker — the seam carries a kind the raw injector cannot'
     const body = 'hello world';
 
     const received: ControlEnvelope[] = [];
-    const seam = createRendererControlSeam({
-      sendControl: (kind, text) => received.push({ kind, text }),
-    });
+    const seam: SendControl = (kind, text) => received.push({ kind, text });
     seam('compact', body);
 
     expect(received).toEqual([{ kind: 'compact', text: body }]);
@@ -227,32 +225,6 @@ describe('PTY seam — soft newlines do not read as submit', () => {
     seam.noteUserInput('\x1b[200~a\nb\x1b[201~');
     seam.sendControl('notice', 'N');
     expect(writes).toEqual([]);
-  });
-});
-
-describe('renderer seam — routes through the mount API, degrades gracefully', () => {
-  test('prefers handle.sendControl, delivering the kind structurally', () => {
-    const calls: ControlEnvelope[] = [];
-    const seam = createRendererControlSeam({
-      sendControl: (kind, text) => calls.push({ kind, text }),
-      sendUserTurn: () => {
-        throw new Error('sendUserTurn must not be used when sendControl exists');
-      },
-    });
-    seam('followup', '@/tmp/x.md');
-    expect(calls).toEqual([{ kind: 'followup', text: '@/tmp/x.md' }]);
-  });
-
-  test('falls back to sendUserTurn when an old handle lacks sendControl', () => {
-    const turns: string[] = [];
-    const seam = createRendererControlSeam({ sendUserTurn: (text) => turns.push(text) });
-    seam('notice', '<fnc-notice>hi</fnc-notice>');
-    expect(turns).toEqual(['<fnc-notice>hi</fnc-notice>']);
-  });
-
-  test('no-ops safely when the handle exposes neither method', () => {
-    const seam = createRendererControlSeam({});
-    expect(() => seam('compact', '/compact')).not.toThrow();
   });
 });
 

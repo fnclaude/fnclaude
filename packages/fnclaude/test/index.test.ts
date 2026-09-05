@@ -18,11 +18,17 @@ describe('fnclaude (umbrella)', () => {
     expect(pkg.bin).toEqual({ fnc: './bin/fnc.js' });
   });
 
-  test('depends on the cli and renderer packages via workspace protocol', () => {
+  test('depends on the cli package via workspace protocol', () => {
     // Bun does NOT auto-link bare "*" — it tries the registry (Bun issue
     // #25177). Use "workspace:*" instead. `bun publish` and release-please's
     // node-workspace plugin both rewrite this to a concrete version on publish.
     expect(pkg.dependencies['@fnclaude/cli']).toBe('workspace:*');
-    expect(pkg.dependencies['@fnclaude/renderer']).toBe('workspace:*');
+  });
+
+  // The renderer package was excised from the monorepo; the umbrella must not
+  // reintroduce a dependency on it (a stale entry would make every `npm
+  // install fnclaude` fail on an unpublishable workspace ref).
+  test('does not depend on the excised renderer package', () => {
+    expect(pkg.dependencies['@fnclaude/renderer']).toBeUndefined();
   });
 });

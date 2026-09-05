@@ -33,8 +33,7 @@ if (argv.includes('--version') || argv.includes('-v')) {
   let suffix = '';
   try {
     const cli = req('@fnclaude/cli/package.json');
-    const renderer = req('@fnclaude/renderer/package.json');
-    suffix = ` (cli ${cli.version}, renderer ${renderer.version})`;
+    suffix = ` (cli ${cli.version})`;
   } catch {
     // Nested install is missing or broken — degrade to bare umbrella
     // version rather than failing. The full `fnc <args>` invocation

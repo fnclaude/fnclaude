@@ -30,8 +30,5 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.99.0"
-  },
-  "optionalDependencies": {
-    "@fnclaude/renderer": "workspace:*"
   }
 }

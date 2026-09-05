@@ -1,7 +1,7 @@
 # fnclaude
 
-A Bun-based monorepo for Claude Code tooling with three packages:
-`@fnclaude/cli`, `@fnclaude/renderer`, and the umbrella `fnclaude`.
+A Bun-based monorepo for Claude Code tooling with two packages:
+`@fnclaude/cli` and the umbrella `fnclaude`.
 
 Publishing is handled by **release-please** in manifest mode:
 
@@ -46,7 +46,7 @@ bun add fnclaude
 
 ## Support
 
-File bugs and feature requests on [GitHub Issues](https://github.com/fnrhombus/fnclaude/issues). No other support channels exist.
+File bugs and feature requests on [GitHub Issues](https://github.com/fnclaude/fnclaude/issues). No other support channels exist.
 
 ## See also
 
