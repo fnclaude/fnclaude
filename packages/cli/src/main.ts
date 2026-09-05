@@ -303,7 +303,7 @@ if (
 // claude -p call (and don't see --name pollute their assertion shapes).
 if (process.env.FNC_INTERNAL_DISABLE_AUTONAME !== '1' && shouldAutoName(parsedWithIntercept)) {
   const sentinelIdx = findPromptSentinel(parsedWithIntercept.passthrough);
-  const body = promptBody(parsedWithIntercept.passthrough, sentinelIdx).join(' ').trim();
+  const body = promptBody(parsedWithIntercept.passthrough).join(' ').trim();
   const claudePLlmCall = async (prompt: string): Promise<string> => {
     const proc = Bun.spawn(
       ['claude', '-p', '--model', AUTO_NAME_MODEL, `${AUTO_NAME_SYSTEM_PROMPT}\n\nUser request: ${prompt}`],
