@@ -6,17 +6,12 @@
   "packages": {
     "packages/cli": {
       "release-type": "node",
-      "package-name": "@fnclaude/cli",
+      "package-name": "@rhombus.rocks/fnclaude",
       "changelog-path": "CHANGELOG.md"
     },
     "packages/fnclaude": {
       "release-type": "node",
       "package-name": "fnclaude",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/renderer": {
-      "release-type": "node",
-      "package-name": "@fnclaude/renderer",
       "changelog-path": "CHANGELOG.md"
     }
   },

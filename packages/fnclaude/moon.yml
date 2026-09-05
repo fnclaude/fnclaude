@@ -4,7 +4,7 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 layer: 'application'
 language: 'typescript'
 
-# Umbrella package — no src/, just a bin shim that delegates to @fnclaude/cli.
+# Umbrella package — no src/, just a bin shim that delegates to @rhombus.rocks/fnclaude.
 tasks:
   lint:
     command: 'bun run lint'

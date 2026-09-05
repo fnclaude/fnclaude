@@ -82,7 +82,7 @@ Write-Done "npm: authenticated as $npmUser"
 
 Write-Step "Choosing package name"
 
-# Derive bare name from repo name (strip any @owner convention, e.g. "my-lib@fnrhombus" → "my-lib")
+# Derive bare name from repo name (strip any @owner convention, e.g. "my-lib@fnclaude" → "my-lib")
 $derivedName = $repo.Split('/')[1] -replace '@.*$', ''
 $nameConfirm = Read-Host "   Use '$derivedName' as the base package name? [Y/n, or type a different name]"
 if ($nameConfirm -match '^[Nn]$') {

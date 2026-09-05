@@ -32,7 +32,8 @@ Two positionals survive after the magic words:
 
 1. **The directory to launch claude in.** Any form on
    [Repo resolution](/reference/repo-resolution/). A missing repository is cloned.
-   With no path at all, fnclaude launches in `$XDG_CONFIG_HOME/fnclaude/noop`.
+   With no path at all, fnclaude launches in its starting directory,
+   `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/noop` unless `noopDir` says otherwise.
 2. **A worktree name.** Same meaning as `-w <name>`.
 
 A third positional is an error.
@@ -102,31 +103,48 @@ CLI beats environment, and environment beats the config file.
 
 ## Config file
 
-`$XDG_CONFIG_HOME/fnclaude/config.toml`:
+`$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json`:
 
-```toml
-[auto]
-tmux = "never"          # or "worktree"
-handoff = "never"       # or "ask", or a number of seconds
-spawn_command = "..."   # opens a new terminal window for a sibling session
-
-[exec.env]
-NAME = "value"          # injected into every claude child's environment
+```json
+{
+  "$schema": "https://json.schemastore.org/rhombus-rocks-fnclaude-config.json",
+  "auto": {
+    "tmux": "never",
+    "handoff": "never",
+    "spawnCommand": "ghostty -e {bin} {dest} --name {name} @{summary}"
+  },
+  "claude": { "defaultArgs": ["--chrome"] },
+  "exec": { "env": { "NAME": "value" } }
+}
 ```
 
-`spawn_command` is split on whitespace and each token may use `{bin}`, `{dest}`,
-`{name}`, and `{summary}`. See [Spawning siblings](/sessions/spawning-siblings/).
+`auto.tmux` is `never`, `always`, or `worktree`. `auto.handoff` is `never`, `ask`,
+or a number of seconds as a string. `auto.spawnCommand` is split on whitespace and
+each token may use `{bin}`, `{dest}`, `{name}`, and `{summary}` — see
+[Spawning siblings](/sessions/spawning-siblings/). `claude.defaultArgs` is appended
+to every launch.
+
+`config.jsonc`, `config.toml`, and `config.yaml` are read too; fnclaude writes JSON
+so the `$schema` line gives editors completion. There is no validation — a
+wrong-shaped key costs you that key and the rest of the file still loads.
 
 ## Repo settings
 
-`~/.claude/settings.json` supplies `cloneTemplate`, `worktreeTemplate`, and
-`branchTemplate` under `repoSettings`, shared with the claude-code-worktree-paths
-plugin. The user, project, local, and managed settings files layer in the usual
-claude order.
+Clone, worktree, and branch templates live in the shared
+`$XDG_CONFIG_HOME/rhombus.rocks/config.json` under `repos`, read by fngit and the
+worktree-paths plugin. fnclaude does not read that file. See
+[Repo resolution](/reference/repo-resolution/).
+
+## System prompt overrides
+
+A file in `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/prompts/` replaces fnclaude's
+packaged system prompt of the same name. `fnc install` creates that directory with
+a `README.txt` listing the names.
 
 ## Logs
 
 Each launch writes one JSONL log file under the platform's state directory:
-`$XDG_STATE_HOME/fnclaude/logs` on Linux, `~/Library/Logs/fnclaude` on macOS. On
+`$XDG_STATE_HOME/rhombus.rocks/fnclaude` on Linux,
+`~/Library/Logs/rhombus.rocks/fnclaude` on macOS. On
 each launch fnclaude keeps the fifty newest and deletes the rest. Logging never
 blocks a launch. If the filesystem refuses, it turns itself off.

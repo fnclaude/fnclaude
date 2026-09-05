@@ -16,6 +16,11 @@ import { expandAliases } from './argv/expand';
 import { parseArgs } from './argv/parse';
 import { expandShortFlags } from './argv/short-flags';
 import { loadConfig } from './config/load';
+import {
+  defaultNoopDir,
+  fncConfigDir,
+  promptOverridesDir,
+} from './config/paths';
 import { initLogging } from './log/init';
 import { bootFields } from './log/boot';
 import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter';
@@ -26,9 +31,25 @@ import { composeEnv } from './launch/compose-env';
 import { decideCrossCwdRelaunch } from './launch/cross-cwd-relaunch';
 import { findClaude } from './launch/find-claude';
 import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader';
-import { buildRendererArgs, maybeMountRenderer, shouldUseRenderer } from './launch/renderer-mount';
 import { RingBuffer } from './launch/ring-buffer';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch';
+import { runInstallNonInteractive } from './install/run';
+import {
+  buildWizardArgs,
+  isInstallSubcommand,
+  parseInstallFlags,
+  shouldRunOobe,
+  WIZARD_SESSION_NAME,
+} from './install/subcommand';
+import { configuredPaths } from './config/configured';
+import {
+  createOobeAnswerHandler,
+  createOobeNextHandler,
+  createOobeReaskHandler,
+} from './mcp/handlers/oobe';
+import { buildApplyPlan, describeApplyPlan } from './oobe/apply';
+import { detectSpawnCandidates, detectTools } from './oobe/detect';
+import { OobeState } from './oobe/state';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
 import { createPtyWriterHolder } from './mcp/handlers/inject-slash';
@@ -55,20 +76,11 @@ import { makeSessionJsonlReady, seedUltracodePrompt } from './launch/seed-prompt
 import { seedNoopDir } from './noop/seed';
 import { resolveTemplateSourcePath } from './noop/template-source';
 import { ensureCwd } from './path/ensure-cwd';
+import { expandTilde } from './path/resolve';
 import { resolvePromptsDir } from './prompts/dir';
 import { injectFragments, loadFragments } from './prompts/load';
 import { isInteractiveSession, selectFragments } from './prompts/select';
-import { buildCloneUrl, computeCloneDestination } from './repo/clone';
-import { cloneRepo } from './repo/clone-exec';
-import { isRepoNotFoundError } from './repo/clone-failure';
-import { parseCloneUrl } from './repo/clone-url';
-import { bootstrapRepo } from './repo/bootstrap';
-import { confirm } from './repo/confirm';
-import { runGitInit } from './repo/git-runner';
-import { runGhApi, runGhClone, runGhRepoCreate } from './repo/gh-runner';
-import { loadHostAliases } from './repo/host-aliases';
-import { findOwner, formatOwnerLookupError } from './repo/owner-lookup';
-import { loadRepoSettings } from './repo/repo-settings';
+import { findFngit, makeFngitRunner } from './repo/fngit';
 import { resolveInput } from './repo/resolve-input';
 import { deriveAutoCompactThreshold } from './usage/autocompact-threshold';
 import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
@@ -118,99 +130,84 @@ if (!parsed.ok) {
   process.exit(2);
 }
 
-// Load fnclaude config (auto.tmux + other settings the launcher consults).
+// Load fnc's config from $XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.*
+// (specs/rhombus-rocks-config.md). Nothing reads Claude Code's settings.json
+// any more: repo templates, source directories and host aliases all live in
+// the shared rhombus.rocks config, which fngit — not fnc — reads.
 const HOME = homedir();
 const shellCwd = process.cwd();
-const configBase = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
-const config = await loadConfig({ path: join(configBase, 'fnclaude', 'config.toml') });
+const xdgEnv = {
+  home: HOME,
+  xdgConfigHome: process.env.XDG_CONFIG_HOME,
+  xdgStateHome: process.env.XDG_STATE_HOME,
+};
+const config = await loadConfig({ env: xdgEnv });
 
-// Load settings before resolution. Resolution-time settings only need user +
-// managed tiers (project/local require knowing projectRoot, which only matters
-// after launch). The managed-settings path is Linux-only for now; macOS &
-// Windows resolution to come.
-const settings = loadRepoSettings({
-  userPath: join(HOME, '.claude', 'settings.json'),
-  projectPath: join(shellCwd, '.claude', 'settings.json'),
-  localPath: join(shellCwd, '.claude', 'settings.local.json'),
-  managedPath: '/etc/claude-code/managed-settings.json',
-});
-const hostAliases = loadHostAliases({
-  systemPath: '/usr/share/fnrhombus/host-aliases.json',
-  userPath: join(HOME, '.local', 'share', 'fnrhombus', 'host-aliases.json'),
-});
+// fnc's starting directory: `noopDir` when set, else the default under the
+// brand directory. `~` is expanded here so everything downstream sees an
+// absolute path.
+const noopDirPath =
+  config.noopDir !== undefined && config.noopDir !== ''
+    ? expandTilde(config.noopDir, HOME)
+    : defaultNoopDir(xdgEnv);
 
-// Resolve the first positional (path or repo ref) to a launch cwd. The
-// resolver handles path short-circuit (/, ~, ~/) AND repo-ref refs whose owner
-// is already known (URL forms, owner/name, name@owner, gh:owner/name). Bare
-// names and clone execution route through the gh-CLI branches below; ambiguous
-// matches surface a clean error.
-const resolved = resolveInput({
+// `fnc install` — the first-run setup. `-y` applies a plan straight from
+// flags; bare `fnc install` launches a wizard session (below) that interviews
+// the user. Handled here, after the config load, because both shapes need to
+// know what is already configured in order to skip questions.
+const installTail = isInstallSubcommand(argv) ? argv.slice(1) : null;
+if (installTail !== null) {
+  const parsedInstall = parseInstallFlags(installTail);
+  if (!parsedInstall.ok || parsedInstall.flags === undefined) {
+    process.stderr.write(`fnclaude: ${parsedInstall.error ?? 'could not parse `fnc install` flags'}\n`);
+    process.exit(2);
+  }
+  if (parsedInstall.flags.yes) {
+    const binForPrompts = process.argv[1] ?? '';
+    const exeDirForPrompts =
+      binForPrompts !== '' ? dirname(realpathSync(binForPrompts)) : process.cwd();
+    const packaged = resolvePromptsDir({
+      envOverride: process.env.FNC_PROMPTS_DIR,
+      exeDir: exeDirForPrompts,
+    });
+    const result = await runInstallNonInteractive({
+      env: xdgEnv,
+      flags: parsedInstall.flags,
+      configured: await configuredPaths(xdgEnv),
+      packagedPromptsDir: packaged.dir,
+    });
+    process.exit(result.exitCode);
+  }
+  // Bare `fnc install`: fall through to the normal launch path with the
+  // wizard flags set. Ref resolution is skipped entirely — there is no repo
+  // argument, and `fnc install` run inside a directory that shares a name
+  // with a repo must not start cloning.
+}
+const isOobeLaunch = installTail !== null;
+
+// Resolve the first positional to a launch cwd. fnc owns three cases: no
+// argument (the starting directory), an explicit path form, and stripping a
+// `+workspace` suffix. Everything else is a repo reference and goes to the
+// fngit CLI, which resolves and clones it and prints the path
+// (specs/rhombus-rocks-config.md § "fngit CLI contract").
+//
+// fngit is optional. Without it on PATH the resolver accepts only real paths
+// and errors on a repo reference with a message naming `fnc install`.
+const fngitBin = findFngit();
+const resolved = isOobeLaunch
+  ? // A wizard launch resolves nothing: it runs in the shell cwd. Claude
+    // Code's trust dialog is per-directory, so a scratch directory would
+    // prompt for trust every run, and the directory the user is standing in
+    // is the one most likely to be trusted already.
+    ({ kind: 'launch', launchCwd: shellCwd, usedNoopFallback: false, workspace: '' } as const)
+  : await resolveInput({
   input: parsed.firstPath,
   shellCwd,
   home: HOME,
-  xdgConfigHome: process.env.XDG_CONFIG_HOME,
-  settings: {
-    cloneTemplate: settings.cloneTemplate,
-    worktreeTemplate: settings.worktreeTemplate,
-    hostAliases,
-  },
+  noopDir: noopDirPath,
+  fngit: fngitBin === null ? null : makeFngitRunner(fngitBin),
+  onProgress: (line) => process.stderr.write(`${line}\n`),
 });
-
-// Clone the ref into `destination`; if the clone fails *because the repo
-// doesn't exist*, offer to bootstrap a fresh local repo (and optionally the
-// private GitHub remote) instead of hard-failing. Returns the cwd to launch
-// in, or null when the caller should abort (already printed + must exit 2).
-// Shared by both `needs-clone` and `needs-owner-lookup`.
-async function cloneOrBootstrap(url: string, destination: string): Promise<string | null> {
-  process.stderr.write(`fnclaude: cloning ${url} → ${destination}\n`);
-  const cloneR = await cloneRepo({
-    url,
-    destination,
-    ghClone: runGhClone,
-    mkdirp: async (path) => {
-      await mkdir(path, { recursive: true });
-    },
-  });
-  if (cloneR.ok) return destination;
-
-  // Only the repo-not-found failure is recoverable; auth/network/etc still
-  // hard-fail as before.
-  if (!isRepoNotFoundError(cloneR.stderr)) {
-    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-    return null;
-  }
-
-  const parts = parseCloneUrl(url);
-  if (parts === null) {
-    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-    return null;
-  }
-
-  const boot = await bootstrapRepo({
-    owner: parts.owner,
-    name: parts.name,
-    host: parts.host,
-    destination,
-    url,
-    deps: {
-      confirm,
-      mkdirp: async (path) => {
-        await mkdir(path, { recursive: true });
-      },
-      gitInit: runGitInit,
-      ghRepoCreate: runGhRepoCreate,
-      log: (msg) => process.stderr.write(`${msg}\n`),
-    },
-  });
-  if (boot.kind === 'launched') return boot.cwd;
-  if (boot.kind === 'error') {
-    process.stderr.write(`fnclaude: ${boot.error}\n`);
-    return null;
-  }
-  // declined → restore today's behavior: print the original clone error.
-  process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-  return null;
-}
 
 let cwd: string;
 let usedNoopFallback = false;
@@ -235,75 +232,6 @@ switch (resolved.kind) {
       await seedNoopDir({ noopDir: cwd, templateSourcePath: tmplSource.path });
     }
     break;
-  case 'needs-clone': {
-    // Repo ref resolved cleanly but the destination doesn't exist on disk.
-    // Clone it (or bootstrap, if it doesn't exist), then launch there.
-    const launchCwd = await cloneOrBootstrap(resolved.url, resolved.destination);
-    if (launchCwd === null) process.exit(2);
-    cwd = launchCwd;
-    workspaceFromRef = resolved.workspace;
-    break;
-  }
-  case 'needs-owner-lookup': {
-    // Bare-name ref — ask gh which org owns a repo by this name, then
-    // re-route through the resolver as if owner had been on the input.
-    const ownerR = await findOwner({ name: resolved.name, ghApi: runGhApi });
-    if (!ownerR.ok) {
-      process.stderr.write(`${formatOwnerLookupError(ownerR, resolved.name)}\n`);
-      process.exit(2);
-    }
-    // Build a synthetic ref for the resolved owner and recompute destination.
-    const syntheticRef = {
-      host: '',
-      owner: ownerR.owner,
-      name: resolved.name,
-      workspace: resolved.workspace,
-      original: resolved.name,
-    };
-    if (settings.cloneTemplate === '') {
-      process.stderr.write(
-        `fnclaude: cloneTemplate is not configured in repoSettings; cannot resolve bare-name refs.\n`,
-      );
-      process.exit(2);
-    }
-    const destR = computeCloneDestination({
-      ref: syntheticRef,
-      template: settings.cloneTemplate,
-      hostAliases,
-      home: HOME,
-    });
-    if (!destR.ok) {
-      process.stderr.write(`fnclaude: ${destR.error}\n`);
-      process.exit(2);
-    }
-    // If the destination already exists, just launch there. Otherwise clone.
-    const { existsSync } = await import('node:fs');
-    if (existsSync(destR.path)) {
-      cwd = destR.path;
-      workspaceFromRef = resolved.workspace;
-      break;
-    }
-    const url = buildCloneUrl(syntheticRef);
-    const launchCwd = await cloneOrBootstrap(url, destR.path);
-    if (launchCwd === null) process.exit(2);
-    cwd = launchCwd;
-    workspaceFromRef = resolved.workspace;
-    break;
-  }
-  case 'ambiguous': {
-    const both = resolved.cloneDestination ?? resolved.repoRef ?? '?';
-    process.stderr.write(
-      `fnclaude: ambiguous reference — could be the local directory ${resolved.path} OR ${both}. Disambiguate by typing './<name>' for the local path.\n`,
-    );
-    process.exit(2);
-  }
-  case 'ambiguous-local': {
-    const list = resolved.paths.map((p) => `  ${p}`).join('\n');
-    process.stderr.write(
-      `fnclaude: ambiguous reference — multiple local clones named '${resolved.name}':\n${list}\nDisambiguate with '${resolved.name}@<owner>'.\n`,
-    );
-    process.exit(2);
-  }
   case 'error':
     process.stderr.write(`fnclaude: ${resolved.error}\n`);
     process.exit(2);
@@ -421,7 +349,11 @@ const ownSessionId = ownSessionPlan.sessionId;
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on
 // noop fallback + interactive (non-print) state of the session.
-const fragmentNames = selectFragments({ usedNoopFallback, passthrough: claudeArgs });
+const fragmentNames = selectFragments({
+  usedNoopFallback,
+  passthrough: claudeArgs,
+  oobe: isOobeLaunch,
+});
 if (fragmentNames.length > 0) {
   // process.argv[1] is the BIN script (bin/fnc.js after preflight, or whatever
   // node invoked). Realpath it so symlinked installs (npm's .bin/ → package
@@ -434,12 +366,91 @@ if (fragmentNames.length > 0) {
     exeDir,
   });
   if (promptsDir.dir !== null) {
-    const loaded = loadFragments(fragmentNames, promptsDir.dir);
+    // A file in the user's override directory replaces the packaged fragment
+    // of the same name (specs/rhombus-rocks-config.md § fnc prompt overrides).
+    // Passed unconditionally: `resolveFragmentPath` treats a missing directory
+    // as "nothing overridden", so there is nothing to check first.
+    const loaded = loadFragments(fragmentNames, promptsDir.dir, promptOverridesDir(xdgEnv));
     for (const w of loaded.warnings) warnings.add(w);
     claudeArgs = injectFragments(claudeArgs, loaded.content);
   } else if (promptsDir.warning !== undefined) {
     warnings.add(promptsDir.warning);
   }
+}
+
+// Wizard-session lockdown. `oobe.md` asks the model to touch nothing in the
+// cwd; these flags make that true whether or not it complies. Every write the
+// setup performs happens inside fnc, after Apply.
+//
+// `--no-session-persistence` keeps the cwd's resume picker and history clean —
+// there is nothing in a setup session worth resuming.
+let oobeState: OobeState | null = null;
+let oobeHandlerArgs: Parameters<typeof createOobeNextHandler>[0] | null = null;
+if (isOobeLaunch) {
+  claudeArgs = insertFlagsBeforeSentinel(
+    claudeArgs,
+    ...buildWizardArgs('').filter((t) => t !== '--append-system-prompt' && t !== ''),
+    '--name',
+    WIZARD_SESSION_NAME,
+  );
+
+  const tools = detectTools();
+  const spawnCandidates = detectSpawnCandidates();
+  oobeState = new OobeState({
+    env: xdgEnv,
+    tools,
+    spawnCandidates,
+    configured: await configuredPaths(xdgEnv),
+  });
+
+  const binForPrompts = process.argv[1] ?? '';
+  const exeDirForPrompts =
+    binForPrompts !== '' ? dirname(realpathSync(binForPrompts)) : process.cwd();
+  const packagedPrompts = resolvePromptsDir({
+    envOverride: process.env.FNC_PROMPTS_DIR,
+    exeDir: exeDirForPrompts,
+  });
+
+  const state = oobeState;
+  oobeHandlerArgs = {
+    state,
+    onApply: async () => {
+      const { applyAndReport } = await import('./install/run');
+      const lines: string[] = [];
+      const actions = buildApplyPlan({
+        env: xdgEnv,
+        answers: state.answersSnapshot(),
+        shared: state.sharedAnswers(),
+        hasFngit: tools.fngit,
+        hasPlugin: tools.plugin,
+      });
+      lines.push('Applying:');
+      lines.push(describeApplyPlan(actions));
+      await applyAndReport({
+        env: xdgEnv,
+        actions,
+        print: (line) => lines.push(line),
+        state,
+        packagedPromptsDir: packagedPrompts.dir,
+      });
+      // Setup is done; hand the session back to the user's original intent by
+      // re-execing fnc with the ORIGINAL argv, through the same trigger
+      // `fnc_restart` uses. The re-exec resolves and clones normally.
+      handoffTrigger.stashArgv(argv.filter((a) => a !== 'install'));
+      handoffTrigger.fire();
+      return { summary: lines.join('\n') };
+    },
+  };
+}
+
+// `claude.defaultArgs` from config — flags Claude Code has no persistent
+// setting for, so fnc supplies them on every launch. Inserted before the `--`
+// sentinel so a prompt body stays last, and BEFORE ultracode's rewrite so a
+// default flag can't survive into the `/effort ultracode` slot. Explicit argv
+// still wins: claude's own parser takes the last occurrence of a flag, and
+// these are inserted ahead of nothing the user typed after them.
+if (config.claudeDefaultArgs !== undefined && config.claudeDefaultArgs.length > 0) {
+  claudeArgs = insertFlagsBeforeSentinel(claudeArgs, ...config.claudeDefaultArgs);
 }
 
 // Ultracode: rewrite the prompt positional so claude's single prompt slot is
@@ -478,6 +489,12 @@ const childEnv = composeEnv({
   socket: mcpSocketPath,
 });
 
+// FNC_OOBE gates the three `fnc_oobe_*` tools in the MCP subprocess. It is set
+// ONLY here, on the wizard session, so those tools stay out of the tool list
+// everywhere else — a model that can see `fnc_oobe_next` in a normal session
+// has no interview to advance and no reason to be tempted.
+if (isOobeLaunch) childEnv.FNC_OOBE = '1';
+
 // #332: percentage context-notice tiers ("94%") resolve against the derived
 // Claude Code auto-compact threshold (100% = the auto-compact point), computed
 // per active model + the child's env (surface/window overrides). We read the
@@ -494,12 +511,6 @@ const deriveNoticeThreshold = (model: string): number =>
 // is the bun runtime that will exec the subprocess script. Decision: bun
 // + script-path is a two-element shape because fnc.js is a bun script,
 // not a self-contained binary — see decisions.md 2026-05-27 entry.
-// Renderer mode: fnc hosts the Ink app and OWNS the claude spawn, driving a
-// headless `claude --print` child (renderer-mount.ts). The renderer is itself
-// a `--print` session, but it still WANTS the self-MCP config so claude can
-// dial fnc back over $FNC_SOCKET (spawn-args.md §2) — so we force the MCP
-// injection past the print gate when the renderer is selected.
-const useRenderer = shouldUseRenderer(process.env);
 if (mcpSocketPath !== undefined) {
   const binPathForMcp = process.argv[1] ?? '';
   const fncBin = binPathForMcp !== '' ? realpathSync(binPathForMcp) : '';
@@ -509,7 +520,6 @@ if (mcpSocketPath !== undefined) {
     fncBin,
     noop: usedNoopFallback,
     interactive: isInteractiveSession(claudeArgs),
-    forceInject: useRenderer,
   });
 }
 
@@ -528,6 +538,9 @@ if (process.env.FNC_INTERNAL_DUMP_PLAN === '1') {
   }
   if ('FNCLAUDE_HANDOFF' in childEnv) dumpEnv.FNCLAUDE_HANDOFF = childEnv.FNCLAUDE_HANDOFF!;
   if ('FNC_SOCKET' in childEnv) dumpEnv.FNC_SOCKET = childEnv.FNC_SOCKET!;
+  // The wizard gate, so an e2e test can assert the OOBE tools are registered
+  // for `fnc install` and for nothing else.
+  if ('FNC_OOBE' in childEnv) dumpEnv.FNC_OOBE = childEnv.FNC_OOBE!;
   process.stdout.write(
     `${JSON.stringify({ cwd, claudeArgs, usedNoopFallback, env: dumpEnv })}\n`,
   );
@@ -551,10 +564,10 @@ if (!claudeBin.ok) {
 const slashWriter = createPtyWriterHolder();
 
 // Deferred-binding tagged control-injection seam (#299) for control traffic
-// (context notices, /compact, follow-up handoffs). Built BEFORE the launch
-// mode (PTY vs renderer) is decided; the /compact handler takes
-// `controlSeam.sendControl` now and the real seam (PTY or renderer) binds
-// once it exists. Control messages sent before bind are queued, not dropped.
+// (context notices, /compact, follow-up handoffs). Built BEFORE the terminal
+// exists; the /compact handler takes `controlSeam.sendControl` now and the
+// real PTY seam binds once the terminal spawns. Control messages sent before
+// bind are queued, not dropped.
 const controlSeam = createControlSeamHolder();
 
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
@@ -609,6 +622,16 @@ if (mcpSocketPath !== undefined) {
         // get_usage returns structured budget data read from the session
         // JSONL; launchCWD is the encoded-cwd half of that path.
         get_usage: createGetUsageHandler({ launchCWD: cwd }),
+        // The interview's three tools, bound to ONE state object for the
+        // whole session. They are only reachable in a wizard launch: the
+        // subprocess gates them on FNC_OOBE=1, which only this path sets.
+        ...(oobeState !== null
+          ? {
+              oobe_next: createOobeNextHandler(oobeHandlerArgs!),
+              oobe_answer: createOobeAnswerHandler(oobeHandlerArgs!),
+              oobe_reask: createOobeReaskHandler(oobeHandlerArgs!),
+            }
+          : {}),
       },
     });
     const listener = await startMcpListener({
@@ -647,79 +670,6 @@ if (!ensured.ok) {
   process.exit(2);
 }
 logger.info('ensure_cwd.ok', { cwd, created: ensured.created });
-
-// In-process renderer mount (design.renderer.md §2–§3, spawn-args.md §(b)).
-// When FNC_RENDERER is set AND @fnclaude/renderer (an optionalDependency)
-// resolves with a `mountRenderer` export, fnc hosts the Ink app in its own
-// process, OWNS the claude spawn, and skips BOTH launch-fork branches below.
-//
-// fnc threads its full pipeline into the renderer: the resolved claudeBin and
-// composed childEnv (via the injected SpawnFn), the launch cwd, the
-// CLAUDE-native args (claudeArgs minus --tmux/--print-family/prompt-tail, plus
-// an explicit --permission-mode), and the prompt — delivered as the renderer's
-// first sendUserTurn since a positional prompt is ignored under
-// --input-format stream-json (verified live). Ultracode rides as two turns:
-// `/effort ultracode` then the real seed (/effort,/model are TUI-only and
-// can't be forwarded, but `/effort ultracode` is honored as the boot turn).
-//
-// When the selector is unset or the renderer is absent/old, maybeMountRenderer
-// returns false (logging one line on the requested-but-unavailable path) and
-// execution falls through to the normal PTY/inherit launch — everything-else-
-// as-is. An old mountRenderer that ignores opts / lacks close() still mounts
-// cleanly. mountRenderer owns the TTY for its lifetime; on a §7 handle we exit
-// with claude's real code, else exit 0 (as before this PR).
-const rendererArgs = buildRendererArgs(claudeArgs);
-// The first turn: `/effort ultracode` for ultracode, else the prompt body.
-const rendererInitialPrompt = isUltracode
-  ? '/effort ultracode'
-  : promptBody(claudeArgs).join(' ').trim();
-// The second turn (ultracode only): the real captured seed prompt.
-const rendererFollowUp = isUltracode ? ultracodeSeedPrompt : '';
-if (
-  await maybeMountRenderer({
-    env: process.env,
-    claudeBin: claudeBin.path,
-    childEnv,
-    cwd,
-    rendererArgs,
-    // fnc-native `//` slash commands (e.g. `//restart`) resolve + dispatch
-    // through the shared registry: thread the original argv, the shared handoff
-    // trigger, and the live permission-mode reader so `//restart` rebuilds the
-    // same resume argv the MCP fnc_restart handler would.
-    origArgs: argv,
-    trigger: handoffTrigger,
-    livePermissionModeReader: (sid: string) => readLivePermissionMode(cwd, sid),
-    ...(rendererInitialPrompt !== '' ? { initialPrompt: rendererInitialPrompt } : {}),
-    ...(rendererFollowUp !== '' ? { followUpPrompt: rendererFollowUp } : {}),
-    // #299: bind the control seam to the renderer mount API and start the
-    // context monitor in renderer mode — wiring notices, /compact, and
-    // follow-up handoffs in renderer mode for the first time. The /compact MCP
-    // handler already routes through controlSeam.sendControl.
-    onControlSeam: (send) => {
-      controlSeam.bind(send);
-      return startContextMonitor({
-        launchCWD: cwd,
-        ladder: resolveContextNoticeLadder({
-          configLadder: config.contextNoticeLadder,
-          configThreshold: config.contextNoticeThreshold,
-        }),
-        deriveThreshold: deriveNoticeThreshold,
-        sendControl: send,
-        // Renderer owns the claude spawn, so claude's pid isn't available here
-        // to drive the /proc resolver — pass null so a null up-front id falls
-        // back to the legacy heuristic (unchanged renderer behavior).
-        ownSessionFile: makeOwnSessionFileResolver({
-          upfrontId: ownSessionId,
-          claudePid: null,
-        }),
-      }).stop;
-    },
-  })
-) {
-  // maybeMountRenderer process.exits with claude's code on a §7 handle; this
-  // exit(0) covers the old-handle path that returns without exiting.
-  process.exit(0);
-}
 
 // §9.0: spawn claude via Bun.Terminal on POSIX so the launcher can tee PTY
 // output through a ring buffer for cross-cwd resume detection (§9.1+). On

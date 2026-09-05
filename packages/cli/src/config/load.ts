@@ -1,32 +1,38 @@
 /**
- * Load fnclaude's config.toml.
+ * Load fnc's config from `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.*`.
  *
- * The full config (per prd.launcher.md "Config file") looks like:
+ * The file (specs/rhombus-rocks-config.md § "fnc config shape") looks like:
  *
- *   [name]
- *   model = "claude-haiku-4-5"
- *   timeout = "3s"
+ *   {
+ *     "$schema": "https://json.schemastore.org/rhombus-rocks-fnclaude-config.json",
+ *     "noOobe": true,
+ *     "noopDir": "~/.config/rhombus.rocks/fnclaude/noop",
+ *     "auto": { "tmux": "never", "handoff": "3", "spawnCommand": "…" },
+ *     "claude": { "defaultArgs": ["--chrome"] },
+ *     "exec": { "env": { "NAME": "value" } },
+ *     "context": { "noticeThreshold": 0, "noticeTiers": [], "noticeRepeat": {…} }
+ *   }
  *
- *   [auto]
- *   tmux = "never"      # or "worktree"
- *   handoff = "ask"
- *   spawn_command = ""
+ * Any of `config.{json,jsonc,toml,yaml}` is accepted — whichever exists first
+ * in that order — and all four are parsed with `confbox` (unjs, zero deps).
+ * Writers always emit JSON, because JSON's `$schema` key is the one form every
+ * editor understands without extra setup.
  *
- *   [exec.env]
- *   MY_VAR = "value"
+ * **No runtime schema validation** (owner's call, 2026-09-04). The schema
+ * exists for editor completion and SchemaStore, not for gatekeeping. This
+ * loader degrades PER FIELD: a wrong-shaped `auto` contributes nothing and
+ * `context` still loads. The one exception is the notice ladder, which warns
+ * about malformed entries (#331) because silently dropping them left the
+ * writer no signal.
  *
- * Only fields fnclaude actively uses are surfaced on FnConfig today.
- * Others land as they're wired into the launch pipeline.
- *
- * Robustness: missing file / non-file at path / malformed TOML all
- * degrade silently to defaults (all-undefined). Caller checks each
- * field for undefined.
- *
- * Bun supports `import(path, { with: { type: 'toml' } })` natively, so
- * no third-party TOML parser dependency.
+ * Migration: when no file exists at the new location, the pre-restructure
+ * `$XDG_CONFIG_HOME/fnclaude/config.toml` is read once and rewritten to
+ * `<new dir>/config.json` (snake_case keys become camelCase). Failure to write
+ * is not fatal — the values are still returned, and the next run tries again.
  */
 
 import { statSync } from 'node:fs';
+import { extname } from 'node:path';
 
 import {
   type NoticeLadderSpec,
@@ -35,89 +41,217 @@ import {
   type PctThreshold,
   isNoticeLevel,
 } from '../usage/context-monitor';
+import {
+  type XdgEnv,
+  findConfigFile,
+  fncConfigDir,
+  fncConfigWritePath,
+  legacyFncConfigPath,
+} from './paths';
+import { writeFncConfig } from './write';
 
 export interface FnConfig {
+  /**
+   * `noOobe`. When falsy or absent — including the whole file being absent —
+   * an interactive launch runs the first-run interview (`fnc install`).
+   */
+  noOobe: boolean;
+  /**
+   * `noopDir`. fnc's starting directory. `undefined` means "use the default"
+   * (`$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/noop`); the caller expands `~`.
+   */
+  noopDir: string | undefined;
+  /** `auto.tmux`: `never` | `always` | `worktree`. */
   autoTmux: string | undefined;
+  /** `auto.handoff`: `never` | `ask` | seconds as a string. */
   autoHandoff: string | undefined;
   /**
-   * `[auto] spawn_command`. Whitespace-tokenized launcher template
-   * consumed by §8.3 (fnc_spawn_session). Supported placeholders:
-   * `{bin}`, `{dest}`, `{name}`, `{summary}`. Empty/undefined means
-   * "fall back to $TMUX auto-detect, then paste-flow".
+   * `auto.spawnCommand`. Whitespace-tokenized launcher template consumed by
+   * §8.3 (fnc_spawn_session). Placeholders: `{bin}`, `{dest}`, `{name}`,
+   * `{summary}`. Empty/undefined means "fall back to $TMUX auto-detect, then
+   * paste-flow".
    */
   autoSpawnCommand: string | undefined;
   /**
-   * `[context] notice_threshold`. Context-size (in tokens) at which the
-   * launcher injects a one-shot compaction notice into the live session
-   * (#170 part 2). `undefined` means "use the built-in default"; the
-   * monitor resolves the effective value. A non-positive or non-numeric
-   * value degrades to undefined (defensive).
+   * `claude.defaultArgs`. Appended to every claude launch. Claude Code has no
+   * persistent setting for these, so fnc supplies the default.
+   */
+  claudeDefaultArgs: string[] | undefined;
+  /**
+   * `context.noticeThreshold`. Context size (in tokens) at which the launcher
+   * injects a one-shot compaction notice (#170 part 2). `undefined` means "use
+   * the built-in default". Non-positive or non-numeric degrades to undefined.
    */
   contextNoticeThreshold: number | undefined;
   /**
-   * `[[context.notice_tiers]]` + `[context.notice_repeat]`. The tiered
-   * escalation ladder for compaction notices (#170 part 2). `undefined`
-   * means "no tier config present" (fall through to legacy
-   * `notice_threshold` / built-in default). An explicitly-empty
-   * `notice_tiers = []` with no repeat yields `{ tiers: [] }` — a disabled
-   * monitor. Each `at`/`every` is either a bare integer (absolute tokens) or a
-   * quoted `"NN%"` percentage of the derived auto-compact point (#332).
-   * Malformed tier/repeat entries are dropped BUT surface a warning (#331) —
-   * silent discarding gave the writer no signal. Precedence between this and
-   * `notice_threshold` lives in `resolveContextNoticeLadder`.
+   * `context.noticeTiers` + `context.noticeRepeat`. The tiered escalation
+   * ladder (#170 part 2). `undefined` means "no tier config present" (fall
+   * through to `noticeThreshold` / the built-in default). An explicitly-empty
+   * `noticeTiers: []` with no repeat yields `{ tiers: [] }` — a disabled
+   * monitor. Each `at`/`every` is a positive number (absolute tokens) or an
+   * `"NN%"` string (percentage of the derived auto-compact point, #332).
    */
   contextNoticeLadder: NoticeLadderSpec | undefined;
+  /** `exec.env`. Extra environment for the claude child. */
   execEnv: Record<string, string> | undefined;
 }
 
 export interface LoadConfigArgs {
-  path: string;
+  env: XdgEnv;
   /**
    * Sink for config-validation warnings (#331) — malformed notice tier/repeat
    * entries emit here instead of being silently dropped. Defaults to
    * `console.warn` (stderr). Tests inject a capturing sink.
    */
   warn?: (message: string) => void;
+  /**
+   * Migration write seam. Defaults to the real {@link writeFncConfig}. A
+   * failure here is swallowed: the migrated values are still returned.
+   */
+  write?: (path: string, patch: Record<string, unknown>) => void;
 }
 
 const EMPTY: FnConfig = {
+  noOobe: false,
+  noopDir: undefined,
   autoTmux: undefined,
   autoHandoff: undefined,
   autoSpawnCommand: undefined,
+  claudeDefaultArgs: undefined,
   contextNoticeThreshold: undefined,
   contextNoticeLadder: undefined,
   execEnv: undefined,
 };
 
+/** Parse one config file by extension. Returns null on any read/parse failure. */
+async function parseConfigFile(path: string): Promise<unknown> {
+  let text: string;
+  try {
+    if (!statSync(path).isFile()) return null;
+    text = await Bun.file(path).text();
+  } catch {
+    return null;
+  }
+  const confbox = await import('confbox');
+  try {
+    switch (extname(path)) {
+      case '.json':
+        return confbox.parseJSON(text);
+      case '.jsonc':
+        return confbox.parseJSONC(text);
+      case '.toml':
+        return confbox.parseTOML(text);
+      case '.yaml':
+      case '.yml':
+        return confbox.parseYAML(text);
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
 export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
   const warn = args.warn ?? ((m: string): void => console.warn(m));
-  let isFile = false;
-  try {
-    isFile = statSync(args.path).isFile();
-  } catch {
-    return EMPTY;
-  }
-  if (!isFile) return EMPTY;
 
-  let parsed: unknown;
-  try {
-    const mod = await import(args.path, { with: { type: 'toml' } });
-    parsed = (mod as { default?: unknown }).default;
-  } catch {
-    return EMPTY;
+  const found = findConfigFile(fncConfigDir(args.env));
+  if (found !== null) {
+    const parsed = await parseConfigFile(found);
+    const root = asRecord(parsed);
+    return root === null ? EMPTY : project(root, warn);
   }
 
-  if (parsed === null || typeof parsed !== 'object') return EMPTY;
-  const root = parsed as Record<string, unknown>;
+  // Nothing at the new location — try the pre-restructure TOML once.
+  const legacyPath = legacyFncConfigPath(args.env);
+  const legacyParsed = await parseConfigFile(legacyPath);
+  const legacyRoot = asRecord(legacyParsed);
+  if (legacyRoot === null) return EMPTY;
 
+  const migrated = migrateLegacyShape(legacyRoot);
+  const write = args.write ?? writeFncConfig;
+  try {
+    write(fncConfigWritePath(args.env), migrated);
+  } catch {
+    // Best-effort: a config we couldn't write is still a config we can use.
+    // The next run finds the legacy file again and retries the migration.
+  }
+  return project(migrated, warn);
+}
+
+/** Narrow a parsed document into {@link FnConfig}, field by field. */
+function project(root: Record<string, unknown>, warn: (m: string) => void): FnConfig {
+  const auto = asRecord(root.auto) ?? {};
+  const claude = asRecord(root.claude) ?? {};
   return {
-    autoTmux: pickAutoTmux(root),
-    autoHandoff: pickAutoHandoff(root),
-    autoSpawnCommand: pickAutoSpawnCommand(root),
+    noOobe: root.noOobe === true,
+    noopDir: pickString(root.noopDir),
+    autoTmux: pickString(auto.tmux),
+    autoHandoff: pickStringOrNumber(auto.handoff),
+    autoSpawnCommand: pickString(auto.spawnCommand),
+    claudeDefaultArgs: pickStringArray(claude.defaultArgs),
     contextNoticeThreshold: pickContextNoticeThreshold(root),
     contextNoticeLadder: pickContextNoticeLadder(root, warn),
     execEnv: pickExecEnv(root),
   };
+}
+
+/**
+ * Translate the pre-restructure TOML shape into the new JSON shape.
+ *
+ * Only the keys fnc actually reads are translated; anything else in the old
+ * file is carried across verbatim so a hand-added key isn't lost. The old
+ * `[auto] spawn_command` and `[context] notice_*` snake_case names become
+ * camelCase, matching the schema.
+ */
+export function migrateLegacyShape(legacy: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...legacy };
+
+  const auto = asRecord(legacy.auto);
+  if (auto !== null) {
+    const nextAuto: Record<string, unknown> = { ...auto };
+    delete nextAuto.spawn_command;
+    if (auto.spawn_command !== undefined) nextAuto.spawnCommand = auto.spawn_command;
+    out.auto = nextAuto;
+  }
+
+  const context = asRecord(legacy.context);
+  if (context !== null) {
+    const nextContext: Record<string, unknown> = { ...context };
+    delete nextContext.notice_threshold;
+    delete nextContext.notice_tiers;
+    delete nextContext.notice_repeat;
+    if (context.notice_threshold !== undefined) nextContext.noticeThreshold = context.notice_threshold;
+    if (context.notice_tiers !== undefined) nextContext.noticeTiers = context.notice_tiers;
+    if (context.notice_repeat !== undefined) nextContext.noticeRepeat = context.notice_repeat;
+    out.context = nextContext;
+  }
+
+  // `[name]` (auto-name model/timeout) was never read by the launcher and has
+  // no schema entry; it rides along under additionalProperties rather than
+  // being dropped, so a user who set it doesn't silently lose it.
+  return out;
+}
+
+function pickString(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined;
+}
+
+function pickStringOrNumber(v: unknown): string | undefined {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return undefined;
+}
+
+function pickStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === 'string');
+  return out;
 }
 
 /**
@@ -153,26 +287,24 @@ function thresholdSortKey(v: number | PctThreshold): number {
 }
 
 /**
- * Parse `[[context.notice_tiers]]` + `[context.notice_repeat]` into a
- * {@link NoticeLadderSpec}. Returns undefined when NO tier config is present
- * (neither key under `[context]`), so the resolver falls through to the
- * legacy `notice_threshold` / built-in default. An explicitly-empty
- * `notice_tiers = []` (with no repeat) yields `{ tiers: [] }` — a disabled
- * monitor. Each `at`/`every` may be a bare integer (absolute tokens) or a
- * quoted `"NN%"` percentage (#332). Malformed entries are dropped BUT emit a
- * warning via `warn` (#331) rather than vanishing silently; tiers are sorted
+ * Parse `context.noticeTiers` + `context.noticeRepeat` into a
+ * {@link NoticeLadderSpec}. Returns undefined when NEITHER key is present, so
+ * the resolver falls through to `noticeThreshold` / the built-in default. An
+ * explicitly-empty `noticeTiers: []` (with no repeat) yields `{ tiers: [] }` —
+ * a disabled monitor. Each `at`/`every` may be a positive number (absolute
+ * tokens) or an `"NN%"` percentage (#332). Malformed entries are dropped BUT
+ * emit a warning (#331) rather than vanishing silently; tiers are sorted
  * ascending and de-duplicated by threshold.
  */
 function pickContextNoticeLadder(
   root: Record<string, unknown>,
   warn: (message: string) => void,
 ): NoticeLadderSpec | undefined {
-  const context = root.context;
-  if (context === null || typeof context !== 'object' || Array.isArray(context)) return undefined;
-  const ctx = context as Record<string, unknown>;
+  const ctx = asRecord(root.context);
+  if (ctx === null) return undefined;
 
-  const rawTiers = ctx.notice_tiers;
-  const rawRepeat = ctx.notice_repeat;
+  const rawTiers = ctx.noticeTiers;
+  const rawRepeat = ctx.noticeRepeat;
   const hasTiers = rawTiers !== undefined;
   const hasRepeat = rawRepeat !== undefined;
   if (!hasTiers && !hasRepeat) return undefined;
@@ -180,24 +312,24 @@ function pickContextNoticeLadder(
   const tiers: NoticeTierSpec[] = [];
   if (hasTiers && !Array.isArray(rawTiers)) {
     warn(
-      `[fnclaude] config: [[context.notice_tiers]] must be an array of { at, level } tables (got ${typeof rawTiers}) — ignoring.`,
+      `[fnclaude] config: context.noticeTiers must be an array of { at, level } objects (got ${typeof rawTiers}) — ignoring.`,
     );
   } else if (Array.isArray(rawTiers)) {
     const seen = new Set<string>();
     rawTiers.forEach((entry, i) => {
-      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-        warn(`[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} is not a table — ignoring.`);
+      const e = asRecord(entry);
+      if (e === null) {
+        warn(`[fnclaude] config: context.noticeTiers entry #${i + 1} is not an object — ignoring.`);
         return;
       }
-      const e = entry as Record<string, unknown>;
       const parsed = parseThresholdValue(e.at);
       if ('reason' in parsed) {
-        warn(`[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`at\` (${parsed.reason}) — ignoring.`);
+        warn(`[fnclaude] config: context.noticeTiers entry #${i + 1} has invalid \`at\` (${parsed.reason}) — ignoring.`);
         return;
       }
       if (!isNoticeLevel(e.level)) {
         warn(
-          `[fnclaude] config: [[context.notice_tiers]] entry #${i + 1} has invalid \`level\` (${JSON.stringify(e.level)}); expected one of consider|plan|now|urgent — ignoring.`,
+          `[fnclaude] config: context.noticeTiers entry #${i + 1} has invalid \`level\` (${JSON.stringify(e.level)}); expected one of consider|plan|now|urgent — ignoring.`,
         );
         return;
       }
@@ -211,18 +343,18 @@ function pickContextNoticeLadder(
 
   let repeat: NoticeRepeatSpec | undefined;
   if (hasRepeat) {
-    if (rawRepeat === null || typeof rawRepeat !== 'object' || Array.isArray(rawRepeat)) {
+    const r = asRecord(rawRepeat);
+    if (r === null) {
       warn(
-        `[fnclaude] config: [context.notice_repeat] must be a table { every, level } (got ${Array.isArray(rawRepeat) ? 'array' : typeof rawRepeat}) — ignoring. See the [context] section in the README.`,
+        `[fnclaude] config: context.noticeRepeat must be an object { every, level } (got ${Array.isArray(rawRepeat) ? 'array' : typeof rawRepeat}) — ignoring.`,
       );
     } else {
-      const r = rawRepeat as Record<string, unknown>;
       const parsed = parseThresholdValue(r.every);
       if ('reason' in parsed) {
-        warn(`[fnclaude] config: [context.notice_repeat] has invalid \`every\` (${parsed.reason}) — ignoring.`);
+        warn(`[fnclaude] config: context.noticeRepeat has invalid \`every\` (${parsed.reason}) — ignoring.`);
       } else if (!isNoticeLevel(r.level)) {
         warn(
-          `[fnclaude] config: [context.notice_repeat] has invalid \`level\` (${JSON.stringify(r.level)}); expected one of consider|plan|now|urgent — ignoring.`,
+          `[fnclaude] config: context.noticeRepeat has invalid \`level\` (${JSON.stringify(r.level)}); expected one of consider|plan|now|urgent — ignoring.`,
         );
       } else {
         repeat = { every: parsed.value, level: r.level };
@@ -234,43 +366,20 @@ function pickContextNoticeLadder(
 }
 
 function pickContextNoticeThreshold(root: Record<string, unknown>): number | undefined {
-  const context = root.context;
-  if (context === null || typeof context !== 'object' || Array.isArray(context)) return undefined;
-  const v = (context as Record<string, unknown>).notice_threshold;
+  const ctx = asRecord(root.context);
+  if (ctx === null) return undefined;
+  const v = ctx.noticeThreshold;
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return undefined;
   return v;
 }
 
-function pickAutoTmux(root: Record<string, unknown>): string | undefined {
-  const auto = root.auto;
-  if (auto === null || typeof auto !== 'object' || Array.isArray(auto)) return undefined;
-  const v = (auto as Record<string, unknown>).tmux;
-  return typeof v === 'string' ? v : undefined;
-}
-
-function pickAutoHandoff(root: Record<string, unknown>): string | undefined {
-  const auto = root.auto;
-  if (auto === null || typeof auto !== 'object' || Array.isArray(auto)) return undefined;
-  const v = (auto as Record<string, unknown>).handoff;
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
-  return undefined;
-}
-
-function pickAutoSpawnCommand(root: Record<string, unknown>): string | undefined {
-  const auto = root.auto;
-  if (auto === null || typeof auto !== 'object' || Array.isArray(auto)) return undefined;
-  const v = (auto as Record<string, unknown>).spawn_command;
-  return typeof v === 'string' ? v : undefined;
-}
-
 function pickExecEnv(root: Record<string, unknown>): Record<string, string> | undefined {
-  const exec = root.exec;
-  if (exec === null || typeof exec !== 'object' || Array.isArray(exec)) return undefined;
-  const env = (exec as Record<string, unknown>).env;
-  if (env === null || typeof env !== 'object' || Array.isArray(env)) return undefined;
+  const exec = asRecord(root.exec);
+  if (exec === null) return undefined;
+  const env = asRecord(exec.env);
+  if (env === null) return undefined;
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(env)) {
     if (typeof v === 'string') out[k] = v;
   }
   return out;

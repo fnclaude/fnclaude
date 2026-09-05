@@ -7,7 +7,7 @@
  * caller overrides, optionally captures the live permission-mode, splices in
  * `--resume <sessionId>` immediately after the cwd positional, then stashes
  * the result + fires the handoff trigger so the awaiter (§8.5 in PTY mode, the
- * renderer-mode awaiter in combined mode) can tear claude down and re-exec fnc.
+ * handoff awaiter) can tear claude down and re-exec fnc.
  *
  * `restart.ts` (MCP) wraps this to map the wire request → args and the result
  * → wire response. The `//restart` slash command calls it directly. Keeping
@@ -132,7 +132,7 @@ export interface RestartInPlaceArgs extends BuildRestartArgvArgs {
 /**
  * Outcome of {@link restartInPlace}. `ok: true` carries the built argv (already
  * stashed + fired). `ok: false` names WHY validation failed so each caller can
- * format a context-appropriate message (MCP wire error vs. renderer toast).
+ * format a context-appropriate message for its own surface.
  */
 export type RestartInPlaceResult =
   | { ok: true; argv: string[] }

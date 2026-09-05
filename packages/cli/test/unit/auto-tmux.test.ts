@@ -34,6 +34,32 @@ describe('shouldInjectTmux — config gating', () => {
   });
 });
 
+describe('shouldInjectTmux — the "always" setting', () => {
+  test('config "always" → true even with no worktree involved', () => {
+    expect(
+      shouldInjectTmux(args({ configAutoTmux: 'always', worktreeSet: false })),
+    ).toBe(true);
+  });
+
+  test('config "always" → true when entering an EXISTING worktree', () => {
+    // The `worktree` setting deliberately declines this case (it only fires
+    // on creation); `always` must not inherit that restriction.
+    expect(
+      shouldInjectTmux(args({ configAutoTmux: 'always', worktreeMatched: true })),
+    ).toBe(true);
+  });
+
+  test('--no-tmux still wins over "always" — otherwise the escape hatch is unusable', () => {
+    expect(shouldInjectTmux(args({ configAutoTmux: 'always', noTmux: true }))).toBe(false);
+  });
+
+  test('an explicit --tmux in passthrough still suppresses the injection under "always"', () => {
+    expect(
+      shouldInjectTmux(args({ configAutoTmux: 'always', passthrough: ['--tmux=session'] })),
+    ).toBe(false);
+  });
+});
+
 describe('shouldInjectTmux — worktree gating', () => {
   test('worktreeSet=false → false (user did not ask for a worktree)', () => {
     expect(shouldInjectTmux(args({ worktreeSet: false }))).toBe(false);

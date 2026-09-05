@@ -10,8 +10,8 @@ fnclaude wraps the `claude` CLI and wants to surface a subagent cockpit: a list 
 
 Cross-references (do not duplicate):
 
-- [`specs/proposals/subagent-panes-idea.md`](../proposals/subagent-panes-idea.md) — the MCP-shadow per-subagent-pane cockpit design. This doc is the **evidence base** for its core premise: native in-process subagents expose no external steering seam, which is precisely why that doc replaces `Task` with an MCP tool.
-- [`specs/proposals/multipane-orchestration-proposal.md`](../proposals/multipane-orchestration-proposal.md) — the tmux-hosted single-agent workspace layout. Region 5 (transcript pane) is the natural host for a recreated agent-panel or transcript view.
+- [`specs/renderer/subagent-panes-idea.md`](../renderer/subagent-panes-idea.md) — the MCP-shadow per-subagent-pane cockpit design. This doc is the **evidence base** for its core premise: native in-process subagents expose no external steering seam, which is precisely why that doc replaces `Task` with an MCP tool.
+- [`specs/renderer/multipane-orchestration-proposal.md`](../renderer/multipane-orchestration-proposal.md) — the tmux-hosted single-agent workspace layout. Region 5 (transcript pane) is the natural host for a recreated agent-panel or transcript view.
 
 ---
 

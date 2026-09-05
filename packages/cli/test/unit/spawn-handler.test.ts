@@ -16,7 +16,7 @@
  *      independent fnclaude).
  *
  * Ports Go canonical's socket_listener_test.go OpSpawn block from
- * `fnclaude@fnrhombus/src/`.
+ * `fnclaude/src/`.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -150,13 +150,13 @@ describe('createSpawnHandler — launcher decision', () => {
 
     const r = await handler({
       op: 'spawn',
-      destination: 'arch-setup@fnrhombus',
+      destination: 'arch-setup@fnclaude',
       name: 'side-thing',
       summary: 'the summary\nlines and lines\n',
     });
 
     expect(r.action).toBe('done');
-    expect(r.message).toContain('arch-setup@fnrhombus');
+    expect(r.message).toContain('arch-setup@fnclaude');
     expect(writes).toHaveLength(1);
     expect(writes[0]?.content).toBe('the summary\nlines and lines\n');
     expect(calls).toHaveLength(1);
@@ -166,7 +166,7 @@ describe('createSpawnHandler — launcher decision', () => {
       'launch',
       '--type=os-window',
       '/usr/bin/fnclaude',
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       '--name',
       'side-thing',
       '@/tmp/handoff-1.md',

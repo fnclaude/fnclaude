@@ -11,6 +11,10 @@
  *   noop-router.md    — noop fallback only
  *   project-switch.md — non-noop interactive
  *   restart.md        — non-noop interactive
+ *   oobe.md           — the `fnc install` wizard session, INSTEAD of every
+ *                       other fragment: that session relays an interview and
+ *                       must not also be told how to spawn siblings, switch
+ *                       projects, or route a no-project request.
  *
  * Print mode (-p / --print anywhere in passthrough) splits in two:
  *   - program-driven streaming (--input-format/--output-format carries
@@ -25,6 +29,12 @@
 export interface SelectFragmentsArgs {
   usedNoopFallback: boolean;
   passthrough: readonly string[];
+  /**
+   * True for the wizard session `fnc install` launches. It replaces the whole
+   * selection rather than adding to it (owner, 2026-09-04: inject `oobe.md`
+   * INSTEAD of `noop-router.md`).
+   */
+  oobe?: boolean;
 }
 
 export function isInteractiveSession(passthrough: readonly string[]): boolean {
@@ -64,6 +74,11 @@ export function isOneShotPrint(passthrough: readonly string[]): boolean {
 }
 
 export function selectFragments(args: SelectFragmentsArgs): string[] {
+  // The wizard session gets exactly one fragment. Everything else fnc injects
+  // tells the model to do something — spawn, switch, restart, route — and the
+  // one thing this session must not do is act on its own initiative.
+  if (args.oobe === true) return ['oobe.md'];
+
   if (!isInteractiveSession(args.passthrough)) {
     if (usesStreamJson(args.passthrough)) return [];
     return ['one-shot.md'];

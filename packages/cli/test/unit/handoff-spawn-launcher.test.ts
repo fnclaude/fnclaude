@@ -2,7 +2,7 @@
  * §8.3 — unit tests for the spawn-launcher decision + dispatch.
  *
  * Ports the Go canonical's buildSpawnArgv / autoDetectSpawnCommand /
- * spawnSibling tests from `fnclaude@fnrhombus/src/spawn_test.go`.
+ * spawnSibling tests from `fnclaude/src/spawn_test.go`.
  * Substitution shape, dest-with-spaces handling, empty-template error
  * mode, and the decision order (config → $TMUX → paste-flow) all
  * translate directly.
@@ -36,7 +36,7 @@ describe('buildSpawnArgv — substitutions', () => {
     const got = buildSpawnArgv(
       'kitty @ launch --type=os-window {bin} {dest} --name {name} @{summary}',
       '/usr/bin/fnclaude',
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       'fix-thing',
       '/tmp/handoff-abc.md',
     );
@@ -46,7 +46,7 @@ describe('buildSpawnArgv — substitutions', () => {
       'launch',
       '--type=os-window',
       '/usr/bin/fnclaude',
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       '--name',
       'fix-thing',
       '@/tmp/handoff-abc.md',
@@ -95,7 +95,7 @@ describe('chooseAndSpawn — decision order', () => {
       env: {},
       spawnEnv: { PATH: '/bin' },
       fncBin: '/usr/bin/fnclaude',
-      dest: 'arch-setup@fnrhombus',
+      dest: 'arch-setup@fnclaude',
       name: 'side-thing',
       summary: '/tmp/handoff-abc.md',
       extraArgs: [],
@@ -109,7 +109,7 @@ describe('chooseAndSpawn — decision order', () => {
       'launch',
       '--type=os-window',
       '/usr/bin/fnclaude',
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       '--name',
       'side-thing',
       '@/tmp/handoff-abc.md',

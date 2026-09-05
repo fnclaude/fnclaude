@@ -35,13 +35,41 @@ sees it. For claude's own version, run `claude --version`.
 Linux and macOS. The code has a Windows fallback path, but it has never been
 exercised. Expect breakage there.
 
+## First-run setup
+
+```sh
+fnc install
+```
+
+Opens a session that walks you through setup: where repos are cloned, where
+worktrees go, how session transfers behave, which claude flags to pass every
+time. It writes each answer as you give it, so an interrupted run picks up
+where it left off, and it skips anything already configured — re-run it any
+time.
+
+Nothing outside the config file is touched until you approve the final
+preview. Abort there and your answers are kept; nothing else happened.
+
+For dotfiles, the same plan runs without questions:
+
+```sh
+fnc install -y --fngit --plugin \
+  --clone-template '~/src/{repo}@{owner}' \
+  --worktree-template '~/src/{repo}@{owner}+{input}' \
+  --tmux worktree --handoff 3
+```
+
+A flag you don't pass leaves that setting alone — absent is not "no".
+
 ## Configuration files
 
 Both are optional.
 
 | Path | What it holds |
 | --- | --- |
-| `$XDG_CONFIG_HOME/fnclaude/config.toml` | Auto-tmux, auto-handoff, the command that opens a new terminal window for a sibling session, and environment injected into every claude child. |
-| `~/.claude/settings.json` | `cloneTemplate`, `worktreeTemplate`, and `branchTemplate` under `repoSettings`. Shared with the claude-code-worktree-paths plugin. |
+| `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json` | fnclaude's own: auto-tmux, auto-handoff, the command that opens a new terminal window for a sibling session, default claude flags, and environment injected into every claude child. |
+| `$XDG_CONFIG_HOME/rhombus.rocks/config.json` | Shared with fngit and the worktree-paths plugin: `cloneTemplate`, `worktreeTemplate`, `branchTemplate`, `additionalSrcDirs`, `hostAliases` under `repos`. fnclaude does not read this file — fngit does. |
+
+`fnc install` writes both. Either may also be `.jsonc`, `.toml`, or `.yaml`; fnclaude writes JSON so editors pick up the `$schema` line.
 
 The keys are on [CLI flags](/reference/cli-flags/).

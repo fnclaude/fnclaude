@@ -1,7 +1,7 @@
 {
   "name": "fnclaude",
   "version": "2.1.0",
-  "description": "fnclaude — wrapper around Claude Code (umbrella package; depends on @fnclaude/cli and @fnclaude/renderer)",
+  "description": "fnclaude — wrapper around Claude Code (umbrella package; depends on @rhombus.rocks/fnclaude)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,8 +22,7 @@
     "build": "echo 'no build (umbrella package — shim only)'"
   },
   "dependencies": {
-    "@fnclaude/cli": "workspace:*",
-    "@fnclaude/renderer": "workspace:*"
+    "@rhombus.rocks/fnclaude": "workspace:*"
   },
   "publishConfig": {
     "access": "public",

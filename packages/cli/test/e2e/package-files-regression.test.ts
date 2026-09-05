@@ -51,4 +51,13 @@ describe.skipIf(SKIP_WINDOWS)('published tarball ships prompt fragments', () => 
     const files = await publishedFiles();
     expect(files).toContain('prompts/noop-router.md');
   });
+
+  // The config schema is what a user's `"$schema"` line points at and what the
+  // owner mirrors into SchemaStore. It has no code path — nothing reads it at
+  // runtime — so a missing `schemas` entry in `files` would go unnoticed until
+  // someone opened their config and got no completion.
+  test('the config schema ships', async () => {
+    const files = await publishedFiles();
+    expect(files).toContain('schemas/rhombus-rocks-fnclaude-config.json');
+  });
 });

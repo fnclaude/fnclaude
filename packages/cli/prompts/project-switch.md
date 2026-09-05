@@ -14,8 +14,8 @@ Accepted destination forms:
 
 - An absolute path (`/home/user/proj`, `~/src/foo`) — fnclaude uses as-is.
 - A repo short-name (`arch-setup`) — fnclaude searches the user's gh-orgs to find it, clones if needed.
-- A `name@owner` form (`arch-setup@fnrhombus`) — fnclaude knows the owner directly.
-- A `owner/name` or `gh:owner/name` form (`fnrhombus/arch-setup`, `gh:fnrhombus/arch-setup`) — same.
+- A `name@owner` form (`arch-setup@fnclaude`) — fnclaude knows the owner directly.
+- A `owner/name` or `gh:owner/name` form (`fnclaude/arch-setup`, `gh:fnclaude/arch-setup`) — same.
 - A full URL (`https://github.com/owner/name`, `git@github.com:owner/name`) — same.
 - An optional `+workspace` suffix (`arch-setup+fix-foo`) — fnclaude resolves the base repo and creates a worktree with that workspace name.
 

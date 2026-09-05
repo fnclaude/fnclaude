@@ -29,7 +29,7 @@
  * ── What it writes ───────────────────────────────────────────────────
  * The notice is a PLAIN TEXT line, NOT a slash command. It routes through
  * the tagged control-injection seam (#299) as `sendControl('notice', body)`,
- * so it carries the structural `notice` marker the renderer filter (#288)
+ * so it carries the structural `notice` marker downstream consumers
  * keys off and — in PTY mode — defers around any line the user is mid-typing
  * instead of splicing into it. The body is
  * `<fnc-notice>[level] context at Nk tokens — …</fnc-notice>`, where N is the

@@ -47,40 +47,6 @@ describe('injectMcpConfig', () => {
     expect(out).not.toContain('--mcp-config');
   });
 
-  // Renderer mode IS --print (the renderer drives a headless stream-json
-  // child) yet WANTS the self-MCP config so claude→fnc MCP still works
-  // (spawn-args.md §2). The `forceInject` override injects despite the
-  // interactive gate that would normally skip print sessions.
-  test('forceInject → injects --mcp-config even when non-interactive (renderer mode)', () => {
-    const out = injectMcpConfig({
-      claudeArgs: ['--print', '--model', 'opus'],
-      bunExec: '/usr/bin/bun',
-      fncBin: '/abs/path/to/fnc.js',
-      noop: false,
-      interactive: false,
-      forceInject: true,
-    });
-    expect(out).toContain('--mcp-config');
-    const flagIdx = out.indexOf('--mcp-config');
-    const cfg = JSON.parse(out[flagIdx + 1]!) as {
-      mcpServers: { fnclaude: { command: string; args: string[] } };
-    };
-    expect(cfg.mcpServers.fnclaude.command).toBe('/usr/bin/bun');
-    expect(cfg.mcpServers.fnclaude.args).toEqual(['/abs/path/to/fnc.js', 'mcp']);
-  });
-
-  test('forceInject still bails on empty fncBin', () => {
-    const out = injectMcpConfig({
-      claudeArgs: ['--print', '--model', 'opus'],
-      bunExec: '/usr/bin/bun',
-      fncBin: '',
-      noop: false,
-      interactive: false,
-      forceInject: true,
-    });
-    expect(out).toEqual(['--print', '--model', 'opus']);
-  });
-
   test('empty fncBin → no injection (caller couldnt resolve self path)', () => {
     const out = injectMcpConfig({
       claudeArgs: ['--model', 'opus'],

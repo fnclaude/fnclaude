@@ -36,9 +36,9 @@ verbatim and fnclaude's resolver finds it, cloning if it has to:
 ```sh
 # all valid destinations
 arch-setup
-arch-setup@fnrhombus
-fnrhombus/arch-setup
-https://github.com/fnrhombus/arch-setup
+arch-setup@fnclaude
+fnclaude/arch-setup
+https://github.com/fnclaude/arch-setup
 ~/src/dots
 arch-setup+fix-lid-sync
 ```

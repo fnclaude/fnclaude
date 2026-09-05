@@ -7,7 +7,7 @@
  * before re-execing fnc.
  *
  * Ports the Go canonical `preserveArgs` + `applyOverrides` from
- * `fnclaude@fnrhombus/src/preserve_args.go` — same three-phase walk
+ * `fnclaude/src/preserve_args.go` — same three-phase walk
  * (magic → positionals → flags) and the same three-state override
  * semantics (string non-empty replaces; bool undefined preserves; bool
  * true/false enforces presence/absence).

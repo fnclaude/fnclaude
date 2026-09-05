@@ -62,11 +62,11 @@ describe('classifyToken', () => {
       './opus', // escape-via-prefix per PRD
       './haiku',
       'arch-setup',
-      'fnclaude@fnrhombus',
-      'fnrhombus/fnclaude',
-      'gh:fnrhombus/fnclaude',
-      'https://github.com/fnrhombus/fnclaude',
-      'git@github.com:fnrhombus/fnclaude.git', // SSH URL — no leading `-`
+      'fnclaude@fnclaude',
+      'fnclaude/fnclaude',
+      'gh:fnclaude/fnclaude',
+      'https://github.com/fnclaude/fnclaude',
+      'git@github.com:fnclaude/fnclaude.git', // SSH URL — no leading `-`
       'say hi',
       '',
       '42',

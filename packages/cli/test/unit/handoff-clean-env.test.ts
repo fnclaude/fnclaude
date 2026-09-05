@@ -2,7 +2,7 @@
  * §8.3 — unit tests for `cleanEnvForSpawn`.
  *
  * Ports Go canonical's TestCleanEnvForSpawn_DropsSessionScopedVars from
- * `fnclaude@fnrhombus/src/spawn_test.go`. The TS shape uses a record
+ * `fnclaude/src/spawn_test.go`. The TS shape uses a record
  * (object) instead of `KEY=VALUE` slices, but the semantics are
  * identical: drop FNC_SOCKET / FNCLAUDE_HANDOFF / CLAUDE_CODE_SESSION_ID,
  * preserve everything else.

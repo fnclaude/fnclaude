@@ -102,7 +102,7 @@ describe('encodeCWDForProjects', () => {
   });
 
   test('@ becomes dash', () => {
-    expect(encodeCWDForProjects('fnclaude@fnrhombus')).toBe('fnclaude-fnrhombus');
+    expect(encodeCWDForProjects('fnclaude@fnclaude')).toBe('fnclaude-fnclaude');
   });
 
   test('+ becomes dash', () => {

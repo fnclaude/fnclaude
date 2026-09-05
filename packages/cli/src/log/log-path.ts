@@ -7,10 +7,12 @@
  * mcp/socket-path.ts: empty-string env vars are treated as unset (matches the
  * `x !== undefined && x !== ''` house pattern).
  *
- * Directory per platform (the OS-conventional STATE/log location):
- *   - win32:  %LOCALAPPDATA%\fnclaude\logs  (fallback ~\AppData\Local)
- *   - darwin: ~/Library/Logs/fnclaude
- *   - else:   $XDG_STATE_HOME/fnclaude/logs (fallback ~/.local/state)
+ * Directory per platform (the OS-conventional STATE/log location), under the
+ * rhombus.rocks brand directory the rest of the configuration uses
+ * (specs/rhombus-rocks-config.md § Locations):
+ *   - win32:  %LOCALAPPDATA%\rhombus.rocks\fnclaude\logs  (fallback ~\AppData\Local)
+ *   - darwin: ~/Library/Logs/rhombus.rocks/fnclaude
+ *   - else:   $XDG_STATE_HOME/rhombus.rocks/fnclaude (fallback ~/.local/state)
  *
  * Filenames use epoch-ms + pid (`fnclaude-<ms>-<pid>.jsonl`) so concurrent
  * sessions never collide and the name stays Windows-filename-safe (no colons,
@@ -18,6 +20,8 @@
  */
 
 import { join } from 'node:path';
+
+import { BRAND_DIR } from '../config/paths';
 
 export interface ComputeLogDirArgs {
   env: Record<string, string | undefined>;
@@ -38,13 +42,13 @@ export function computeLogDir(args: ComputeLogDirArgs): string {
     const localAppData = isSet(env.LOCALAPPDATA)
       ? env.LOCALAPPDATA
       : `${home}\\AppData\\Local`;
-    return `${localAppData}\\fnclaude\\logs`;
+    return `${localAppData}\\${BRAND_DIR}\\fnclaude\\logs`;
   }
   if (platform === 'darwin') {
-    return `${home}/Library/Logs/fnclaude`;
+    return `${home}/Library/Logs/${BRAND_DIR}/fnclaude`;
   }
   const stateHome = isSet(env.XDG_STATE_HOME) ? env.XDG_STATE_HOME : join(home, '.local', 'state');
-  return join(stateHome, 'fnclaude', 'logs');
+  return join(stateHome, BRAND_DIR, 'fnclaude');
 }
 
 export interface LogFileNameArgs {

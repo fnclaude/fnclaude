@@ -41,19 +41,11 @@ export interface InjectMcpConfigArgs {
   noop: boolean;
   /** False for -p / --print sessions; skips injection per design.md §29 gate. */
   interactive: boolean;
-  /**
-   * Override the interactive gate. Renderer mode runs claude in `--print`
-   * stream-json (so `interactive` is false), yet still needs the self-MCP
-   * config so claude can dial fnc back over $FNC_SOCKET (spawn-args.md §2).
-   * When true, inject regardless of `interactive`.
-   */
-  forceInject?: boolean;
 }
 
 export function injectMcpConfig(args: InjectMcpConfigArgs): string[] {
-  // Gate per design.md §29: only interactive sessions get the config. The
-  // renderer-mode `forceInject` override bypasses the gate (spawn-args.md §2).
-  if (!args.interactive && args.forceInject !== true) return [...args.claudeArgs];
+  // Gate per design.md §29: only interactive sessions get the config.
+  if (!args.interactive) return [...args.claudeArgs];
   // Bail out if the launcher couldn't resolve its own path. Without an
   // absolute fnc bin the spawned subprocess wouldn't be able to find
   // itself; better to skip than to inject a broken config.

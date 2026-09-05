@@ -11,7 +11,7 @@
  *     cost breakdown for this session", driven by `usage.perModel` and
  *     `usage.total*`.
  *
- * The CLI does NOT parse stream-json — that's the renderer's job. Usage
+ * The CLI does NOT parse stream-json. Usage
  * here comes from the session JSONL's assistant-message records, each of
  * which carries `message.model` and a `message.usage` object of the shape
  * Anthropic's API returns:

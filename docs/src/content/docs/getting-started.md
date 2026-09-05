@@ -51,16 +51,18 @@ or `fnc fork`. See [Resuming & continuing](/sessions/resuming/).
 | Form | Example |
 | --- | --- |
 | Bare name, matched against your clones, then your GitHub user and orgs | `fnc arch-setup` |
-| `name@owner` | `fnc arch-setup@fnrhombus` |
-| `owner/name` | `fnc fnrhombus/arch-setup` |
-| `gh:owner/name` | `fnc gh:fnrhombus/arch-setup` |
-| HTTPS or SSH URL | `fnc https://github.com/fnrhombus/arch-setup` |
+| `name@owner` | `fnc arch-setup@fnclaude` |
+| `owner/name` | `fnc fnclaude/arch-setup` |
+| `gh:owner/name` | `fnc gh:fnclaude/arch-setup` |
+| HTTPS or SSH URL | `fnc https://github.com/fnclaude/arch-setup` |
 | A path | `fnc ~/src/dots` |
 | Any of the above plus `+workspace` | `fnc arch-setup+fix-lid-sync` |
 
-Clones land at the `cloneTemplate` path under `repoSettings` in
-`~/.claude/settings.json`, the same setting the claude-code-worktree-paths plugin
-reads. The rules are on [Repo resolution](/reference/repo-resolution/).
+Everything but the paths is resolved by [fngit](https://www.npmjs.com/package/@rhombus.rocks/fngit),
+which fnclaude runs as a command. Clones land at the `repos.cloneTemplate` path in
+the shared `~/.config/rhombus.rocks/config.json`, the same setting the
+worktree-paths plugin reads. Without fngit installed, fnclaude accepts only paths.
+The rules are on [Repo resolution](/reference/repo-resolution/).
 
 The `+workspace` suffix resolves the repository, then adds a worktree beside it on
 its own branch. See [Worktrees](/sessions/worktrees/).

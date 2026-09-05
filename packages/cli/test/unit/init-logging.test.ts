@@ -43,7 +43,7 @@ describe('initLogging level precedence', () => {
       stat: s.stat,
       unlink: s.unlink,
     });
-    expect(logPath).toBe('/state/fnclaude/logs/fnclaude-1780000000000-7.jsonl');
+    expect(logPath).toBe('/state/rhombus.rocks/fnclaude/fnclaude-1780000000000-7.jsonl');
     logger.debug('d');
     expect(s.appended).toHaveLength(1); // debug passes at level debug
   });
@@ -150,7 +150,7 @@ describe('initLogging happy path', () => {
       stat: s.stat,
       unlink: s.unlink,
     });
-    expect(s.mkdirCalls).toEqual(['/state/fnclaude/logs']);
+    expect(s.mkdirCalls).toEqual(['/state/rhombus.rocks/fnclaude']);
     logger.info('boot', { cwd: '/work' });
     expect(s.appended).toHaveLength(1);
     const rec: LogRecord = JSON.parse(s.appended[0]!.line.trimEnd());
@@ -178,6 +178,6 @@ describe('initLogging happy path', () => {
       stat: s.stat,
       unlink: s.unlink,
     });
-    expect(seen).toEqual(['/state/fnclaude/logs']);
+    expect(seen).toEqual(['/state/rhombus.rocks/fnclaude']);
   });
 });

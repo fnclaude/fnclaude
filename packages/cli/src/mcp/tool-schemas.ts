@@ -3,7 +3,7 @@
  * tools exposed by the §7.5 subprocess.
  *
  * Ported verbatim from the Go canonical
- * (`/home/tom/src/fnclaude@fnrhombus/src/mcp.go` — `toolRestart`,
+ * (`/home/tom/src/fnclaude/src/mcp.go` — `toolRestart`,
  * `toolSwitchProject`, `toolSpawnSession`, `toolCopyToClipboard`). Schemas
  * here drive the `tools/list` MCP response that claude reads at session
  * start, so the model knows what each tool does and which arguments it
@@ -86,7 +86,7 @@ const RESTART: McpToolSchema = {
 
 const SWITCH_PROJECT: McpToolSchema = {
   description:
-    'Switch this fnclaude session to a different project, carrying a continuity summary. ONE-SHOT: call once and the session is killed and re-launched at the destination. Because the call ends this session, print a brief cancellation-window line to the user (e.g. "Transferring in 3 seconds. Ctrl-C to cancel.") and run a Bash sleep BEFORE calling this tool; if the sleep completes uninterrupted, call once. fnclaude preserves the user\'s startup flags (minus a denylist of destination-bound ones like --add-dir, --mcp-config, --from-pr, --name, etc.); the optional override args below replace individual flags. Args: destination (verbatim user reference: a short repo name like \'arch-setup\', a name@owner like \'arch-setup@fnrhombus\', an owner/name like \'fnrhombus/arch-setup\', a URL, or an absolute path; a +workspace suffix is supported for worktrees), name (a 3-6 word kebab-case session topic, e.g. \'fix-auth-bug\'), summary (a /compact-style continuity summary that lets the receiving session pick up where this one left off — what the user asked for, decisions made, files touched, work in flight, open questions, user-specific observations), session_id (the current session UUID, read from $CLAUDE_CODE_SESSION_ID; used by fnclaude to auto-capture the live permission-mode from this session\'s JSONL log). Optional overrides: model, effort, permission_mode, allowed_tools, agent, brief, chrome, ide, verbose. Response.action will be done (transfer in flight), paste_flow (auto-handoff disabled — copy/paste the rendered command), or error.',
+    'Switch this fnclaude session to a different project, carrying a continuity summary. ONE-SHOT: call once and the session is killed and re-launched at the destination. Because the call ends this session, print a brief cancellation-window line to the user (e.g. "Transferring in 3 seconds. Ctrl-C to cancel.") and run a Bash sleep BEFORE calling this tool; if the sleep completes uninterrupted, call once. fnclaude preserves the user\'s startup flags (minus a denylist of destination-bound ones like --add-dir, --mcp-config, --from-pr, --name, etc.); the optional override args below replace individual flags. Args: destination (verbatim user reference: a short repo name like \'arch-setup\', a name@owner like \'arch-setup@fnclaude\', an owner/name like \'fnclaude/arch-setup\', a URL, or an absolute path; a +workspace suffix is supported for worktrees), name (a 3-6 word kebab-case session topic, e.g. \'fix-auth-bug\'), summary (a /compact-style continuity summary that lets the receiving session pick up where this one left off — what the user asked for, decisions made, files touched, work in flight, open questions, user-specific observations), session_id (the current session UUID, read from $CLAUDE_CODE_SESSION_ID; used by fnclaude to auto-capture the live permission-mode from this session\'s JSONL log). Optional overrides: model, effort, permission_mode, allowed_tools, agent, brief, chrome, ide, verbose. Response.action will be done (transfer in flight), paste_flow (auto-handoff disabled — copy/paste the rendered command), or error.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -315,6 +315,53 @@ const GET_USAGE: McpToolSchema = {
   },
 };
 
+// ── OOBE (`fnc install`) ─────────────────────────────────────────────────────
+// Registered only in a wizard session. The descriptions are deliberately
+// prescriptive: the whole design is "plan in code, relay in the model", so the
+// tool text has to close off the model's usual instincts to summarise, reorder,
+// or fill in a question it thinks is missing.
+
+const OOBE_NEXT: McpToolSchema = {
+  description:
+    "Get the next batch of first-run setup questions. Call this first, and again after posting every answer in a batch, until it returns done:true. The response carries `preamble` (print it verbatim, as-is, before asking), `progress` (use it as the header for EVERY question in the batch), and `questions` — each with its exact wording, its options in order, and an `other_hint` where free text is expected. Present the whole batch in ONE AskUserQuestion call, copying every string verbatim. Never invent, reword, reorder, merge, split, or skip a question, and never add an option: the wording was reviewed and the option list is complete. The first option is always the recommended one.",
+  inputSchema: { type: 'object', properties: {} },
+};
+
+const OOBE_ANSWER: McpToolSchema = {
+  description:
+    "Record one answer to a first-run setup question. Call it once per question, immediately after the user answers, using the `id` from fnc_oobe_next and the option's `value` (or the user's own text when they chose Other). For a multi-select question pass an array of values. Answers are saved as they arrive, so an interrupted setup resumes where it left off. Answering the `apply` question runs the setup and returns a summary to print.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The question's `id`, exactly as fnc_oobe_next gave it.",
+      },
+      value: {
+        description:
+          "The chosen option's `value`, or the user's typed text for Other. An array for a multi-select question.",
+        anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+      },
+    },
+    required: ['id', 'value'],
+  },
+};
+
+const OOBE_REASK: McpToolSchema = {
+  description:
+    "Re-present one earlier setup question. Use this ONLY when the user, at the Apply screen, says they want to change something — map what they said to that question's `id` and call this. It returns the question to ask again; post the new answer with fnc_oobe_answer, then call fnc_oobe_next to return to Apply.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: 'The id of the question to ask again.',
+      },
+    },
+    required: ['id'],
+  },
+};
+
 export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_restart: RESTART,
   fnc_switch_project: SWITCH_PROJECT,
@@ -325,4 +372,7 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_set_model: SET_MODEL,
   fnc_run_slash_command: RUN_SLASH_COMMAND,
   get_usage: GET_USAGE,
+  fnc_oobe_next: OOBE_NEXT,
+  fnc_oobe_answer: OOBE_ANSWER,
+  fnc_oobe_reask: OOBE_REASK,
 };

@@ -4,6 +4,8 @@ Choices made during the rewrite. Locked-in implementation facts (where there was
 
 Format: each decision is dated, summarized, contextualized, and justified. Future-us reads this later wondering "why did we go this way?" — the entry answers.
 
+Entries whose subject is the **renderer** (`@fnclaude/renderer`) are historical: the package was excised from the monorepo on 2026-09-05 and nothing in the tree implements them any more. They are kept because they record why those choices were made; the renderer's own docs live under [`renderer/`](renderer/).
+
 ---
 
 ## 2026-09-03 — Docs site is Astro Starlight on GitHub Pages; internal docs move to specs/
@@ -24,7 +26,7 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 **Decision:** The transcript stays real selectable Ink `<Text>`; Kitty graphics images are used only for content that text cannot represent (math, mermaid diagrams, actual `<img>` content). Before any inline-image work, the transcript-history rendering should move to Ink's `<Static>` (finalized events) plus a dynamic live tail.
 
-**Context:** A full-canvas approach — rendering the entire transcript as a sequence of Kitty images for pixel-perfect fidelity — was considered. Separately, `packages/renderer/src/App.tsx` currently renders all events in a single dynamic column with no `<Static>`, which re-renders the full history on every keystroke; past viewport height this flickers and corrupts, and it would re-emit every inline image on every keypress. See [`specs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) for the full analysis.
+**Context:** A full-canvas approach — rendering the entire transcript as a sequence of Kitty images for pixel-perfect fidelity — was considered. Separately, `packages/renderer/src/App.tsx` currently renders all events in a single dynamic column with no `<Static>`, which re-renders the full history on every keystroke; past viewport height this flickers and corrupts, and it would re-emit every inline image on every keypress. See [`specs/renderer/research.graphics-interactivity.md`](renderer/research.graphics-interactivity.md) for the full analysis.
 
 **Why this:** rendering the transcript as images breaks native terminal text-selection — selection grabs character cells, and images have no underlying text, so copy yields nothing. Recovering selection requires mouse tracking plus a pixel→text mapping plus an app-owned scroll viewport (since native scroll and mouse tracking are mutually exclusive), all of which is a large, fragile build with worse scroll smoothness than native. The `<Static>`-first approach gives the transcript native scroll, native selection on the real-text parts, and inline images that are emitted once and scrolled by the terminal — the best of both.
 
@@ -36,7 +38,7 @@ Format: each decision is dated, summarized, contextualized, and justified. Futur
 
 **Decision:** http/https/mailto links render blue+underline with no OSC 8 hyperlink escape (Ghostty's own URL matcher handles ctrl+click). Non-clickable hrefs (anchors `#…`, relative paths) render as plain text with no link styling.
 
-**Context:** PR #261 introduced OSC 8 wrapping for all markdown links. It shipped a regression: `string-width` — Ink's internal column measurer — strips CSI escape sequences but not OSC sequences, so OSC 8 bytes inflate the measured column width. Any table cell containing a link misaligned that column. The `TableBlock` added in PR #261 used a `visibleWidth` regex that consumed only the `ESC]` prefix, leaving `8;;<url>\x07` counted as visible characters. PR #263 removed OSC 8 to fix the regression. See [`specs/research/renderer-graphics-interactivity.md`](research/renderer-graphics-interactivity.md) for the `string-width` OSC 8 finding.
+**Context:** PR #261 introduced OSC 8 wrapping for all markdown links. It shipped a regression: `string-width` — Ink's internal column measurer — strips CSI escape sequences but not OSC sequences, so OSC 8 bytes inflate the measured column width. Any table cell containing a link misaligned that column. The `TableBlock` added in PR #261 used a `visibleWidth` regex that consumed only the `ESC]` prefix, leaving `8;;<url>\x07` counted as visible characters. PR #263 removed OSC 8 to fix the regression. See [`specs/renderer/research.graphics-interactivity.md`](renderer/research.graphics-interactivity.md) for the `string-width` OSC 8 finding.
 
 **Why this:** preserves the existing good ctrl+click behavior (Ghostty's `link-url` regex matches raw URLs in the cell grid), avoids the string-width layout bug, and avoids styling as a link what the user cannot click (anchors, relative paths have no target in a terminal).
 
@@ -319,9 +321,9 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 
 **Context:** Go ships a single self-contained binary, so `filepath.EvalSymlinks(os.Executable())` gives one path that's both runtime and program. The TS port's `fnc.js` is a script — running just `fnc.js` would invoke the `#!/usr/bin/env node` shebang and re-preflight into a fresh process tree (correct but wasteful), and using the `node` binary directly would skip the bun-only runtime the MCP server needs.
 
-**Why this (vs. just `fncBin`):** the subprocess `claude` spawns receives this argv literally; whatever `command` resolves to is what runs. Setting `command=process.execPath` (bun) and feeding `fncBin` as the first arg lets bun execute the script via its CLI shape (`bun /abs/fnc.js mcp`). The same shape works under `npm i -g`, `mise exec bun -- fnc`, and the in-repo `bun packages/cli/bin/fnc.js` dev path — all three resolve `process.execPath` to whichever bun is hosting the launcher.
+**Why this (vs. just `fncBin`):** the subprocess `claude` spawns receives this argv literally; whatever `command` resolves to is what runs. Setting `command=process.execPath` (bun) and feeding `fncBin` as the first arg lets bun execute the script via its CLI shape (`bun /abs/fnc.js mcp`). The same shape works under `npm i -g`, under a version manager's shim, and on the in-repo `bun packages/cli/bin/fnc.js` dev path — all of them resolve `process.execPath` to whichever bun is hosting the launcher.
 
-**Why `realpathSync` on `process.argv[1]`:** npm installs link the bin via `.bin/fnc → ../@fnclaude/cli/bin/fnc.js`. `process.argv[1]` is the symlink path; realpath resolves to the actual on-disk script. Same reasoning as the §5.5 prompts dir + §19 noop template seed — both already realpath here.
+**Why `realpathSync` on `process.argv[1]`:** npm installs link the bin via `.bin/fnc → ../@rhombus.rocks/fnclaude/bin/fnc.js`. `process.argv[1]` is the symlink path; realpath resolves to the actual on-disk script. Same reasoning as the §5.5 prompts dir + §19 noop template seed — both already realpath here.
 
 **Why skip when `argv[1] === ''`:** vanishingly rare (would need fnclaude invoked from an embedded runtime that doesn't populate argv[1]) but the alternative — emitting an empty `args[0]` — would silently produce a broken MCP config. Skipping the injection lets claude launch normally without MCP tools, which degrades gracefully.
 

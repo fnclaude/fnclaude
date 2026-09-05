@@ -10,24 +10,24 @@ describe('computeLogDir', () => {
         platform: 'linux',
         home: '/home/u',
       }),
-    ).toBe('/xdg/state/fnclaude/logs');
+    ).toBe('/xdg/state/rhombus.rocks/fnclaude');
   });
 
   test('linux: falls back to ~/.local/state when XDG_STATE_HOME unset', () => {
     expect(computeLogDir({ env: {}, platform: 'linux', home: '/home/u' })).toBe(
-      '/home/u/.local/state/fnclaude/logs',
+      '/home/u/.local/state/rhombus.rocks/fnclaude',
     );
   });
 
   test('linux: treats empty-string XDG_STATE_HOME as unset', () => {
     expect(
       computeLogDir({ env: { XDG_STATE_HOME: '' }, platform: 'linux', home: '/home/u' }),
-    ).toBe('/home/u/.local/state/fnclaude/logs');
+    ).toBe('/home/u/.local/state/rhombus.rocks/fnclaude');
   });
 
-  test('darwin: uses ~/Library/Logs/fnclaude', () => {
+  test('darwin: uses ~/Library/Logs/rhombus.rocks/fnclaude', () => {
     expect(computeLogDir({ env: {}, platform: 'darwin', home: '/Users/u' })).toBe(
-      '/Users/u/Library/Logs/fnclaude',
+      '/Users/u/Library/Logs/rhombus.rocks/fnclaude',
     );
   });
 
@@ -38,19 +38,19 @@ describe('computeLogDir', () => {
         platform: 'win32',
         home: 'C:\\Users\\u',
       }),
-    ).toBe('C:\\Users\\u\\AppData\\Local\\fnclaude\\logs');
+    ).toBe('C:\\Users\\u\\AppData\\Local\\rhombus.rocks\\fnclaude\\logs');
   });
 
   test('win32: falls back to home AppData\\Local when LOCALAPPDATA unset', () => {
     expect(computeLogDir({ env: {}, platform: 'win32', home: 'C:\\Users\\u' })).toBe(
-      'C:\\Users\\u\\AppData\\Local\\fnclaude\\logs',
+      'C:\\Users\\u\\AppData\\Local\\rhombus.rocks\\fnclaude\\logs',
     );
   });
 
   test('win32: treats empty-string LOCALAPPDATA as unset', () => {
     expect(
       computeLogDir({ env: { LOCALAPPDATA: '' }, platform: 'win32', home: 'C:\\Users\\u' }),
-    ).toBe('C:\\Users\\u\\AppData\\Local\\fnclaude\\logs');
+    ).toBe('C:\\Users\\u\\AppData\\Local\\rhombus.rocks\\fnclaude\\logs');
   });
 });
 
