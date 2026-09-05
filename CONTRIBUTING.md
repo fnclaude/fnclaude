@@ -2,9 +2,9 @@
 
 ## Setup
 
+Bun is the only prerequisite — it is the runtime, package manager, and test runner.
+
 ```sh
-# requires Bun and mise
-mise install          # installs Bun + any other pinned tools
 bun install           # install workspace dependencies
 ```
 
@@ -20,6 +20,23 @@ Or from the repo root (runs all packages):
 ```sh
 bun test
 ```
+
+### First build
+
+`packages/cli` lowers its dependency-injection sugar to plain TypeScript through a
+Go-based transform before it bundles. That transform host is compiled once, on the
+first build, into a shared cache (roughly a minute on a cold machine); every build
+after that reuses the cached host and finishes in a couple of seconds. No system Go
+install is needed — the toolchain ships with the transform's dev dependency.
+
+```sh
+cd packages/cli
+bun run build              # stage + bundle into dist/, writes the dist/.lowered sentinel
+bun run test:composition  # the composition-tier tests, which exercise the lowering lane
+```
+
+The plain `bun test` unit tier pays none of this — it runs the source directly with no
+transform.
 
 ## Conventional commits
 

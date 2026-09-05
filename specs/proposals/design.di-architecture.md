@@ -470,20 +470,22 @@ Not a `bun test` preload (std's own preload is broken end-to-end with an unpinne
 **The poisoned-dist trap is closed at both ends** [V — `packages/cli/tsconfig.json` currently declares `outDir: ./dist` with no `noEmit`, so a stray `tsc -p` would emit *un-lowered* JS a naive shim would prefer]: the dev tsconfig gains `"noEmit": true` (emit confined to `tsconfig.build.json`), and `bin/fnc.js` forks on the **sentinel**, which only the build tool can write:
 
 ```js
-// bin/fnc.js under Bun (the Node→Bun argv preflight is unchanged)
-const installed = existsSync(distLowered) && existsSync(distMain);
-if (installed) {
-  await import(distMain);                    // installed: pre-lowered bundle, no host, no transform
-} else if (existsSync(srcMain)) {
-  await ensureFreshDist();                   // dev: rebuild iff newest src/** mtime > dist/.lowered mtime
+// bin/fnc.js under Bun (the Node→Bun argv preflight is unchanged).
+// src/ presence is the discriminator, checked FIRST: a dev checkout has src/
+// (and a built dist/ alongside it), so an `installed = dist exists` check first
+// would skip dev rebuilds — a published install ships only dist/, no src/.
+if (existsSync(srcMain)) {
+  ensureFreshDist();                         // dev: rebuild iff newest src/** mtime > dist/.lowered mtime
   await import(distMain);
+} else if (existsSync(distLowered) && existsSync(distMain)) {
+  await import(distMain);                    // installed: pre-lowered bundle, no host, no transform
 } else {
   process.stderr.write('fnc: dist/.lowered missing and no src/ present — reinstall @rhombus.rocks/fnclaude\n');
   process.exit(1);                           // stripped install fails loud, never weird
 }
 ```
 
-A dist emitted by bare `tsc` carries no sentinel → treated as stale → rebuilt. The packed tarball verifiably ships the sentinel (`bun pm pack` with `files: ["dist","bin"]` lists `package/dist/.lowered` [V — scratch pack test]).
+A dist emitted by bare `tsc` carries no sentinel → treated as stale → rebuilt. The published package's `files` (`dist` + `bin`, dropping `src`) ships the sentinel and, by omitting `src/`, selects the installed path.
 
 ### What each loop costs
 
@@ -497,8 +499,8 @@ A dist emitted by bare `tsc` carries no sentinel → treated as stale → rebuil
 
 ### Dependencies (exact)
 
-- **Runtime `dependencies`** (exact-pinned, no caret): `@rhombus-std/di`, `@rhombus-std/di.core`, `@rhombus-std/primitives` — interim as `file:./vendor/*.tgz`, post-flip as exact `@next` versions.
-- **`devDependencies`**: `@rhombus-std/di.extras`, `@rhombus-std/primitives.extras`, `@rhombus-std/transforms` (vendored likewise), plus `ttsc` (pin the example app's known-good version, 0.18.1 at spec time) and `@ttsc/unplugin`.
+- **Runtime `dependencies`** (exact-pinned, no caret): `@rhombus-std/di`, `@rhombus-std/di.core`, `@rhombus-std/primitives` — interim as `workspace:*` vendored dirs (§8; `file:` tarball + override was falsified in PR-0), post-flip as exact `@next` versions.
+- **`devDependencies`**: `@rhombus-std/di.extras`, `@rhombus-std/primitives.extras`, `@rhombus-std/transforms` (vendored likewise), plus `ttsc` and `@ttsc/unplugin` (pinned to `0.18.4`, the version that resolved and built in PR-0 under `^0.18.1`), and **`typescript` `7.0.2`** — the tsgo-flavoured TypeScript whose platform-native optional dependency (`@typescript/typescript-<platform>`) is the transform host's compiler; the ttsc engine resolves it from the CLI's own `typescript`, so the pin is load-bearing, not incidental [V PR-0].
 - `@rhombus-std/di.extras.options` is **not** a dependency (no `addOptions` lane).
 
 ### Publish packaging: external, exact-pinned (target)
@@ -517,15 +519,16 @@ As of 2026-09-05 [V]: only `@rhombus-std/primitives` has `@next` (0.1.0-next.0, 
 
 ### Interim: packed tarballs from the pinned checkout, via a pack-to-staging pipeline
 
-`file:`-links + overrides onto the checkout **fork packages** under bun's isolated linker [V — two physical `di.core` copies observed] — dead path. The working path [V]: packed tarballs + bun's **default hoisted linker** (one copy each, structurally). `tools/vendor-std.ts`, run against the read-only std checkout at `bd2074fa`:
+`file:`-links + overrides onto the checkout **fork packages** under bun's isolated linker [V — two physical `di.core` copies observed] — dead path. Two more paths were falsified in PR-0 and one verified: `file:./vendor/*.tgz` deps + a `file:` **override** for each transitive `@rhombus-std` sibling is the only override form bun resolves, but only as an **absolute** path, which writes a machine-specific, non-portable lockfile [V]; concrete-version and `*` overrides both fall through to npm, where the packages do not exist [V]. The **working path [V]**: vendor each package as an **unpacked directory** committed under `vendor/<name>/` and listed in the workspace (`packages/cli/vendor/*` in the root `workspaces`, kept out of the moon `projects` glob), consumed by the CLI as `workspace:*`. A workspace member resolves its transitive `@rhombus-std` siblings by version, deduping to one physical copy, and the lockfile stays path-free and portable. `tools/vendor-std.ts`, run against the read-only std checkout at `bd2074fa`:
 
 1. `bun pm pack --destination "$STAGING"` **in each of the six library dirs** (`di`, `di.core`, `di.extras`, `primitives`, `primitives.extras`, `transforms`) — in place, because the `workspace:^` → concrete-semver rewrite happens only when pack runs inside the monorepo with its lockfile [V]; `--destination` keeps the checkout clean. Assert `git -C <std> status --porcelain` is empty afterward.
 2. Extract each tarball in staging.
 3. Patch the **extracted** trees:
-   - `publishConfig` → top-level merge for `di`, `di.core`, `primitives` (their unswapped `main`/`exports` point at `src/`, which `files` doesn't ship [V]; `*.extras` ship `src` and skip this). Vanishes on real publish.
-   - **`.d.ts` repair — load-bearing, upstream blocker**: `di`'s shipped `dist/bundle/index.d.ts` is syntactically broken — `dts-minify` emitted `0extends1&Candidate` in the `Builder.useAddon`/`withServices` conditional-type guards (4 sites: lines 117, 121, 122×2 [V]) — so `tsc --noEmit` against packed di fails on exactly the chain every root uses. Interim: `sed -i 's/0extends1/0 extends 1/g'` (the `/g` matters — line 122 carries two sites) on the extracted tree. **The durable fix is std-side and is a required upstream task**; a correlated `di.extras` "cannot bind the sugar's type argument" diagnostic seen against packed tarballs must be disambiguated from this corruption in PR-0.
-4. Re-tar each patched tree in npm layout (`package/` prefix) into `vendor/`.
-5. Install via `file:./vendor/*.tgz` specifiers + mirrored `overrides` (concrete ranges) + the `"@rhombus-toolkit/types": "2.0.0"` pin mirroring std's root [V]. Default hoisted linker. Assert exactly one `node_modules/@rhombus-std/<name>` per package.
+   - `publishConfig` → top-level merge for `di`, `di.core`, `primitives` **and** `di.extras`, `primitives.extras` (their unswapped `main`/`exports` point at `src/`, which the consumer would then typecheck — dragging the extras' unlowered augmentation source into the program and failing on its own `typefor<T>()` calls; merging the publish redirect makes the consumer read the rolled declarations instead) [V PR-0]. Vanishes on real publish.
+   - **`.d.ts` repair — load-bearing, upstream blocker**: `di`'s shipped `dist/bundle/index.d.ts` is syntactically broken — `dts-minify` emitted `0extends1&Candidate` in the `Builder.useAddon`/`withServices` conditional-type guards (4 sites: lines 117, 121, 122×2 [V]) — so `tsc --noEmit` against packed di fails on exactly the chain every root uses. Interim: `sed -i 's/0extends1/0 extends 1/g'` (the `/g` matters — line 122 carries two sites) on the extracted tree. **The durable fix is std-side and is a required upstream task.** The `di.extras` "cannot bind the sugar's type argument" diagnostic is disambiguated [V PR-0]: it is a *semantic* error (`TS2554 Expected N arguments`) from typechecking the extras' unlowered augmentation source, distinct from di's `.d.ts` *syntax* corruption (`TS1124/TS1005`), and is closed by consuming the extras' declarations rather than their source.
+   - **stale-dist repair — a second upstream blocker [V PR-0]**: the checkout's committed `dist/bundle/*.d.ts` for `di.extras`/`primitives.extras` predates the current sugar surface (the rolled declaration lacks members the transform host now emits, e.g. `tryResolve`/`resolveArray`), so the lowering engine rejects it with `INLINE_UNRESOLVED_MEMBER`. Interim: re-emit declarations from the shipped `src/` via `tsc --emitDeclarationOnly` (`noEmitOnError: false` — the unlowered bodies error but the signatures emit) into `dtsgen/`, and point the extras' `types`/`exports.types` there. **The durable fix is std rebuilding its dist at the pinned SHA.**
+4. Write each patched tree to `vendor/<name>/` (unpacked, committed).
+5. Add `packages/cli/vendor/*` to the root `workspaces`; the CLI depends on the six as `workspace:*`; keep the `"@rhombus-toolkit/types": "2.0.0"` override mirroring std's root [V]. Default hoisted linker. Assert exactly one physical copy of each `@rhombus-std/<name>` under `vendor/` (the workspace symlinks resolve to it), and that the lockfile carries no absolute paths.
 
 ### The flip — mechanical, gated on THREE conditions
 
@@ -534,20 +537,21 @@ Proceed only when **all** hold:
 - **(a)** `npm view` shows `@next` for **all of**: `di`, `di.core`, `di.extras`, `primitives`, `primitives.extras`, `transforms`;
 - **(b)** the published surface covers what `entry/` + the register files call — verified by typechecking fnclaude against the `@next` types (guards the known lag: `primitives@next` currently predates the whole-ask-surface sugar);
 - **(c)** `di`'s published `dist/bundle/index.d.ts` **parses** — the upstream `0extends1` fix has shipped. Non-negotiable: a `node_modules` `@next` package cannot be cleanly patched, so dropping the interim sed before (c) holds would break `tsc`.
+- **(c′)** the published `di.extras`/`primitives.extras` declarations carry the **current** sugar surface — the upstream stale-dist rebuild (§8 step 3) has shipped, so the `dtsgen` re-emit can be dropped without the lowering engine hitting `INLINE_UNRESOLVED_MEMBER`.
 
 Then, the exact diff:
 
 ```diff
-- "@rhombus-std/di":               "file:./vendor/rhombus-std-di-0.0.0.tgz",
-- "@rhombus-std/di.core":          "file:./vendor/rhombus-std-di.core-0.0.0.tgz",
-- "@rhombus-std/primitives":       "file:./vendor/rhombus-std-primitives-0.0.0.tgz",
+- "@rhombus-std/di":               "workspace:*",   // vendored dir under vendor/di
+- "@rhombus-std/di.core":          "workspace:*",
+- "@rhombus-std/primitives":       "workspace:*",
 + "@rhombus-std/di":               "0.1.0-next.N",   // the exact resolved @next version — pin it
 + "@rhombus-std/di.core":          "0.1.0-next.N",
 + "@rhombus-std/primitives":       "0.1.0-next.N",
   (devDependencies: di.extras / primitives.extras / transforms — same swap)
 ```
 
-plus: mirror the `overrides` entries, delete `vendor/`, delete `tools/vendor-std.ts` and the `.d.ts` patch step, `bun install`, re-run the composition matrix, re-assert one copy per package. If `@next` lands but lags `bd2074fa`'s surface, **stay on tarballs** — never flip package-by-package.
+plus: drop `packages/cli/vendor/*` from the root `workspaces`, delete `vendor/`, delete `tools/vendor-std.ts` and the patch/re-emit steps, keep the `@rhombus-toolkit/types` override, `bun install`, re-run the composition matrix, re-assert one copy per package. If `@next` lands but lags `bd2074fa`'s surface, **stay on the vendored dirs** — never flip package-by-package.
 
 ---
 
@@ -665,9 +669,9 @@ To be appended to `specs/decisions.md` by the orchestrator (not written there by
 
 ---
 
-**2026-09-05 — Interim `@rhombus-std` consumption: packed tarballs from std `bd2074fa`; three-gate `@next` flip**
+**2026-09-05 — Interim `@rhombus-std` consumption: vendored workspace dirs from std `bd2074fa`; three-gate `@next` flip**
 
-**Decision:** `bun pm pack --destination` per library (checkout untouched) → extract → patch (`publishConfig` merge for di/di.core/primitives; `sed 's/0extends1/0 extends 1/g'` on di's broken `.d.ts` — a flagged upstream std bug) → re-tar into `vendor/` → `file:` + mirrored overrides + the `@rhombus-toolkit/types@2.0.0` pin, default hoisted linker. `file:`-directory links are forbidden (verified to fork package copies). Flip to `@next` only when (a) all six packages carry the tag, (b) the published surface typechecks against our usage, and (c) di's published `.d.ts` parses; then swap specifiers to the exact resolved versions, delete `vendor/` + the patch steps. Never a partial flip.
+**Decision:** `bun pm pack --destination` per library (checkout untouched) → extract → patch (`publishConfig` merge for di/di.core/primitives **and** di.extras/primitives.extras; `sed 's/0extends1/0 extends 1/g'` on di's broken `.d.ts`; re-emit the extras' declarations from shipped src into `dtsgen/` — the committed dist declaration is stale — both flagged upstream std bugs) → write each tree to `vendor/<name>/` (unpacked) → list `packages/cli/vendor/*` in the root `workspaces`, consume as `workspace:*`, keep the `@rhombus-toolkit/types@2.0.0` override, default hoisted linker. Verified in PR-0: `file:` tarball + override resolves only as an absolute path (non-portable lockfile), and `file:`-directory links fork copies — workspace members are the one portable, one-copy form. Flip to `@next` only when (a) all six packages carry the tag, (b) the published surface typechecks against our usage, (c) di's published `.d.ts` parses, and (c′) the extras' published declarations carry the current sugar surface; then swap specifiers to the exact resolved versions, delete `vendor/` + the patch/re-emit steps. Never a partial flip.
 
 ---
 

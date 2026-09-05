@@ -521,13 +521,17 @@ When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), th
 
 **Decision:** The ttsc lowering runs as a stage (per-file, `@ttsc/unplugin/bun`, `.ttsc-out`) + plugin-free `Bun.build` bundle, `@rhombus-std/*` external. Dev = `ensureFreshDist()`; installed = pre-built `dist/`. The fork keys on `dist/.lowered`, written by the build tool only after a zero-`typefor(` assertion; the dev tsconfig is `noEmit` (emit lives in `tsconfig.build.json`), closing the un-lowered-dist trap. Plain `bun test` stays transform-free (sugar-free unit tier); composition tests ride their own stage+bundle lane (`bun run test:composition`). A runtime preload was rejected: broken in std with an unpinned root cause, never demonstrated out-of-monorepo.
 
+**PR-1 note:** the `bin/fnc.js` fork checks **src presence first** (dev rebuilds), then the sentinel (installed) — an `installed = dist exists` check first would skip dev rebuilds, since a dev checkout has both `src/` and a built `dist/`. The lowering runs a full tsgo typecheck, so it required the pre-existing cli tree to be type-clean; four latent type errors (a dead second arg to `promptBody`/`hasPromptBody`, and `BootFields` lacking an index signature — the cli lint was a stub) were corrected type-only. Warm rebuild at the 87-file cli scale measured ~1.2–2.3 s; the cold transform-host compile is a one-time ~30–70 s.
+
 **Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
 
 ---
 
-## 2026-09-05 — Interim `@rhombus-std` consumption: packed tarballs from std `bd2074fa`; three-gate `@next` flip
+## 2026-09-05 — Interim `@rhombus-std` consumption: vendored workspace dirs from std `bd2074fa`; three-gate `@next` flip
 
 **Decision:** `bun pm pack --destination` per library (checkout untouched) → extract → patch (`publishConfig` merge for di/di.core/primitives; `sed 's/0extends1/0 extends 1/g'` on di's broken `.d.ts` — a flagged upstream std bug) → re-tar into `vendor/` → `file:` + mirrored overrides + the `@rhombus-toolkit/types@2.0.0` pin, default hoisted linker. `file:`-directory links are forbidden (verified to fork package copies). Flip to `@next` only when (a) all six packages carry the tag, (b) the published surface typechecks against our usage, and (c) di's published `.d.ts` parses; then swap specifiers to the exact resolved versions, delete `vendor/` + the patch steps. Never a partial flip.
+
+**PR-0/PR-1 note:** implemented as unpacked **workspace dirs** under `vendor/<name>/` consumed `workspace:*`, not `file:` tarballs — bun resolves a `file:` override only as an absolute path (non-portable lockfile), while a workspace member dedupes to one copy and keeps the lockfile path-free. Two extra patches were forced by stale std artifacts at `bd2074fa`: `publishConfig` is merged for the extras too (else the consumer typechecks their unlowered source), and the extras' declarations are re-emitted from shipped src into `dtsgen/` (the committed dist declaration predates the current sugar surface, tripping `INLINE_UNRESOLVED_MEMBER`). Both are flagged upstream tasks; the flip drops them at gate (c′). `typescript 7.0.2` is a load-bearing devDependency (its platform-native optional dep is the transform host's compiler).
 
 **Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
 
