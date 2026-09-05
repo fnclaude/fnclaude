@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.0](https://github.com/fnclaude/fnclaude/compare/cli-v2.15.1...cli-v2.16.0) (2026-09-05)
+
+
+### Features
+
+* **cli:** versioned model aliases ([#361](https://github.com/fnclaude/fnclaude/issues/361)) ([25a6805](https://github.com/fnclaude/fnclaude/commit/25a68051fe9120673b443fd4fe45112b48c9456a))
+* **docs:** documentation site (Astro Starlight) + rename docs/ to specs/ ([#356](https://github.com/fnclaude/fnclaude/issues/356)) ([cc0f50d](https://github.com/fnclaude/fnclaude/commit/cc0f50d464418eba6e4f670bbd8c67007f7c0ef5))
+
 ## [2.15.1](https://github.com/fnclaude/fnclaude/compare/cli-v2.15.0...cli-v2.15.1) (2026-07-13)
 
 
