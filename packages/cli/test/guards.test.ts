@@ -1,0 +1,83 @@
+// Architecture guards (design.di-architecture §7): grep-level invariants the DI
+// adoption depends on, enforced in the unit tier so they cost no transform.
+//
+// These read source as text — they import nothing from `@rhombus-std`, so plain
+// `bun test` stays sugar-free and transform-free (doctrine 4). Each guard is one
+// confinement rule; the placeholders hold the shape for the roots the later PRs add.
+
+import { describe, expect, test } from 'bun:test';
+import { Glob } from 'bun';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const cliRoot = join(import.meta.dir, '..');
+
+/** Every `.ts` under `src/` paired with its `src/`-relative path. */
+function sourceFiles(): { rel: string; text: string }[] {
+  const srcDir = join(cliRoot, 'src');
+  const files: { rel: string; text: string }[] = [];
+  for (const rel of new Glob('**/*.ts').scanSync({ cwd: srcDir })) {
+    files.push({ rel, text: readFileSync(join(srcDir, rel), 'utf8') });
+  }
+  return files;
+}
+
+/** Whether a `src/`-relative path is a composition root (may name the engine). */
+function isEntryRoot(rel: string): boolean {
+  return rel.startsWith('entry/');
+}
+
+/** Whether a `src/`-relative path is a registration file (may hold sugar). */
+function isRegisterFile(rel: string): boolean {
+  return rel === 'register.ts' || rel.endsWith('/register.ts');
+}
+
+describe('sugar confinement (doctrine 4 + 11)', () => {
+  test('the di engine (Builder) is imported only in src/entry/*', () => {
+    const offenders = sourceFiles()
+      .filter((file) => /from ['"]@rhombus-std\/di['"]/.test(file.text))
+      .map((file) => file.rel)
+      .filter((rel) => !isEntryRoot(rel));
+    expect(offenders).toEqual([]);
+  });
+
+  test('the di.extras sugar faces are imported only in entry roots and register files', () => {
+    const offenders = sourceFiles()
+      .filter((file) => /from ['"]@rhombus-std\/di\.extras['"]/.test(file.text))
+      .map((file) => file.rel)
+      .filter((rel) => !isEntryRoot(rel) && !isRegisterFile(rel));
+    expect(offenders).toEqual([]);
+  });
+
+  test('typefor<> is never written in fnclaude source (the sugar lowers it)', () => {
+    const offenders = sourceFiles()
+      .filter((file) => /\btypefor\s*[<(]/.test(file.text))
+      .map((file) => file.rel);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('config confinement (placeholder — tightens to the plan root when it lands)', () => {
+  test('loadConfig is called only from known sites', () => {
+    // Target end state: the sole caller is entry/plan.ts (loaded before the plan
+    // chain, doctrine 7). During migration the pre-DI main.ts still calls it, so the
+    // allow-set carries that site too; drop `main.ts` here once entry/plan.ts owns it.
+    const allowed = new Set(['config/load.ts', 'entry/plan.ts', 'main.ts']);
+    const callers = sourceFiles()
+      .filter((file) => /\bloadConfig\s*\(/.test(file.text))
+      .map((file) => file.rel)
+      .filter((rel) => !allowed.has(rel));
+    expect(callers).toEqual([]);
+  });
+});
+
+describe('overlay/matrix parity (placeholder — armed when the run root lands)', () => {
+  test('every conditional run-root overlay has a matrix variant', () => {
+    // The run root's overlays (OOBE, MCP listener, PTY tier) and the CI variant
+    // matrix that builds them do not exist yet; this holds the assertion shape so
+    // the count check is wired the moment registerRunServices arrives.
+    const overlayCount = 0;
+    const matrixVariantCount = 0;
+    expect(matrixVariantCount).toBe(overlayCount === 0 ? 0 : 2 ** overlayCount);
+  });
+});
