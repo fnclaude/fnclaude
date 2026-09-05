@@ -10,6 +10,15 @@
 import type { FnConfig } from '../config/load';
 import type { XdgEnv } from '../config/paths';
 import type { FindClaudeResult } from '../launch/find-claude';
+import type { RingBuffer } from '../launch/ring-buffer';
+import type { Logger } from '../log/logger';
+import type { HandoffTrigger } from '../handoff/trigger';
+import type { AcceptedSocket } from '../mcp/listener';
+import type { PtyWriterHolder } from '../mcp/handlers/inject-slash';
+import type { ControlSeamHolder } from '../mcp/handlers/send-control';
+import type { ParentDispatchHandler } from '../mcp/parent-dispatch';
+import type { WireOp } from '../mcp/wire';
+import type { SpawnCandidate, ToolPresence } from '../oobe/detect';
 import type { FngitResult } from '../repo/fngit';
 import type { OwnSessionPlan } from '../usage/own-session';
 import type { ResolveResult } from '../repo/resolve-input';
@@ -80,11 +89,14 @@ export interface LaunchPlan {
   readonly origArgs: readonly string[];
 }
 
-/** What the run container carries out before disposal (doctrine 2); the run root fills it in PR-4. */
+/** What the run container carries out before disposal (doctrine 2), so it outlives teardown. */
 export interface SessionOutcome {
   readonly exitCode: number;
+  /** MCP-triggered relaunch argv when a handoff fired, else undefined. */
   readonly handoff?: readonly string[];
-  readonly ringSnapshot: string;
+  /** PTY ring-buffer bytes captured before disposal; empty on the stdio-inherit branch. */
+  readonly ringSnapshot: Uint8Array;
+  /** Run buffer drained before disposal; flushed on the plain-exit path only. */
   readonly warnings: readonly string[];
 }
 
@@ -238,6 +250,111 @@ export interface IPlanner {
 export interface IInstallRunner {
   /** Apply the non-interactive install and resolve its exit code. */
   run(): Promise<number>;
+}
+
+// ── Run root (design.di-architecture §4) ──────────────────────────────────────
+
+/** The per-launch file logger, projected from `initLogging` (fail-open, file-only). */
+export type ILogger = Logger;
+
+/** The one-shot handoff signal an MCP restart/switch fires and the detector awaits. */
+export type IHandoffTrigger = HandoffTrigger;
+
+/** The PTY tail ring buffer; snapshotted into the outcome before disposal. */
+export type IRingBuffer = RingBuffer;
+
+/** Deferred PTY-writer holder for the slash-injection tools, bound after spawn. */
+export type IPtyWriterHolder = PtyWriterHolder;
+
+/** Deferred tagged-control-seam holder for `/compact`, bound after spawn. */
+export type IControlSeamHolder = ControlSeamHolder;
+
+/** The subprocess claude spawn, of which only exit and kill are needed here. */
+export type ClaudeProcess = Pick<Bun.Subprocess, 'exited' | 'kill'>;
+
+/** Reads the live permission mode from claude's session JSONL, or null when unavailable. */
+export interface ILivePermissionReader {
+  /** The most recent permission mode recorded for `sessionId`, or null. */
+  read(sessionId: string): string | null;
+}
+
+/**
+ * Detects an MCP handoff during the session: races the trigger against claude's exit,
+ * and on a fired handoff kills claude and returns the stashed argv — never re-execs.
+ */
+export interface IHandoffDetector {
+  /** The stashed relaunch argv once claude is reaped, or undefined on a plain exit. */
+  race(proc: ClaudeProcess): Promise<readonly string[] | undefined>;
+}
+
+/** One MCP tool wired to its wire op, accumulated into the dispatcher's handler map. */
+export interface IToolHandler {
+  /** The wire op this handler answers. */
+  readonly op: WireOp;
+  /** The per-request handler. */
+  readonly handle: ParentDispatchHandler;
+}
+
+/** The parent-side connection router the MCP listener drives per accepted dial. */
+export interface IDispatcher {
+  /** Wire one accepted socket to the per-op handlers. */
+  onConnection(accepted: AcceptedSocket): void;
+}
+
+/**
+ * The AF_UNIX MCP listener with an explicit pre-spawn `start()` bind; disposal stops
+ * it and unlinks the socket.
+ */
+export interface IMcpListener extends AsyncDisposable {
+  /** Bind and listen; throws {@link import('../mcp/listener-service').McpBindError} on bind failure. */
+  start(): Promise<void>;
+}
+
+/**
+ * The context-size monitor, started post-spawn (it needs claude's pid to pin the
+ * session JSONL); disposal stops its poll timer.
+ */
+export interface IContextMonitor extends Disposable {
+  /** Begin polling against the live session, pinned to `proc`'s session. */
+  start(proc: Pick<Bun.Subprocess, 'pid'>): void;
+}
+
+/** The process/terminal surface the session drives, seamed so tests need no real TTY. */
+export interface ITerminalHost {
+  /** A pseudo-terminal that tees claude's output to stdout and hands each chunk to `onData`. */
+  createTerminal(cols: number, rows: number, onData: (chunk: Uint8Array) => void): Bun.Terminal;
+  /** The current terminal column count. */
+  columns(): number;
+  /** The current terminal row count. */
+  rows(): number;
+  /** Put stdin into (or out of) raw mode. */
+  setRawMode(on: boolean): void;
+  /** Forward every raw stdin chunk to `listener`. */
+  onStdinData(listener: (chunk: Buffer) => void): void;
+  /** Invoke `listener` whenever the terminal is resized. */
+  onStdoutResize(listener: () => void): void;
+  /** Stop the parent reading stdin, so a re-exec'd child owns the tty alone. */
+  pauseStdin(): void;
+}
+
+/** The session root's one behavior: run claude to exit or handoff and report the outcome. */
+export interface ISession {
+  /** Start collaborators, spawn claude, and return the outcome captured before disposal. */
+  run(): Promise<SessionOutcome>;
+}
+
+/** Frozen inputs the OOBE overlay builds its interview state and Apply step from. */
+export interface OobeContext {
+  /** Detected tool presence (fngit, plugin, git shim). */
+  readonly tools: ToolPresence;
+  /** Terminal launchers the spawn question offers. */
+  readonly spawnCandidates: readonly SpawnCandidate[];
+  /** Config keys already set on disk, as dotted paths. */
+  readonly configured: ReadonlySet<string>;
+  /** The packaged prompts directory the Apply step seeds from, or null when none resolved. */
+  readonly packagedPromptsDir: string | null;
+  /** The argv to relaunch with once setup is applied (the original, minus `install`). */
+  readonly applyArgv: readonly string[];
 }
 
 /** Deep-freeze `value` and every plain object/array it transitively owns, then return it. */

@@ -85,13 +85,22 @@ describe('vendored @rhombus-std install invariants (§8 step 5)', () => {
   });
 });
 
-describe('overlay/matrix parity (placeholder — armed when the run root lands)', () => {
-  test('every conditional run-root overlay has a matrix variant', () => {
-    // The run root's overlays (OOBE, MCP listener, PTY tier) and the CI variant
-    // matrix that builds them do not exist yet; this holds the assertion shape so
-    // the count check is wired the moment registerRunServices arrives.
-    const overlayCount = 0;
-    const matrixVariantCount = 0;
-    expect(matrixVariantCount).toBe(overlayCount === 0 ? 0 : 2 ** overlayCount);
+describe('overlay/matrix parity (design.di-architecture §5)', () => {
+  test('the run root has three overlays, each exercised by the composition matrix', () => {
+    // The run root's conditional overlays: the MCP tool cluster + listener
+    // (plan.mcpEnabled), the PTY ring + context monitor (plan.useTerminal), and the
+    // OOBE handlers (oobe present). Their conditions are correlated — useTerminal ⊆
+    // mcpEnabled, oobe needs mcpEnabled, win32 ⇒ !mcpEnabled — so the reachable set is
+    // the four enumerated variants (§5), not the 2**3 power set.
+    const register = readFileSync(join(cliRoot, 'src', 'launch', 'register.ts'), 'utf8');
+    const overlayCount = (
+      register.match(/if \((?:plan\.mcpEnabled|plan\.useTerminal|oobe !== undefined)\)/g) ?? []
+    ).length;
+    expect(overlayCount).toBe(3);
+
+    // The matrix builds one real run container per variant via registerRunServices.
+    const matrix = readFileSync(join(cliRoot, 'test', 'composition', 'run.ctest.ts'), 'utf8');
+    const variantCount = (matrix.match(/registerRunServices\(\s*m,/g) ?? []).length;
+    expect(variantCount).toBe(4);
   });
 });

@@ -354,15 +354,16 @@ export function registerRunServices(m: Manifest<StandardLifetime>, plan: LaunchP
     s = s.add<IMcpListener>((d: IDispatcher, log: ILogger) =>
       new McpListener(plan.socketPath!, d, log), 'singleton');   // sync ctor; async start() binds
   }
+  // The PTY-writer/control-seam holders ride the plan.mcpEnabled overlay (the slash
+  // tools need them, and useTerminal ⊆ mcpEnabled), not this one [V main.ts:254/258 —
+  // created unconditionally, bound only under useTerminal].
   if (plan.useTerminal) {                                 // PTY-branch overlay [V main.ts:679-822]
     s = s.add<IRingBuffer>(() => new RingBuffer(), 'singleton');
-    s = s.add<IPtyWriterHolder>(createPtyWriterHolder, 'singleton');
-    s = s.add<IControlSeamHolder>(createControlSeamHolder, 'singleton');
-    s = s.add<IContextMonitor>((c: IControlSeamHolder, cfg: IConfig, p: LaunchPlan, log: ILogger) =>
-      asDisposable(startContextMonitor({
-        ladder: cfg.contextNoticeLadder, ownSessionFile: p.sessionJSONLPath,
-        sendControl: c.send, log,
-      })), 'singleton');
+    // ContextMonitorService is a wrapper started POST-spawn — startContextMonitor's own-
+    // session resolver needs claude's pid (makeOwnSessionFileResolver), unavailable at
+    // resolve time; it cannot be eagerly `asDisposable(startContextMonitor(...))` (PR-4).
+    // Its start(proc) runs from ISession.run() after the spawn; Symbol.dispose stops it.
+    s = s.add<IContextMonitor>(ContextMonitorService, 'singleton');
   }
   if (plan.oobe) {                                        // OOBE overlay from FROZEN plan data
     s = s.add<OobeState>(() => OobeState.fromPlan(plan.oobe!), 'singleton');
@@ -405,7 +406,7 @@ export class Session implements ISession {
     const handoff = await this.detector.race(proc);        // argv on handoff, or undefined
     const exitCode = await proc.exited;
     // Ring snapshot AND warnings captured HERE, before disposal (doctrine 2).
-    return { exitCode, handoff, ringSnapshot: this.ring?.snapshot() ?? '', warnings: this.warnings.drain() };
+    return { exitCode, handoff, ringSnapshot: this.ring?.snapshot() ?? new Uint8Array(0), warnings: this.warnings.drain() };
   }
 }
 ```
@@ -414,7 +415,8 @@ export class Session implements ISession {
 export interface SessionOutcome {
   readonly exitCode: number;
   readonly handoff?: string[];          // MCP-triggered relaunch argv, or undefined
-  readonly ringSnapshot: string;        // PTY ring-buffer text, captured BEFORE disposal; '' on inherit
+  readonly ringSnapshot: Uint8Array;    // PTY ring-buffer bytes, captured BEFORE disposal; empty on inherit
+                                        // (RingBuffer.snapshot() is Uint8Array and decideCrossCwdRelaunch reads bytes; PR-4)
   readonly warnings: readonly string[]; // run buffer drained BEFORE disposal; flushed on plain exit only
 }
 ```
