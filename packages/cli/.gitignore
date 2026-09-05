@@ -3,6 +3,12 @@
 .ttsc-out-tests/
 .composition-out/
 dist/
+# The vendored packages ship their built bundle as the committed artifact (their exports map
+# points at dist/, types resolved via the sibling .d.ts) — the same reason their sources are
+# committed. Re-include it: the plain `dist/` above (and the root .gitignore's) would otherwise
+# swallow it, and a fresh checkout would lack the types the ttsc checker resolves against.
+!vendor/*/dist/
+!vendor/*/dist/**
 
 # Per-member node_modules the workspace install creates inside the vendored trees;
 # the vendored package sources themselves are committed.
