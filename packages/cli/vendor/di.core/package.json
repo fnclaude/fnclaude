@@ -1,0 +1,47 @@
+{
+  "name": "@rhombus-std/di.core",
+  "version": "10.1.0",
+  "description": "The ioc abstractions substrate: the dependency-signature data format, the slot/token surface + helpers, and the concrete registration builder (Manifest) a library author depends on to author registrations without the di resolution engine. Depends only on the primitives leaf for the augmentation registry.",
+  "keywords": [
+    "dependency-injection",
+    "di",
+    "ioc",
+    "typescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "libraries/di.core"
+  },
+  "type": "module",
+  "sideEffects": true,
+  "main": "./dist/bundle/index.js",
+  "//exports": "./builders is the anchor a registration-authoring package augments IAsImplementer through, so it must stay resolvable for a published consumer — an unresolvable specifier turns the augmentation into a fresh ambient module and it silently stops applying. It carries a `types` condition and no `default`: the chain's implementation reaches a caller through the root barrel, and this subpath adds no second runtime copy of it.",
+  "exports": {
+    ".": "./dist/bundle/index.js",
+    "./builders": {
+      "types": "./dist/bundle/builder.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/stage"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@rhombus-std/primitives": "^0.0.0",
+    "@rhombus-toolkit/iterable": "^1.1.0",
+    "@rhombus-toolkit/type-guards": "^4.0.0",
+    "@rhombus-toolkit/types": "^2.0.0"
+  },
+  "devDependencies": {
+    "@rhombus-std/primitives.extras": "10.1.0",
+    "@ttsc/unplugin": "^0.18.1",
+    "ttsc": "^0.18.1",
+    "typescript": "^6.0.3"
+  }
+}

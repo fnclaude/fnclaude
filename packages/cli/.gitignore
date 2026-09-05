@@ -1,0 +1,9 @@
+# ttsc lowering + bundle artifacts (rebuilt on demand; only published dist is shipped)
+.ttsc-out/
+.ttsc-out-tests/
+.composition-out/
+dist/
+
+# Per-member node_modules the workspace install creates inside the vendored trees;
+# the vendored package sources themselves are committed.
+vendor/*/node_modules/

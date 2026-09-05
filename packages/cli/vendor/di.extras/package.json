@@ -1,0 +1,57 @@
+{
+  "name": "@rhombus-std/di.extras",
+  "version": "10.1.0",
+  "description": "The ioc authoring surface: the build-time primitives a registration author writes against. A Go/ttsc descriptor package — the primitive-transform runs in the shared owner binary.",
+  "keywords": [
+    "dependency-injection",
+    "di",
+    "ioc",
+    "typescript",
+    "transformer",
+    "compiler"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "libraries/di.extras"
+  },
+  "type": "module",
+  "main": "./dist/bundle/index.js",
+  "exports": {
+    ".": {
+      "types": "./dtsgen/index.d.ts",
+      "source": "./src/index.ts",
+      "default": "./dist/bundle/index.js"
+    },
+    "./ttsc": "./ttsc.mjs"
+  },
+  "ttsc": {
+    "plugin": {
+      "transform": "./ttsc.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "ttsc.mjs"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "lint": "tsc --noEmit -p tsconfig.ci.json"
+  },
+  "dependencies": {
+    "@rhombus-std/di.core": "10.1.0",
+    "@rhombus-std/primitives": "0.0.0",
+    "@rhombus-std/primitives.extras": "10.1.0",
+    "@rhombus-std/transforms": "^0.0.0",
+    "@rhombus-toolkit/types": "^2.0.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "types": "./dtsgen/index.d.ts"
+}

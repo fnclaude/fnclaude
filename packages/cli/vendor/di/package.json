@@ -1,0 +1,47 @@
+{
+  "name": "@rhombus-std/di",
+  "version": "10.1.0",
+  "description": "The ioc runtime engine: ContainerBuilder, scopes, resolution, captive-dependency protection, factories, and native disposal.",
+  "keywords": [
+    "dependency-injection",
+    "di",
+    "ioc",
+    "typescript",
+    "scope",
+    "container"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "libraries/di"
+  },
+  "type": "module",
+  "sideEffects": true,
+  "main": "./dist/bundle/index.js",
+  "exports": {
+    ".": "./dist/bundle/index.js"
+  },
+  "files": [
+    "dist",
+    "!dist/stage"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@rhombus-std/di.core": "^10.1.0",
+    "@rhombus-std/primitives": "^0.0.0",
+    "@rhombus-toolkit/iterable": "^1.1.0",
+    "@rhombus-toolkit/once": "^2.0.0",
+    "@rhombus-toolkit/type-guards": "^4.0.0"
+  },
+  "devDependencies": {
+    "@rhombus-std/primitives.extras": "10.1.0",
+    "@rhombus-toolkit/types": "2.0.0",
+    "@ttsc/unplugin": "^0.18.1",
+    "ttsc": "^0.18.1",
+    "typescript": "^6.0.3"
+  }
+}

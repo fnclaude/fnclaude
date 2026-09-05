@@ -1,0 +1,49 @@
+{
+  "name": "@rhombus-std/primitives.extras",
+  "version": "10.1.0",
+  "description": "The standalone type-derivation authoring transformer: the typefor<T>() compile-time Type mechanism plus the inline primitive stage. A Go/ttsc descriptor package — the derivation runs in the shared owner binary, di-independent so any family can mint augmentation tokens from types.",
+  "keywords": [
+    "primitives",
+    "typescript",
+    "transformer",
+    "compiler",
+    "typefor"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "libraries/primitives.extras"
+  },
+  "type": "module",
+  "dependencies": {
+    "@rhombus-std/primitives": "^0.0.0",
+    "@rhombus-std/transforms": "^0.0.0",
+    "@rhombus-toolkit/types": "^2.0.0"
+  },
+  "main": "./dist/bundle/index.js",
+  "exports": {
+    ".": {
+      "types": "./dtsgen/index.d.ts",
+      "source": "./src/index.ts",
+      "default": "./dist/bundle/index.js"
+    },
+    "./ttsc": "./ttsc.mjs"
+  },
+  "ttsc": {
+    "plugin": {
+      "transform": "./ttsc.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "ttsc.mjs",
+    "rhombus-std.json"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "lint": "bun x tsc --noEmit -p tsconfig.ci.json"
+  },
+  "types": "./dtsgen/index.d.ts"
+}
