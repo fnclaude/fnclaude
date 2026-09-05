@@ -47,18 +47,23 @@ left-to-right at the head of argv before any flags):
 
 Positional paths (max 2 after magic/subcommand tokens):
   1st remaining → cwd to launch claude in
-                  Accepts: absolute path, ~-prefixed, ./-prefixed, bare repo
-                  name (gh-resolved), name@owner, owner/name, gh:owner/name,
-                  HTTPS URL, SSH URL. Missing repos are cloned per the
-                  cloneTemplate in repoSettings.
-                  (fallback when no path: $XDG_CONFIG_HOME/fnclaude/noop)
+                  Accepts: absolute path, ~-prefixed, ./-prefixed, or any
+                  repo reference — bare name, name@owner, owner/name,
+                  gh:owner/name, HTTPS URL, SSH URL. Repo references are
+                  resolved (and cloned when missing) by fngit; without fngit
+                  on PATH only real paths are accepted. See \`fnc install\`.
+                  (fallback when no path: the starting directory,
+                   $XDG_CONFIG_HOME/rhombus.rocks/fnclaude/noop)
   2nd remaining → worktree name (same semantics as -w <name>)
   3rd+ remaining → error. Use -A/--also for extra dirs.
 
 Reserved subcommands:
+  install       — first-run setup. Bare, it opens a session that walks you
+                  through it; \`-y\` with flags applies the same plan with no
+                  questions. Re-runnable; skips anything already configured.
   mcp [--noop]  — internal MCP server (invoked automatically by claude via
                   injected --mcp-config; not for direct use)
-  To use a directory literally named mcp, prefix with ./
+  To use a directory literally named install or mcp, prefix with ./
 
 fnclaude-owned flags (consumed by the launcher, NOT forwarded to claude):
   -A, --also <dir>      additional extra-dir (repeatable; deferred — see PRD)
@@ -97,13 +102,20 @@ the call goes through the Anthropic SDK directly (fast-path, no claude
 spawn). Without it, fnclaude shells out to \`claude -p\` which uses your
 subscription auth. Falls back silently to a heuristic on failure / timeout.
 
-Auto-tmux: with \`[auto] tmux = "worktree"\` in config, fnclaude injects
---tmux whenever you create a new worktree (-w <name> with no match).
-Pass --no-tmux to skip this for a single invocation without editing config.
+Auto-tmux: with \`auto.tmux = "worktree"\` in config, fnclaude injects
+--tmux whenever you create a new worktree (-w <name> with no match);
+\`"always"\` injects it on every launch. Pass --no-tmux to skip it for a
+single invocation without editing config — that wins under every setting.
+
+Setup: \`fnc install\` walks you through first-run setup — where repos are
+cloned, where worktrees go, how sessions are transferred, and which claude
+flags to pass every time. Re-run it any time. \`fnc install -y --flags\`
+does the same non-interactively, for dotfiles.
 
 Environment variables (override config; precedence: CLI > env > config):
   ANTHROPIC_API_KEY     direct-API auth for auto-name (else shells \`claude -p\`)
   XDG_CONFIG_HOME       config dir base (default: ~/.config)
+  XDG_STATE_HOME        session-log dir base (default: ~/.local/state)
   FNC_PROMPTS_DIR       override install-dir prompts location
                         (default: <exe-dir>/prompts, <exe-dir>/../prompts,
                          or <exe-dir>/../share/fnclaude/prompts)
@@ -111,17 +123,23 @@ Environment variables (override config; precedence: CLI > env > config):
                         override handoff.template.md source path used when
                         seeding the noop fallback directory on first launch
 
-Config file: $XDG_CONFIG_HOME/fnclaude/config.toml
-  [name]      model = "claude-haiku-4-5", timeout = "3s"
-  [auto]      tmux = "never" | "worktree"
-              handoff = "never" | "ask" | <N seconds>
-              spawn_command = "..."   # for opening new terminal windows
-  [exec.env]  NAME = "value"          # injected into every claude child env
+Config file: $XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json
+  (.jsonc, .toml and .yaml are read too; fnc writes JSON)
+  noOobe            true once \`fnc install\` has run
+  noopDir           the starting directory for a bare \`fnc\`
+  auto.tmux         "never" | "always" | "worktree"
+  auto.handoff      "never" | "ask" | "<N>" seconds
+  auto.spawnCommand template for opening a new terminal window
+  claude.defaultArgs flags appended to every claude launch
+  exec.env          NAME = "value", injected into every claude child env
 
-Repo settings (~/.claude/settings.json):
-  cloneTemplate / worktreeTemplate / branchTemplate — shared with the
-  claude-code-worktree-paths plugin. Layered with project + local + managed
-  tiers in standard claude-settings precedence.
+Repo settings: $XDG_CONFIG_HOME/rhombus.rocks/config.json, under \`repos\` —
+  cloneTemplate / worktreeTemplate / branchTemplate / additionalSrcDirs /
+  hostAliases. Read by fngit and the worktree-paths plugin, not by fnc.
+
+System prompt overrides: a file in
+  $XDG_CONFIG_HOME/rhombus.rocks/fnclaude/prompts/ replaces fnc's packaged
+  system prompt of the same name. See the README.txt there.
 
 Examples:
   fnc                                  # starting directory (no project)
@@ -130,6 +148,7 @@ Examples:
   fnc sonnet ~/src/proj -- "fix the bug"
                                        # auto-name from prompt, sonnet model
   fnc resume ~/src/proj                # session picker for ~/src/proj
+  fnc install                          # first-run setup (re-runnable)
   fnc fnclaude@fnclaude                # owner-qualified repo ref (needs fngit)
   fnc -BVC                             # --brief --verbose --chrome
 

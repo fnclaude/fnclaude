@@ -104,16 +104,35 @@ describe('helpText', () => {
     expect(helpText).toContain('FNC_NOOP_TEMPLATE_PATH');
   });
 
-  test('documents the config.toml surface ([exec.env], [auto], [name])', () => {
-    expect(helpText).toContain('config.toml');
-    expect(helpText).toContain('[exec.env]');
-    expect(helpText).toContain('[auto]');
-    expect(helpText).toContain('[name]');
+  test('documents the config surface at its rhombus.rocks location', () => {
+    expect(helpText).toContain('rhombus.rocks/fnclaude/config.json');
+    expect(helpText).toContain('auto.tmux');
+    expect(helpText).toContain('auto.handoff');
+    expect(helpText).toContain('claude.defaultArgs');
+    expect(helpText).toContain('exec.env');
+    expect(helpText).toContain('noOobe');
   });
 
-  test('points users at ~/.claude/settings.json for repo settings', () => {
-    expect(helpText).toContain('.claude/settings.json');
+  test('points at the SHARED config for repo settings, not Claude Code settings', () => {
+    expect(helpText).toContain('rhombus.rocks/config.json');
     expect(helpText).toContain('cloneTemplate');
+    // Nothing reads Claude Code's settings.json any more; the help text must
+    // not send a user there to configure something fnc no longer looks at.
+    expect(helpText).not.toContain('.claude/settings.json');
+    expect(helpText).not.toContain('repoSettings');
+  });
+
+  test('documents `fnc install`, including the non-interactive shape', () => {
+    expect(helpText).toContain('fnc install');
+    expect(helpText).toContain('-y');
+  });
+
+  test('documents the system-prompt override directory', () => {
+    expect(helpText).toContain('rhombus.rocks/fnclaude/prompts/');
+  });
+
+  test('documents all three auto.tmux settings, including `always`', () => {
+    expect(helpText).toContain('"never" | "always" | "worktree"');
   });
 
   test('includes the -w / --worktree flag with name argument', () => {

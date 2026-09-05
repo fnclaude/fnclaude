@@ -314,6 +314,53 @@ const GET_USAGE: McpToolSchema = {
   },
 };
 
+// ── OOBE (`fnc install`) ─────────────────────────────────────────────────────
+// Registered only in a wizard session. The descriptions are deliberately
+// prescriptive: the whole design is "plan in code, relay in the model", so the
+// tool text has to close off the model's usual instincts to summarise, reorder,
+// or fill in a question it thinks is missing.
+
+const OOBE_NEXT: McpToolSchema = {
+  description:
+    "Get the next batch of first-run setup questions. Call this first, and again after posting every answer in a batch, until it returns done:true. The response carries `preamble` (print it verbatim, as-is, before asking), `progress` (use it as the header for EVERY question in the batch), and `questions` — each with its exact wording, its options in order, and an `other_hint` where free text is expected. Present the whole batch in ONE AskUserQuestion call, copying every string verbatim. Never invent, reword, reorder, merge, split, or skip a question, and never add an option: the wording was reviewed and the option list is complete. The first option is always the recommended one.",
+  inputSchema: { type: 'object', properties: {} },
+};
+
+const OOBE_ANSWER: McpToolSchema = {
+  description:
+    "Record one answer to a first-run setup question. Call it once per question, immediately after the user answers, using the `id` from fnc_oobe_next and the option's `value` (or the user's own text when they chose Other). For a multi-select question pass an array of values. Answers are saved as they arrive, so an interrupted setup resumes where it left off. Answering the `apply` question runs the setup and returns a summary to print.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The question's `id`, exactly as fnc_oobe_next gave it.",
+      },
+      value: {
+        description:
+          "The chosen option's `value`, or the user's typed text for Other. An array for a multi-select question.",
+        anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+      },
+    },
+    required: ['id', 'value'],
+  },
+};
+
+const OOBE_REASK: McpToolSchema = {
+  description:
+    "Re-present one earlier setup question. Use this ONLY when the user, at the Apply screen, says they want to change something — map what they said to that question's `id` and call this. It returns the question to ask again; post the new answer with fnc_oobe_answer, then call fnc_oobe_next to return to Apply.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: 'The id of the question to ask again.',
+      },
+    },
+    required: ['id'],
+  },
+};
+
 export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_restart: RESTART,
   fnc_switch_project: SWITCH_PROJECT,
@@ -324,4 +371,7 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_set_model: SET_MODEL,
   fnc_run_slash_command: RUN_SLASH_COMMAND,
   get_usage: GET_USAGE,
+  fnc_oobe_next: OOBE_NEXT,
+  fnc_oobe_answer: OOBE_ANSWER,
+  fnc_oobe_reask: OOBE_REASK,
 };

@@ -35,6 +35,32 @@ sees it. For claude's own version, run `claude --version`.
 Linux and macOS. The code has a Windows fallback path, but it has never been
 exercised. Expect breakage there.
 
+## First-run setup
+
+```sh
+fnc install
+```
+
+Opens a session that walks you through setup: where repos are cloned, where
+worktrees go, how session transfers behave, which claude flags to pass every
+time. It writes each answer as you give it, so an interrupted run picks up
+where it left off, and it skips anything already configured — re-run it any
+time.
+
+Nothing outside the config file is touched until you approve the final
+preview. Abort there and your answers are kept; nothing else happened.
+
+For dotfiles, the same plan runs without questions:
+
+```sh
+fnc install -y --fngit --plugin \
+  --clone-template '~/src/{repo}@{owner}' \
+  --worktree-template '~/src/{repo}@{owner}+{input}' \
+  --tmux worktree --handoff 3
+```
+
+A flag you don't pass leaves that setting alone — absent is not "no".
+
 ## Configuration files
 
 Both are optional.

@@ -348,6 +348,7 @@ See `specs/rhombus-rocks-config.md` for the shared file's shape.
 | `FNC_LOG` | Log level override (`debug`, `info`, `warn`, `error`) |
 | `FNCLAUDE_HANDOFF` | Override handoff mode for this session (`never`, `ask`, or seconds); set automatically from config |
 | `FNC_ENABLE_SLASH_TOOL` | When set to `1`, enables the `fnc_run_slash_command` in-session tool (see §12.8) |
+| `FNC_OOBE` | Set to `1` by `fnc install` on the wizard session it launches; registers the three `fnc_oobe_*` tools (see §17.5). Not for direct use |
 
 ---
 
@@ -450,6 +451,15 @@ Returns session token usage and cost information.
 
 ---
 
+### 12.10 `fnc_oobe_next` / `fnc_oobe_answer` / `fnc_oobe_reask`
+
+Registered only in the `fnc install` wizard session (`FNC_OOBE=1`), and absent
+from the tool list everywhere else. They advance the first-run interview:
+`fnc_oobe_next` returns the next batch of questions as data, `fnc_oobe_answer`
+records one, `fnc_oobe_reask` re-presents one. See §17.5.
+
+---
+
 ## 13. Context-Budget Notices
 
 When the session's context window fills up, fnclaude injects a notice into the conversation automatically. The notice text instructs the agent to call `request_compact` at the appropriate time.
@@ -517,6 +527,88 @@ The visual TUI renderer and its `FNC_RENDERER` selector were excised from the
 project on 2026-09-05. Its design and behavior are preserved as history under
 [`specs/renderer/`](renderer/). Section numbering is left as-is so existing
 cross-references keep pointing at the right sections.
+
+---
+
+## 17.5 First-Run Setup (`fnc install`)
+
+The interview that configures fnc on a new machine. Literal text:
+`specs/oobe-interview.md`.
+
+**Trigger**: `noOobe` in the config is falsy or absent — including the whole
+file being absent — and the launch is interactive. It never fires for `-p`,
+stream-json, or cloud sessions: there is nobody there to answer.
+
+**Two shapes, one plan.** `fnc install` opens a session that walks you through
+it; `fnc install -y [--flags]` applies the same plan with no questions, for
+dotfiles. Both feed the same plan builder, so they cannot drift.
+
+### 17.5.1 How the interview runs
+
+fnc builds the questionnaire deterministically, as data. The model only
+relays: it calls `fnc_oobe_next`, presents the batch it gets back with one
+`AskUserQuestion` call, posts each answer with `fnc_oobe_answer`, and repeats
+until the plan is exhausted. `fnc_oobe_reask(id)` re-presents one question,
+which is what the Apply screen's free-text slot resolves to.
+
+The three tools are registered only in a wizard session (`FNC_OOBE=1`, set by
+`fnc install` alone). The `oobe.md` fragment is injected INSTEAD of every
+other fragment — that session must not also be told how to spawn siblings or
+route a no-project request.
+
+Batches are grouped by context, at most 4 questions each and at most 4 options
+per question (`AskUserQuestion` limits). "Other" (free text) is added by the
+tool and does not count against the option cap. The first option is always the
+recommended one and says so.
+
+### 17.5.2 Skips and dependencies
+
+A question whose config key is already set is not asked; a batch whose
+questions are all skipped is not shown. The progress denominator counts only
+the batches that will actually appear.
+
+The Repos batch asks only what the chosen tools need: clone template and
+"other places" if fngit was accepted, worktree template if either tool was,
+branch template only if the plugin was. Both declined, and the batch is
+skipped entirely. The git-shim question needs fngit.
+
+An already-installed tool satisfies the dependency without being asked — a
+skipped question is not a "no".
+
+### 17.5.3 When things are written
+
+**Every answer is written to the config as soon as it is given.** That is what
+makes an interrupted wizard resumable: the next run reads those keys and skips
+their questions. There is no separate resume mechanism.
+
+Everything else waits for Apply: creating the starting directory, seeding the
+prompt-override directory, installing fngit and the plugin, PATH edits,
+`noOobe`, and the restart. Abort therefore leaves the answers saved and the
+system untouched, and the interview is offered again next launch.
+
+The wizard session runs in the shell cwd with `--no-session-persistence`,
+`--disallowedTools Write,Edit,MultiEdit,NotebookEdit,Bash`, and
+`--permission-mode default`. The prompt asks the model to touch nothing; the
+flags make it so. Ref resolution is skipped entirely in this mode; after Apply
+fnc re-execs with the ORIGINAL argv through the same trigger `fnc_restart`
+uses, so the re-exec resolves and clones normally.
+
+### 17.5.4 What it installs
+
+fnc subsumes its dependencies' interviews: fngit's questions and the plugin's
+are asked once, here, and the tools are then driven non-interactively with the
+collected answers (`fngit install -y …`). fngit is installed with plain
+`npm install -g @rhombus.rocks/fngit`.
+
+### 17.5.5 After Apply
+
+A closing note names the two things the interview deliberately does not ask
+about — host aliases under `repos.hostAliases`, and the prompt-override
+directory — and how to re-run the interview. Then `~/.claude/CLAUDE.md` is
+scanned for lines mentioning worktrees, clones, or `~/src`; any hits are
+printed with their line numbers for the user to check against the templates
+they just set. It is a heuristic that reports and never edits: that file is
+not one fnc owns.
 
 ---
 

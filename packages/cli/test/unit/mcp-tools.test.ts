@@ -19,7 +19,7 @@ import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch';
 import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 describe('MCP_TOOL_NAMES', () => {
-  test('exposes the original four plus the Batch-2 slash tools and get_usage', () => {
+  test('exposes the original four, the Batch-2 slash tools, get_usage, and the OOBE trio', () => {
     expect(MCP_TOOL_NAMES).toEqual([
       'fnc_restart',
       'fnc_switch_project',
@@ -30,7 +30,39 @@ describe('MCP_TOOL_NAMES', () => {
       'fnc_set_model',
       'fnc_run_slash_command',
       'get_usage',
+      'fnc_oobe_next',
+      'fnc_oobe_answer',
+      'fnc_oobe_reask',
     ]);
+  });
+});
+
+describe('the OOBE tools are gated to a wizard session', () => {
+  const OOBE = ['fnc_oobe_next', 'fnc_oobe_answer', 'fnc_oobe_reask'] as const;
+
+  function names(env: Record<string, string | undefined>): string[] {
+    return Object.keys(buildTools({ socketPath: '/run/fake.sock', env }));
+  }
+
+  test('absent from a normal session — nothing there for them to advance', () => {
+    const registered = names({});
+    for (const name of OOBE) expect(registered).not.toContain(name);
+  });
+
+  test('present when FNC_OOBE=1, which only `fnc install` sets', () => {
+    const registered = names({ FNC_OOBE: '1' });
+    for (const name of OOBE) expect(registered).toContain(name);
+  });
+
+  test('a truthy-looking value that is not exactly "1" does not enable them', () => {
+    const registered = names({ FNC_OOBE: 'true' });
+    for (const name of OOBE) expect(registered).not.toContain(name);
+  });
+
+  test('the gate is independent of the slash-tool opt-in', () => {
+    const registered = names({ FNC_ENABLE_SLASH_TOOL: '1' });
+    for (const name of OOBE) expect(registered).not.toContain(name);
+    expect(registered).toContain('fnc_run_slash_command');
   });
 });
 
@@ -149,9 +181,9 @@ describe('buildTools — per-tool handler shape', () => {
     const tools = buildTools({
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
-      // Opt in to the generic slash tool so every name in MCP_TOOL_NAMES
-      // is present for this completeness check.
-      env: { FNC_ENABLE_SLASH_TOOL: '1' },
+      // Opt in to the generic slash tool AND the wizard tools so every name
+      // in MCP_TOOL_NAMES is present for this completeness check.
+      env: { FNC_ENABLE_SLASH_TOOL: '1', FNC_OOBE: '1' },
     });
     // Schema port from §7.5 wiring: each entry carries description +
     // inputSchema so the jsonrpc-server's tools/list response is complete.

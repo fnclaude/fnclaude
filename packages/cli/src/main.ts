@@ -33,6 +33,23 @@ import { findClaude } from './launch/find-claude';
 import { readLivePermissionMode, sessionJSONLPath } from './launch/live-permission-reader';
 import { RingBuffer } from './launch/ring-buffer';
 import { isMcpSubcommand, parseMcpFlags, runMcpServer } from './mcp/dispatch';
+import { runInstallNonInteractive } from './install/run';
+import {
+  buildWizardArgs,
+  isInstallSubcommand,
+  parseInstallFlags,
+  shouldRunOobe,
+  WIZARD_SESSION_NAME,
+} from './install/subcommand';
+import { configuredPaths } from './config/configured';
+import {
+  createOobeAnswerHandler,
+  createOobeNextHandler,
+  createOobeReaskHandler,
+} from './mcp/handlers/oobe';
+import { buildApplyPlan, describeApplyPlan } from './oobe/apply';
+import { detectSpawnCandidates, detectTools } from './oobe/detect';
+import { OobeState } from './oobe/state';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
 import { createPtyWriterHolder } from './mcp/handlers/inject-slash';
@@ -134,6 +151,40 @@ const noopDirPath =
     ? expandTilde(config.noopDir, HOME)
     : defaultNoopDir(xdgEnv);
 
+// `fnc install` — the first-run setup. `-y` applies a plan straight from
+// flags; bare `fnc install` launches a wizard session (below) that interviews
+// the user. Handled here, after the config load, because both shapes need to
+// know what is already configured in order to skip questions.
+const installTail = isInstallSubcommand(argv) ? argv.slice(1) : null;
+if (installTail !== null) {
+  const parsedInstall = parseInstallFlags(installTail);
+  if (!parsedInstall.ok || parsedInstall.flags === undefined) {
+    process.stderr.write(`fnclaude: ${parsedInstall.error ?? 'could not parse `fnc install` flags'}\n`);
+    process.exit(2);
+  }
+  if (parsedInstall.flags.yes) {
+    const binForPrompts = process.argv[1] ?? '';
+    const exeDirForPrompts =
+      binForPrompts !== '' ? dirname(realpathSync(binForPrompts)) : process.cwd();
+    const packaged = resolvePromptsDir({
+      envOverride: process.env.FNC_PROMPTS_DIR,
+      exeDir: exeDirForPrompts,
+    });
+    const result = await runInstallNonInteractive({
+      env: xdgEnv,
+      flags: parsedInstall.flags,
+      configured: await configuredPaths(xdgEnv),
+      packagedPromptsDir: packaged.dir,
+    });
+    process.exit(result.exitCode);
+  }
+  // Bare `fnc install`: fall through to the normal launch path with the
+  // wizard flags set. Ref resolution is skipped entirely — there is no repo
+  // argument, and `fnc install` run inside a directory that shares a name
+  // with a repo must not start cloning.
+}
+const isOobeLaunch = installTail !== null;
+
 // Resolve the first positional to a launch cwd. fnc owns three cases: no
 // argument (the starting directory), an explicit path form, and stripping a
 // `+workspace` suffix. Everything else is a repo reference and goes to the
@@ -143,7 +194,13 @@ const noopDirPath =
 // fngit is optional. Without it on PATH the resolver accepts only real paths
 // and errors on a repo reference with a message naming `fnc install`.
 const fngitBin = findFngit();
-const resolved = await resolveInput({
+const resolved = isOobeLaunch
+  ? // A wizard launch resolves nothing: it runs in the shell cwd. Claude
+    // Code's trust dialog is per-directory, so a scratch directory would
+    // prompt for trust every run, and the directory the user is standing in
+    // is the one most likely to be trusted already.
+    ({ kind: 'launch', launchCwd: shellCwd, usedNoopFallback: false, workspace: '' } as const)
+  : await resolveInput({
   input: parsed.firstPath,
   shellCwd,
   home: HOME,
@@ -292,7 +349,11 @@ const ownSessionId = ownSessionPlan.sessionId;
 
 // Inject prompt fragments via --append-system-prompt. Selection depends on
 // noop fallback + interactive (non-print) state of the session.
-const fragmentNames = selectFragments({ usedNoopFallback, passthrough: claudeArgs });
+const fragmentNames = selectFragments({
+  usedNoopFallback,
+  passthrough: claudeArgs,
+  oobe: isOobeLaunch,
+});
 if (fragmentNames.length > 0) {
   // process.argv[1] is the BIN script (bin/fnc.js after preflight, or whatever
   // node invoked). Realpath it so symlinked installs (npm's .bin/ → package
@@ -315,6 +376,71 @@ if (fragmentNames.length > 0) {
   } else if (promptsDir.warning !== undefined) {
     warnings.add(promptsDir.warning);
   }
+}
+
+// Wizard-session lockdown. `oobe.md` asks the model to touch nothing in the
+// cwd; these flags make that true whether or not it complies. Every write the
+// setup performs happens inside fnc, after Apply.
+//
+// `--no-session-persistence` keeps the cwd's resume picker and history clean —
+// there is nothing in a setup session worth resuming.
+let oobeState: OobeState | null = null;
+let oobeHandlerArgs: Parameters<typeof createOobeNextHandler>[0] | null = null;
+if (isOobeLaunch) {
+  claudeArgs = insertFlagsBeforeSentinel(
+    claudeArgs,
+    ...buildWizardArgs('').filter((t) => t !== '--append-system-prompt' && t !== ''),
+    '--name',
+    WIZARD_SESSION_NAME,
+  );
+
+  const tools = detectTools();
+  const spawnCandidates = detectSpawnCandidates();
+  oobeState = new OobeState({
+    env: xdgEnv,
+    tools,
+    spawnCandidates,
+    configured: await configuredPaths(xdgEnv),
+  });
+
+  const binForPrompts = process.argv[1] ?? '';
+  const exeDirForPrompts =
+    binForPrompts !== '' ? dirname(realpathSync(binForPrompts)) : process.cwd();
+  const packagedPrompts = resolvePromptsDir({
+    envOverride: process.env.FNC_PROMPTS_DIR,
+    exeDir: exeDirForPrompts,
+  });
+
+  const state = oobeState;
+  oobeHandlerArgs = {
+    state,
+    onApply: async () => {
+      const { applyAndReport } = await import('./install/run');
+      const lines: string[] = [];
+      const actions = buildApplyPlan({
+        env: xdgEnv,
+        answers: state.answersSnapshot(),
+        shared: state.sharedAnswers(),
+        hasFngit: tools.fngit,
+        hasPlugin: tools.plugin,
+      });
+      lines.push('Applying:');
+      lines.push(describeApplyPlan(actions));
+      await applyAndReport({
+        env: xdgEnv,
+        actions,
+        print: (line) => lines.push(line),
+        state,
+        packagedPromptsDir: packagedPrompts.dir,
+      });
+      // Setup is done; hand the session back to the user's original intent by
+      // re-execing fnc with the ORIGINAL argv, through the same trigger
+      // `fnc_restart` uses. The re-exec resolves and clones normally.
+      handoffTrigger.stashArgv(argv.filter((a) => a !== 'install'));
+      handoffTrigger.fire();
+      return { summary: lines.join('\n') };
+    },
+  };
 }
 
 // `claude.defaultArgs` from config — flags Claude Code has no persistent
@@ -363,6 +489,12 @@ const childEnv = composeEnv({
   socket: mcpSocketPath,
 });
 
+// FNC_OOBE gates the three `fnc_oobe_*` tools in the MCP subprocess. It is set
+// ONLY here, on the wizard session, so those tools stay out of the tool list
+// everywhere else — a model that can see `fnc_oobe_next` in a normal session
+// has no interview to advance and no reason to be tempted.
+if (isOobeLaunch) childEnv.FNC_OOBE = '1';
+
 // #332: percentage context-notice tiers ("94%") resolve against the derived
 // Claude Code auto-compact threshold (100% = the auto-compact point), computed
 // per active model + the child's env (surface/window overrides). We read the
@@ -406,6 +538,9 @@ if (process.env.FNC_INTERNAL_DUMP_PLAN === '1') {
   }
   if ('FNCLAUDE_HANDOFF' in childEnv) dumpEnv.FNCLAUDE_HANDOFF = childEnv.FNCLAUDE_HANDOFF!;
   if ('FNC_SOCKET' in childEnv) dumpEnv.FNC_SOCKET = childEnv.FNC_SOCKET!;
+  // The wizard gate, so an e2e test can assert the OOBE tools are registered
+  // for `fnc install` and for nothing else.
+  if ('FNC_OOBE' in childEnv) dumpEnv.FNC_OOBE = childEnv.FNC_OOBE!;
   process.stdout.write(
     `${JSON.stringify({ cwd, claudeArgs, usedNoopFallback, env: dumpEnv })}\n`,
   );
@@ -487,6 +622,16 @@ if (mcpSocketPath !== undefined) {
         // get_usage returns structured budget data read from the session
         // JSONL; launchCWD is the encoded-cwd half of that path.
         get_usage: createGetUsageHandler({ launchCWD: cwd }),
+        // The interview's three tools, bound to ONE state object for the
+        // whole session. They are only reachable in a wizard launch: the
+        // subprocess gates them on FNC_OOBE=1, which only this path sets.
+        ...(oobeState !== null
+          ? {
+              oobe_next: createOobeNextHandler(oobeHandlerArgs!),
+              oobe_answer: createOobeAnswerHandler(oobeHandlerArgs!),
+              oobe_reask: createOobeReaskHandler(oobeHandlerArgs!),
+            }
+          : {}),
       },
     });
     const listener = await startMcpListener({

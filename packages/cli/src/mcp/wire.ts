@@ -28,7 +28,10 @@ export type WireOp =
   | 'set_effort'
   | 'set_model'
   | 'run_slash'
-  | 'get_usage';
+  | 'get_usage'
+  | 'oobe_next'
+  | 'oobe_answer'
+  | 'oobe_reask';
 
 export interface WireRequest {
   op: WireOp;

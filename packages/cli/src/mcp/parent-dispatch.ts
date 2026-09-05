@@ -66,6 +66,12 @@ export const stubParentHandlers: ParentDispatchHandlers = {
     limits: null,
     context: { used: null, model: null },
   }),
+  // OOBE ops are only bound in a wizard session (`fnc install`). Reaching a
+  // stub means the tool was somehow called outside one; say so plainly
+  // rather than pretending to advance an interview that isn't running.
+  oobe_next: async (_req) => ({ action: 'error', error: 'no interview is running' }),
+  oobe_answer: async (_req) => ({ action: 'error', error: 'no interview is running' }),
+  oobe_reask: async (_req) => ({ action: 'error', error: 'no interview is running' }),
 };
 
 const KNOWN_OPS = new Set<WireOp>([
@@ -78,6 +84,9 @@ const KNOWN_OPS = new Set<WireOp>([
   'set_model',
   'run_slash',
   'get_usage',
+  'oobe_next',
+  'oobe_answer',
+  'oobe_reask',
 ]);
 
 function isWireOp(value: unknown): value is WireOp {

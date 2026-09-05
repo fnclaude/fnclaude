@@ -59,6 +59,9 @@ export const MCP_TOOL_NAMES = [
   'fnc_set_model',
   'fnc_run_slash_command',
   'get_usage',
+  'fnc_oobe_next',
+  'fnc_oobe_answer',
+  'fnc_oobe_reask',
 ] as const;
 
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
@@ -66,12 +69,24 @@ export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 /**
  * The generic slash tool (C4) is opt-in: it injects arbitrary slash
  * commands into the live TUI and stays out of the tool list unless the
- * operator enables it with `FNC_ENABLE_SLASH_TOOL=1`. The remaining tools
- * are always registered.
+ * operator enables it with `FNC_ENABLE_SLASH_TOOL=1`.
  */
 const OPT_IN_TOOLS: ReadonlySet<McpToolName> = new Set(['fnc_run_slash_command']);
 
+/**
+ * The OOBE tools are the mirror image: registered ONLY in a wizard session
+ * (`FNC_OOBE=1`, set by `fnc install` on the session it launches). They are
+ * useless anywhere else — there is no interview to advance — and a model that
+ * can see `fnc_oobe_next` in a normal session may call it out of curiosity.
+ */
+const OOBE_TOOLS: ReadonlySet<McpToolName> = new Set([
+  'fnc_oobe_next',
+  'fnc_oobe_answer',
+  'fnc_oobe_reask',
+]);
+
 function toolEnabled(name: McpToolName, env: Record<string, string | undefined>): boolean {
+  if (OOBE_TOOLS.has(name)) return env.FNC_OOBE === '1';
   if (!OPT_IN_TOOLS.has(name)) return true;
   return env.FNC_ENABLE_SLASH_TOOL === '1';
 }
@@ -90,6 +105,9 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_set_model: 'set_model',
   fnc_run_slash_command: 'run_slash',
   get_usage: 'get_usage',
+  fnc_oobe_next: 'oobe_next',
+  fnc_oobe_answer: 'oobe_answer',
+  fnc_oobe_reask: 'oobe_reask',
 };
 
 export interface BuildToolsArgs {
