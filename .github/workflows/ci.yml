@@ -61,3 +61,8 @@ jobs:
       - run: moon run :lint
       - run: moon run :test
       - run: moon run :build
+      # The composition tier is authored in the registration dialect, so it runs
+      # through its own ttsc lowering lane rather than the plain `bun test` unit tier.
+      - name: composition tier
+        run: bun run test:composition
+        working-directory: packages/cli
