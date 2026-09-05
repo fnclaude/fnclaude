@@ -26,12 +26,15 @@
 //
 // Run this only to refresh the committed `vendor/` trees; CI and every install consume
 // them directly and never invoke it. Requires a resolvable dependency environment (it
-// scratch-installs to re-emit declarations).
+// scratch-installs to re-emit declarations). It finishes by installing at the repo root and
+// asserting the §8-step-5 invariants — one physical copy per package, a path-free lockfile —
+// which the unit-tier guard (`test/guards.test.ts`) then re-checks on every CI run.
 
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { findForkedStdCopies, findLockfileAbsolutePaths } from './check-vendor-install.ts';
 
 // ── constants ──────────────────────────────────────────────────────────────
 
@@ -68,6 +71,7 @@ const PACKAGES: VendoredPackage[] = [
 
 const CLI_DIR = join(import.meta.dir, '..');
 const VENDOR_DIR = join(CLI_DIR, 'vendor');
+const REPO_ROOT = join(CLI_DIR, '..', '..');
 
 // ── shell helpers ────────────────────────────────────────────────────────────
 
@@ -217,6 +221,24 @@ function readManifestName(pkgDir: string): string {
   return JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name;
 }
 
+/**
+ * Installs the fresh `vendor/` trees and asserts the two invariants they must hold: exactly
+ * one physical copy of each package (a double copy forks the Type intern table silently) and
+ * a lockfile with no absolute paths (design.di-architecture §8 step 5).
+ */
+function assertOneCopyInstall(): void {
+  run('bun', ['install'], REPO_ROOT);
+  const forked = findForkedStdCopies(CLI_DIR);
+  if (forked.length) {
+    const detail = forked.map((fork) => `  ${fork.name}: ${fork.realpaths.join(', ')}`).join('\n');
+    throw new Error(`vendored packages forked into multiple physical copies:\n${detail}`);
+  }
+  const absolute = findLockfileAbsolutePaths(join(REPO_ROOT, 'bun.lock'));
+  if (absolute.length) {
+    throw new Error(`lockfile carries absolute paths (non-portable):\n  ${absolute.join('\n  ')}`);
+  }
+}
+
 function main(): void {
   const head = run('git', ['-C', STD_CHECKOUT, 'rev-parse', 'HEAD']).trim();
   if (head !== STD_SHA) {
@@ -255,6 +277,9 @@ function main(): void {
   for (const pkg of PACKAGES) {
     console.log(`  ${pkg.name}`);
   }
+
+  console.log('Installing and asserting one physical copy per package + a path-free lockfile');
+  assertOneCopyInstall();
 }
 
 main();

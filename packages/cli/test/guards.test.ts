@@ -9,6 +9,7 @@ import { describe, expect, test } from 'bun:test';
 import { Glob } from 'bun';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { findForkedStdCopies, findLockfileAbsolutePaths } from '../tools/check-vendor-install.ts';
 
 const cliRoot = join(import.meta.dir, '..');
 
@@ -68,6 +69,19 @@ describe('config confinement (placeholder — tightens to the plan root when it 
       .map((file) => file.rel)
       .filter((rel) => !allowed.has(rel));
     expect(callers).toEqual([]);
+  });
+});
+
+describe('vendored @rhombus-std install invariants (§8 step 5)', () => {
+  test('every vendored package resolves to one physical copy under vendor/', () => {
+    // A second physical copy of any @rhombus-std package forks the Type intern table
+    // silently (primitives has no self-guard, §7); a std bump or a version-range edit in
+    // one vendored package.json is what would break the workspace dedup and fork it here.
+    expect(findForkedStdCopies(cliRoot)).toEqual([]);
+  });
+
+  test('the lockfile carries no absolute paths, so the install stays portable', () => {
+    expect(findLockfileAbsolutePaths(join(cliRoot, '..', '..', 'bun.lock'))).toEqual([]);
   });
 });
 
