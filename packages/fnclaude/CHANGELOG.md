@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/fnclaude/fnclaude/compare/fnclaude-v2.1.0...fnclaude-v2.2.0) (2026-09-05)
+
+
+### Features
+
+* restructure — renderer excise, rhombus.rocks config, fngit, OOBE ([#360](https://github.com/fnclaude/fnclaude/issues/360)) ([c84fcef](https://github.com/fnclaude/fnclaude/commit/c84fcef98bb017e127d5fcf20c934595aed45837))
+
 ## [2.1.0](https://github.com/fnclaude/fnclaude/compare/fnclaude-v2.0.2...fnclaude-v2.1.0) (2026-05-27)
 
 
