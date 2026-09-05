@@ -14,7 +14,8 @@ Navigation index for the fnclaude documentation.
 
 ## Proposals
 
-- [proposals/design.fnioc-adoption.md](proposals/design.fnioc-adoption.md) — Exploration of adopting fnioc for dependency wiring
+- [proposals/design.di-architecture.md](proposals/design.di-architecture.md) — The DI-centric architecture: `@rhombus-std/di` Builder roots, `standardLifetime`, sugar confinement, build-to-dist transform, interim tarball consumption — the spec the `feat-di` branch implements (2026-09-05)
+- [proposals/design.fnioc-adoption.md](proposals/design.fnioc-adoption.md) — Earlier exploration of adopting fnioc for dependency wiring (superseded by design.di-architecture.md)
 
 ## Reference
 
