@@ -309,6 +309,8 @@ Legend: **S** = `'singleton'` (process-lifetime), **T** = `'transient'` (statele
 
 ### Registration file — run root (representative, real TypeScript)
 
+Registrations are **separate `s = s.add(...)` statements**, not one long chained `.add().add()…` expression: the ttsc transform's fixed-point loop does not converge on a long registration chain (`did not reach a fixed point after 16 passes` — verified PR-3), whereas the separate-statement form (std's own `populateFrameworkServices` shape) lowers cleanly. The example is written that way below.
+
 ```ts
 // src/launch/register.ts
 import type { Manifest, StandardLifetime } from '@rhombus-std/di.core';
@@ -316,60 +318,57 @@ import { asAsyncDisposable, asDisposable } from '../ports/disposal.ts';
 // … leaf imports elided; every concrete is the leaf's real export.
 
 export function registerRunServices(m: Manifest<StandardLifetime>, plan: LaunchPlan): Manifest<StandardLifetime> {
-  let s = m
-    .addValue<LaunchPlan>(plan)
-    .addValue<IConfig>(plan.config)                       // the WHOLE loaded record rides the plan
-    .addValue<XdgEnv>(plan.xdg)
-    .addValue<IWhich>(defaultWhich)                       // function-shaped seam → value door
-    .add<IWarningBuffer>(() => {
-      const b = createWarningBuffer();
-      for (const w of plan.warnings) b.add(w);            // seeded from the plan phase's drain
-      return b;
-    }, 'singleton')
-    .add<IFileSystem>(NodeFileSystem, 'singleton')
-    .add<IProcessSpawner>(NodeSpawner, 'transient')
-    .add<ILogger>(() => initLogging({
-      env: process.env, platform: process.platform, home: plan.xdg.home,
-    }).logger, 'singleton')                               // leaf returns {logger, logPath}; project .logger
-    .add<IHandoffTrigger>(createHandoffTrigger, 'singleton')
-    .add<IHandoffDetector>((t: IHandoffTrigger, p: IProcessSpawner) => createHandoffDetector(t, p), 'singleton')
-    .add<IVersionReader>(() => createVersionReader(), 'singleton')
-    .add<ILivePermissionReader>((p: LaunchPlan) => ({
-      read: () => readLivePermissionMode(p.launchCWD, p.sessionID),
-    }), 'singleton')
-    // Tool handlers as multi-registrations; typed deps in, deps-objects to the
-    // unchanged leaf factories (e.g. createRestartHandler({origArgs, launchCWD,
-    // trigger, livePermissionModeReader}) keeps its verbatim signature [V restart.ts:43-44]):
-    .add<IToolHandler>((t: IHandoffTrigger, live: ILivePermissionReader) =>
-      createRestartHandler({ origArgs: plan.origArgs, launchCWD: plan.launchCWD,
-                             trigger: t, livePermissionModeReader: live.read }), 'singleton')
-    .add<IToolHandler>((cfg: IConfig, w: IWhich, sp: IProcessSpawner) =>
-      createSpawnHandler({ autoSpawnCommand: cfg.autoSpawnCommand, which: w, spawn: sp.spawn }), 'singleton')
-    // … the remaining handlers, same pattern …
-    .add<IDispatcher>(Dispatcher, 'singleton')            // ctor (handlers: IToolHandler[]) — engine plans the aggregate
-    .add<ISession>(Session, 'singleton');
+  let s = m.addValue<LaunchPlan>(plan);
+  s = s.addValue<IConfig>(plan.config);                  // the WHOLE loaded record rides the plan
+  s = s.addValue<XdgEnv>(plan.xdg);
+  s = s.addValue<IWhich>(defaultWhich);                  // function-shaped seam → value door
+  s = s.add<IWarningBuffer>(() => {
+    const b = createWarningBuffer();
+    for (const w of plan.warnings) b.add(w);              // seeded from the plan phase's drain
+    return b;
+  }, 'singleton');
+  s = s.add<IFileSystem>(NodeFileSystem, 'singleton');
+  s = s.add<IProcessSpawner>(NodeSpawner, 'transient');
+  s = s.add<ILogger>(() => initLogging({
+    env: process.env, platform: process.platform, home: plan.xdg.home,
+  }).logger, 'singleton');                               // leaf returns {logger, logPath}; project .logger
+  s = s.add<IHandoffTrigger>(createHandoffTrigger, 'singleton');
+  s = s.add<IHandoffDetector>((t: IHandoffTrigger, p: IProcessSpawner) => createHandoffDetector(t, p), 'singleton');
+  s = s.add<IVersionReader>(() => createVersionReader(), 'singleton');
+  s = s.add<ILivePermissionReader>((p: LaunchPlan) => ({
+    read: () => readLivePermissionMode(p.launchCWD, p.sessionID),
+  }), 'singleton');
+  // Tool handlers as multi-registrations; typed deps in, deps-objects to the
+  // unchanged leaf factories (e.g. createRestartHandler({origArgs, launchCWD,
+  // trigger, livePermissionModeReader}) keeps its verbatim signature [V restart.ts:43-44]):
+  s = s.add<IToolHandler>((t: IHandoffTrigger, live: ILivePermissionReader) =>
+    createRestartHandler({ origArgs: plan.origArgs, launchCWD: plan.launchCWD,
+                           trigger: t, livePermissionModeReader: live.read }), 'singleton');
+  s = s.add<IToolHandler>((cfg: IConfig, w: IWhich, sp: IProcessSpawner) =>
+    createSpawnHandler({ autoSpawnCommand: cfg.autoSpawnCommand, which: w, spawn: sp.spawn }), 'singleton');
+  // … the remaining handlers, same pattern (one `s = s.add(...)` statement each) …
+  s = s.add<IDispatcher>(Dispatcher, 'singleton');       // ctor (handlers: IToolHandler[]) — engine plans the aggregate
+  s = s.add<ISession>(Session, 'singleton');
 
   if (plan.mcpEnabled) {                                  // Unix-only overlay [V listener throws on win32]
     s = s.add<IMcpListener>((d: IDispatcher, log: ILogger) =>
       new McpListener(plan.socketPath!, d, log), 'singleton');   // sync ctor; async start() binds
   }
   if (plan.useTerminal) {                                 // PTY-branch overlay [V main.ts:679-822]
-    s = s
-      .add<IRingBuffer>(() => new RingBuffer(), 'singleton')
-      .add<IPtyWriterHolder>(createPtyWriterHolder, 'singleton')
-      .add<IControlSeamHolder>(createControlSeamHolder, 'singleton')
-      .add<IContextMonitor>((c: IControlSeamHolder, cfg: IConfig, p: LaunchPlan, log: ILogger) =>
-        asDisposable(startContextMonitor({
-          ladder: cfg.contextNoticeLadder, ownSessionFile: p.sessionJSONLPath,
-          sendControl: c.send, log,
-        })), 'singleton');
+    s = s.add<IRingBuffer>(() => new RingBuffer(), 'singleton');
+    s = s.add<IPtyWriterHolder>(createPtyWriterHolder, 'singleton');
+    s = s.add<IControlSeamHolder>(createControlSeamHolder, 'singleton');
+    s = s.add<IContextMonitor>((c: IControlSeamHolder, cfg: IConfig, p: LaunchPlan, log: ILogger) =>
+      asDisposable(startContextMonitor({
+        ladder: cfg.contextNoticeLadder, ownSessionFile: p.sessionJSONLPath,
+        sendControl: c.send, log,
+      })), 'singleton');
   }
   if (plan.oobe) {                                        // OOBE overlay from FROZEN plan data
-    s = s
-      .add<OobeState>(() => OobeState.fromPlan(plan.oobe!), 'singleton')
-      .add<IToolHandler>((st: OobeState) => createOobeNextHandler({ state: st }), 'singleton')
-      .add<IToolHandler>((st: OobeState) => createOobeAnswerHandler({ state: st }), 'singleton')
-      .add<IToolHandler>((st: OobeState) => createOobeReaskHandler({ state: st }), 'singleton');
+    s = s.add<OobeState>(() => OobeState.fromPlan(plan.oobe!), 'singleton');
+    s = s.add<IToolHandler>((st: OobeState) => createOobeNextHandler({ state: st }), 'singleton');
+    s = s.add<IToolHandler>((st: OobeState) => createOobeAnswerHandler({ state: st }), 'singleton');
+    s = s.add<IToolHandler>((st: OobeState) => createOobeReaskHandler({ state: st }), 'singleton');
   }
   return s;
 }

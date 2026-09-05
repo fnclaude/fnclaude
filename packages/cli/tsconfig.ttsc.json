@@ -1,8 +1,8 @@
 {
-  "//": "Drives the ttsc/Go lowering stage (tools/build-dist.ts). @ttsc/unplugin/bun reads this during the per-file stage; the absence of a `plugins` array is what enables auto-discovery of the one transform host from the *.extras devDeps. Extends the dev config, so it inherits `noEmit` — the Go engine emits the staged files through Bun.build, not through tsc.",
+  "//": "Drives the ttsc/Go lowering stage (tools/build-dist.ts). @ttsc/unplugin/bun reads this during the per-file stage; the absence of a `plugins` array is what enables auto-discovery of the one transform host from the *.extras devDeps. Extends the dev config, so it inherits `noEmit` — the Go engine emits the staged files through Bun.build, not through tsc. rootDir is the package root (not src/) so the transform's shared `__typefor__` import specifier is relative to the same base Bun.build's `root: dir` emits under; a src/-rootDir would place the specifier one level too shallow for a nested sugar file and the bundle could not resolve it.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    "rootDir": ".",
     "outDir": ".ttsc-out",
     "lib": ["ES2022", "ESNext.Disposable", "DOM"]
   }

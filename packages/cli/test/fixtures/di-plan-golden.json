@@ -1,0 +1,17 @@
+{
+  "cwd": "/tmp/fnc-di-golden-cwd",
+  "claudeArgs": [
+    "--mcp-config",
+    "{\"mcpServers\":{\"fnclaude\":{\"command\":\"<BUN>\",\"args\":[\"<BIN>\",\"mcp\"]}}}",
+    "--",
+    "do a thing",
+    "--worktree",
+    "my-feat",
+    "--name",
+    "my-feat"
+  ],
+  "usedNoopFallback": false,
+  "env": {
+    "FNC_SOCKET": "<SOCKET>"
+  }
+}

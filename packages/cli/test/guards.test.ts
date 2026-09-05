@@ -60,10 +60,10 @@ describe('sugar confinement (doctrine 4 + 11)', () => {
 
 describe('config confinement (placeholder — tightens to the plan root when it lands)', () => {
   test('loadConfig is called only from known sites', () => {
-    // Target end state: the sole caller is entry/plan.ts (loaded before the plan
-    // chain, doctrine 7). During migration the pre-DI main.ts still calls it, so the
-    // allow-set carries that site too; drop `main.ts` here once entry/plan.ts owns it.
-    const allowed = new Set(['config/load.ts', 'entry/plan.ts', 'main.ts']);
+    // The plan root owns config loading (entry/plan.ts, before the chain opens —
+    // doctrine 7); the dispatcher no longer touches it. `config/load.ts` is the
+    // definition site.
+    const allowed = new Set(['config/load.ts', 'entry/plan.ts']);
     const callers = sourceFiles()
       .filter((file) => /\bloadConfig\s*\(/.test(file.text))
       .map((file) => file.rel)
