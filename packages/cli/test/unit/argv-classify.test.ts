@@ -4,7 +4,9 @@ import {
   canonicalSubcommand,
   classifyToken,
   EFFORTS,
+  MODEL_ALIASES,
   MODELS,
+  resolveModel,
   SUBCOMMAND_ALIASES,
 } from '../../src/argv/classify';
 
@@ -27,12 +29,16 @@ describe('classifyToken', () => {
   });
 
   describe('model magic', () => {
-    test.each(['opus', 'sonnet', 'haiku', 'fable'])('%s is model', (tok) => {
+    test.each(['opus', 'sonnet', 'haiku', 'fable'])('%s is model (bare)', (tok) => {
+      expect(classifyToken(tok)).toBe('model');
+    });
+
+    test.each(['opus5', 'opus46', 'sonnet5', 'fable5', 'haiku45'])('%s is model (versioned alias)', (tok) => {
       expect(classifyToken(tok)).toBe('model');
     });
 
     // Case sensitivity: Go canonical only matches lowercase exact.
-    test.each(['Opus', 'OPUS', 'Sonnet'])('%s is NOT a model (case-sensitive)', (tok) => {
+    test.each(['Opus', 'OPUS', 'Sonnet', 'Opus5', 'OPUS46'])('%s is NOT a model (case-sensitive)', (tok) => {
       expect(classifyToken(tok)).toBe('positional');
     });
   });
@@ -75,6 +81,16 @@ describe('exported alphabets', () => {
     expect(MODELS).toEqual(['opus', 'sonnet', 'haiku', 'fable']);
   });
 
+  test('MODEL_ALIASES maps versioned shorthand to full model IDs', () => {
+    expect(MODEL_ALIASES).toEqual({
+      opus5: 'claude-opus-5',
+      opus46: 'claude-opus-4-6',
+      sonnet5: 'claude-sonnet-5',
+      fable5: 'claude-fable-5',
+      haiku45: 'claude-haiku-4-5-20251001',
+    });
+  });
+
   test('EFFORTS contains the supported levels incl. ultracode', () => {
     expect(EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'auto', 'ultracode']);
   });
@@ -88,6 +104,28 @@ describe('exported alphabets', () => {
       fork: 'fork',
       fk: 'fork',
     });
+  });
+});
+
+describe('resolveModel', () => {
+  test('bare names pass through unchanged', () => {
+    expect(resolveModel('opus')).toBe('opus');
+    expect(resolveModel('sonnet')).toBe('sonnet');
+    expect(resolveModel('haiku')).toBe('haiku');
+    expect(resolveModel('fable')).toBe('fable');
+  });
+
+  test('versioned aliases resolve to full model IDs', () => {
+    expect(resolveModel('opus5')).toBe('claude-opus-5');
+    expect(resolveModel('opus46')).toBe('claude-opus-4-6');
+    expect(resolveModel('sonnet5')).toBe('claude-sonnet-5');
+    expect(resolveModel('fable5')).toBe('claude-fable-5');
+    expect(resolveModel('haiku45')).toBe('claude-haiku-4-5-20251001');
+  });
+
+  test('unknown tokens pass through unchanged', () => {
+    expect(resolveModel('claude-opus-5')).toBe('claude-opus-5');
+    expect(resolveModel('whatever')).toBe('whatever');
   });
 });
 

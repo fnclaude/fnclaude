@@ -23,6 +23,7 @@
  */
 
 import type { CanonicalSubcommand } from './classify';
+import { resolveModel } from './classify';
 import type { ParsedArgsOk } from './parse';
 
 const SUBCOMMAND_FLAGS: Record<CanonicalSubcommand, readonly string[]> = {
@@ -35,7 +36,7 @@ export function expandAliases(parsed: ParsedArgsOk): string[] {
   const out: string[] = [];
 
   if (parsed.model !== null) {
-    out.push('--model', parsed.model);
+    out.push('--model', resolveModel(parsed.model));
   }
   // `ultracode` is NOT a value claude's --effort flag accepts. It rides as
   // the `/effort ultracode` initial-prompt slash command instead (assembled

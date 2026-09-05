@@ -37,6 +37,45 @@ describe('expandAliases — model alias (§4.1)', () => {
   });
 });
 
+describe('expandAliases — versioned model aliases resolve to full IDs', () => {
+  test('opus5 → --model claude-opus-5', () => {
+    expect(expandAliases(parsed(['opus5']))).toEqual(['--model', 'claude-opus-5']);
+  });
+
+  test('opus46 → --model claude-opus-4-6', () => {
+    expect(expandAliases(parsed(['opus46']))).toEqual(['--model', 'claude-opus-4-6']);
+  });
+
+  test('sonnet5 → --model claude-sonnet-5', () => {
+    expect(expandAliases(parsed(['sonnet5']))).toEqual(['--model', 'claude-sonnet-5']);
+  });
+
+  test('fable5 → --model claude-fable-5', () => {
+    expect(expandAliases(parsed(['fable5']))).toEqual(['--model', 'claude-fable-5']);
+  });
+
+  test('haiku45 → --model claude-haiku-4-5-20251001', () => {
+    expect(expandAliases(parsed(['haiku45']))).toEqual(['--model', 'claude-haiku-4-5-20251001']);
+  });
+
+  test('opus46 + effort → resolved model + effort', () => {
+    expect(expandAliases(parsed(['opus46', 'high']))).toEqual([
+      '--model',
+      'claude-opus-4-6',
+      '--effort',
+      'high',
+    ]);
+  });
+
+  test('sonnet5 + subcommand', () => {
+    expect(expandAliases(parsed(['sonnet5', 'resume']))).toEqual([
+      '--model',
+      'claude-sonnet-5',
+      '--resume',
+    ]);
+  });
+});
+
 describe('expandAliases — effort alias (§4.2)', () => {
   test('high after model → both flags', () => {
     expect(expandAliases(parsed(['opus', 'high']))).toEqual([

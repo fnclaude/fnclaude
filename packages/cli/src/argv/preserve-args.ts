@@ -16,7 +16,7 @@
  * compose this with side-effect code at the boundary.
  */
 
-import { EFFORTS, MODELS } from './classify';
+import { EFFORTS, MODEL_ALIASES, MODELS } from './classify';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Transfer denylists (consumed by §8.x — re-exported here so callers don't
@@ -75,7 +75,7 @@ export const TRANSFER_DENY_BARE_OK: ReadonlySet<string> = new Set([
 // Magic-word membership (private — callers reach for `splitLeadingMagic`)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MODEL_SET: ReadonlySet<string> = new Set(MODELS);
+const MODEL_SET: ReadonlySet<string> = new Set([...MODELS, ...Object.keys(MODEL_ALIASES)]);
 const EFFORT_SET: ReadonlySet<string> = new Set(EFFORTS);
 
 function isMagicWord(tok: string): boolean {

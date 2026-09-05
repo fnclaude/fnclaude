@@ -256,6 +256,31 @@ describe('fnc_set_model (C3)', () => {
     }
   });
 
+  test('versioned alias → resolves to full model ID', async () => {
+    const spy = spyWriter();
+    const handler = createSetModelHandler({ write: spy.write, schedule: syncSchedule });
+    const r = await handler({ op: 'set_model', model: 'opus46' });
+    expect(r).toEqual({ action: 'queued' });
+    expect(spy.calls).toEqual(['\x1b[200~/model claude-opus-4-6\x1b[201~', '\r']);
+  });
+
+  test('every versioned alias is accepted and resolved', async () => {
+    const expected: Record<string, string> = {
+      opus5: 'claude-opus-5',
+      opus46: 'claude-opus-4-6',
+      sonnet5: 'claude-sonnet-5',
+      fable5: 'claude-fable-5',
+      haiku45: 'claude-haiku-4-5-20251001',
+    };
+    for (const [alias, resolved] of Object.entries(expected)) {
+      const spy = spyWriter();
+      const handler = createSetModelHandler({ write: spy.write, schedule: syncSchedule });
+      const r = await handler({ op: 'set_model', model: alias });
+      expect(r.action).toBe('queued');
+      expect(spy.calls).toEqual([`\x1b[200~/model ${resolved}\x1b[201~`, '\r']);
+    }
+  });
+
   test('invalid model → error, no write', async () => {
     const spy = spyWriter();
     const handler = createSetModelHandler({ write: spy.write });
