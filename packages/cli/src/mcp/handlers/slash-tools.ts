@@ -21,7 +21,7 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { EFFORTS, MODELS } from '../../argv/classify';
+import { EFFORTS, MODEL_ALIASES, MODELS, resolveModel } from '../../argv/classify';
 import { createCompactFollowUpGate } from '../../usage/context-monitor';
 import type { ParentDispatchHandler } from '../parent-dispatch';
 import type { WireRequest, WireResponse } from '../wire';
@@ -224,7 +224,7 @@ export function createSetEffortHandler(deps: SlashToolDeps): ParentDispatchHandl
  */
 export function createSetModelHandler(deps: SlashToolDeps): ParentDispatchHandler {
   const { write } = deps;
-  const valid = new Set<string>(MODELS);
+  const valid = new Set<string>([...MODELS, ...Object.keys(MODEL_ALIASES)]);
   return async (req: WireRequest): Promise<WireResponse> => {
     const model = typeof req.model === 'string' ? req.model.trim() : '';
     if (model === '') {
@@ -233,10 +233,10 @@ export function createSetModelHandler(deps: SlashToolDeps): ParentDispatchHandle
     if (!valid.has(model)) {
       return {
         action: 'error',
-        error: `invalid model ${JSON.stringify(model)}; expected one of: ${MODELS.join(', ')}.`,
+        error: `invalid model ${JSON.stringify(model)}; expected one of: ${[...MODELS, ...Object.keys(MODEL_ALIASES)].join(', ')}.`,
       };
     }
-    injectSubmittedLine(formatSlashCommand('model', [model]), {
+    injectSubmittedLine(formatSlashCommand('model', [resolveModel(model)]), {
       write,
       schedule: deps.schedule,
       enterDelayMs: deps.enterDelayMs,

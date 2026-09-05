@@ -219,6 +219,48 @@ describe('scanMagic — subcommands (order-independent, do not advance state)', 
   });
 });
 
+describe('scanMagic — versioned model aliases', () => {
+  test('opus46 recognized as model', () => {
+    expect(scanMagic(['opus46', '~/src/proj'])).toEqual({
+      ok: true,
+      model: 'opus46',
+      effort: null,
+      subcommand: null,
+      consumed: 1,
+    });
+  });
+
+  test('opus5 + effort', () => {
+    expect(scanMagic(['opus5', 'max', '~/src/proj'])).toEqual({
+      ok: true,
+      model: 'opus5',
+      effort: 'max',
+      subcommand: null,
+      consumed: 2,
+    });
+  });
+
+  test('sonnet5 recognized as model', () => {
+    expect(scanMagic(['sonnet5', '~/src/proj'])).toEqual({
+      ok: true,
+      model: 'sonnet5',
+      effort: null,
+      subcommand: null,
+      consumed: 1,
+    });
+  });
+
+  test('haiku45 + subcommand', () => {
+    expect(scanMagic(['haiku45', 'resume', '~/src/proj'])).toEqual({
+      ok: true,
+      model: 'haiku45',
+      effort: null,
+      subcommand: 'resume',
+      consumed: 2,
+    });
+  });
+});
+
 describe('scanMagic — flag-stops-magic boundary', () => {
   test('flag at pos 1: magic stops immediately', () => {
     expect(scanMagic(['--help', 'opus', 'max'])).toEqual({

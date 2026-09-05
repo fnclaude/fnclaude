@@ -14,7 +14,17 @@
 export const MODELS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'auto', 'ultracode'] as const;
 
-export type Model = (typeof MODELS)[number];
+export const MODEL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  opus5: 'claude-opus-5',
+  opus46: 'claude-opus-4-6',
+  sonnet5: 'claude-sonnet-5',
+  fable5: 'claude-fable-5',
+  haiku45: 'claude-haiku-4-5-20251001',
+});
+
+export type BareModel = (typeof MODELS)[number];
+export type ModelAlias = keyof typeof MODEL_ALIASES;
+export type Model = BareModel | ModelAlias;
 export type Effort = (typeof EFFORTS)[number];
 export type CanonicalSubcommand = 'resume' | 'continue' | 'fork';
 
@@ -27,8 +37,13 @@ export const SUBCOMMAND_ALIASES: Readonly<Record<string, CanonicalSubcommand>> =
   fk: 'fork',
 });
 
-const MODEL_SET = new Set<string>(MODELS);
+const MODEL_SET = new Set<string>([...MODELS, ...Object.keys(MODEL_ALIASES)]);
 const EFFORT_SET = new Set<string>(EFFORTS);
+
+/** Bare names pass through; aliases resolve to the full model ID. */
+export function resolveModel(tok: string): string {
+  return MODEL_ALIASES[tok] ?? tok;
+}
 
 export type TokenKind = 'flag' | 'model' | 'effort' | 'subcommand' | 'positional';
 

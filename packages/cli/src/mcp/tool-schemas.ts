@@ -264,14 +264,15 @@ const SET_EFFORT: McpToolSchema = {
 
 const SET_MODEL: McpToolSchema = {
   description:
-    "Change the current session's model in place via claude's /model slash command. Use when the user asks to switch models. Fire-and-forget: the command is queued into the live session as if typed; no output is returned. Args: model (one of opus, sonnet, haiku).",
+    "Change the current session's model in place via claude's /model slash command. Use when the user asks to switch models. Fire-and-forget: the command is queued into the live session as if typed; no output is returned. Args: model (a bare alias like opus/sonnet/haiku/fable, or a versioned alias like opus5/opus46/sonnet5/fable5/haiku45 which resolves to the full model ID).",
   inputSchema: {
     type: 'object',
     properties: {
       model: {
         type: 'string',
-        description: 'The model alias: opus, sonnet, or haiku.',
-        enum: ['opus', 'sonnet', 'haiku'],
+        description:
+          'The model alias: a bare name (opus, sonnet, haiku, fable) or a versioned alias (opus5, opus46, sonnet5, fable5, haiku45).',
+        enum: ['opus', 'sonnet', 'haiku', 'fable', 'opus5', 'opus46', 'sonnet5', 'fable5', 'haiku45'],
       },
     },
     required: ['model'],

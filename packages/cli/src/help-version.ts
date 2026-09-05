@@ -37,7 +37,8 @@ Usage:
 
 Magic positional words (order-independent for SUBCOMMAND; MODEL/EFFORT scanned
 left-to-right at the head of argv before any flags):
-  Model alias:   opus | sonnet | haiku | fable               → --model <alias>
+  Model alias:   opus | sonnet | haiku | fable               → --model <name>
+                 opus5 | opus46 | sonnet5 | fable5 | haiku45 → --model <full-id>
   Effort level:  low | medium | high | xhigh | max | auto    → --effort <level>
                   (effort alone at position 1 implies opus)
   Subcommand:    resume | res                                → --resume
@@ -126,6 +127,7 @@ Repo settings (~/.claude/settings.json):
 Examples:
   fnc                                  # noop session in ~/.config/fnclaude/noop
   fnc opus max ~/src/proj              # opus + max effort in ~/src/proj
+  fnc opus46 high ~/src/proj           # claude-opus-4-6 + high effort
   fnc ~/src/proj feature               # cwd + worktree name (same as -w feature)
   fnc sonnet ~/src/proj -- "fix the bug"
                                        # auto-name from prompt, sonnet model
