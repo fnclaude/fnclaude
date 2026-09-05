@@ -1,0 +1,9 @@
+# Package-level Bun config for the CLI.
+#
+# Bun reads bunfig.toml from the invocation directory only — no ancestor walk, no
+# per-package merge. `moon run :test` cd's here and runs `bun test`, so this file's
+# preload is what fires in CI. It builds the lowered dist/ once before any test spawns
+# bin/fnc.js, so the shim's cold rebuild never races across the spawned processes.
+
+[test]
+preload = "./test/preload.ts"
