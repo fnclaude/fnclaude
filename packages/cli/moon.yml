@@ -11,18 +11,29 @@ tasks:
       cache: false
   test:
     command: 'bun run test'
+    # The tiers spawn bin/fnc.js, whose dev path rebuilds dist/ on a cold checkout. Building
+    # first (rather than letting each spawned shim build concurrently and time out) is the
+    # durable fix — `moon run :test` anywhere lowers dist once before the tests run.
+    deps:
+      - '~:build'
     inputs:
       - 'src/**/*'
       - 'test/**/*'
       - 'tsconfig.json'
       - 'package.json'
   build:
-    # No actual build step today — Bun executes TypeScript directly via the
-    # bin shim. Restore an `outputs:` declaration here (e.g. `- 'dist'`) the
-    # moment we add a bundling step that emits artifacts; until then,
-    # declaring outputs that don't get created fails the task runner.
+    # Lowers src/** through the ttsc/Go engine into dist/ (tools/build-dist.ts):
+    # the STAGE spawns the transform host from the *.extras devDeps, the BUNDLE
+    # folds the staged emit with @rhombus-std/* external, and the dist/.lowered
+    # sentinel is written last (the marker bin/fnc.js forks on).
     command: 'bun run build'
     inputs:
       - 'src/**/*'
+      - 'tools/**/*'
+      - 'vendor/**/*'
       - 'tsconfig.json'
+      - 'tsconfig.ttsc.json'
+      - 'tsconfig.build.json'
       - 'package.json'
+    outputs:
+      - 'dist'

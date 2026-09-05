@@ -13,7 +13,7 @@
  * classifies and acts on, with no second, drift-prone read. See issue #211.
  */
 
-export interface BootFields {
+export interface BootFields extends Record<string, unknown> {
   argv: readonly string[];
   cwd: string;
   ppid: number;

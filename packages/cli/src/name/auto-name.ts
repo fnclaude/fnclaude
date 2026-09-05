@@ -52,8 +52,8 @@ export function shouldAutoName(parsed: ParsedArgsOk): boolean {
   const pt = parsed.passthrough;
   const sentinelIdx = findPromptSentinel(pt);
   if (sentinelIdx < 0) return false;
-  if (!hasPromptBody(pt, sentinelIdx)) return false;
-  if (promptBody(pt, sentinelIdx).every((t) => t === '')) return false;
+  if (!hasPromptBody(pt)) return false;
+  if (promptBody(pt).every((t) => t === '')) return false;
 
   // Scan up to the sentinel — only flags BEFORE `--` count.
   for (let i = 0; i < sentinelIdx; i++) {

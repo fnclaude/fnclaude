@@ -5,7 +5,8 @@
   "description": "fnclaude monorepo root (private; individual packages publish to npm)",
   "workspaces": [
     "packages/*",
-    "docs"
+    "docs",
+    "packages/cli/vendor/*"
   ],
   "scripts": {
     "lint": "moon run :lint",
@@ -15,5 +16,8 @@
   "devDependencies": {
     "typescript": "^5.6.0",
     "@types/bun": "^1.3.0"
+  },
+  "overrides": {
+    "@rhombus-toolkit/types": "2.0.0"
   }
 }

@@ -31,9 +31,10 @@
  * is not fatal — the values are still returned, and the next run tries again.
  */
 
-import { statSync } from 'node:fs';
-import { extname } from 'node:path';
+import { extname, join } from 'node:path';
 
+import type { IFileSystem } from '../ports/contracts';
+import { NodeFileSystem } from '../ports/node-fs';
 import {
   type NoticeLadderSpec,
   type NoticeRepeatSpec,
@@ -42,8 +43,8 @@ import {
   isNoticeLevel,
 } from '../usage/context-monitor';
 import {
+  CONFIG_BASENAMES,
   type XdgEnv,
-  findConfigFile,
   fncConfigDir,
   fncConfigWritePath,
   legacyFncConfigPath,
@@ -109,6 +110,11 @@ export interface LoadConfigArgs {
    * failure here is swallowed: the migrated values are still returned.
    */
   write?: (path: string, patch: Record<string, unknown>) => void;
+  /**
+   * Read seam. Defaults to {@link NodeFileSystem}; a hermetic test injects an
+   * in-memory filesystem. A read failure degrades to defaults, never throws.
+   */
+  fs?: IFileSystem;
 }
 
 const EMPTY: FnConfig = {
@@ -123,12 +129,24 @@ const EMPTY: FnConfig = {
   execEnv: undefined,
 };
 
+/**
+ * First existing `config.{json,jsonc,toml,yaml}` in `dir`, or null. Mirrors
+ * {@link findConfigFile} but reads through the injectable {@link IFileSystem}.
+ */
+function findConfigFileVia(fs: IFileSystem, dir: string): string | null {
+  for (const base of CONFIG_BASENAMES) {
+    const candidate = join(dir, base);
+    if (fs.isFile(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** Parse one config file by extension. Returns null on any read/parse failure. */
-async function parseConfigFile(path: string): Promise<unknown> {
+async function parseConfigFile(fs: IFileSystem, path: string): Promise<unknown> {
   let text: string;
   try {
-    if (!statSync(path).isFile()) return null;
-    text = await Bun.file(path).text();
+    if (!fs.isFile(path)) return null;
+    text = await fs.readText(path);
   } catch {
     return null;
   }
@@ -159,17 +177,18 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 
 export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
   const warn = args.warn ?? ((m: string): void => console.warn(m));
+  const fs = args.fs ?? new NodeFileSystem();
 
-  const found = findConfigFile(fncConfigDir(args.env));
+  const found = findConfigFileVia(fs, fncConfigDir(args.env));
   if (found !== null) {
-    const parsed = await parseConfigFile(found);
+    const parsed = await parseConfigFile(fs, found);
     const root = asRecord(parsed);
     return root === null ? EMPTY : project(root, warn);
   }
 
   // Nothing at the new location — try the pre-restructure TOML once.
   const legacyPath = legacyFncConfigPath(args.env);
-  const legacyParsed = await parseConfigFile(legacyPath);
+  const legacyParsed = await parseConfigFile(fs, legacyPath);
   const legacyRoot = asRecord(legacyParsed);
   if (legacyRoot === null) return EMPTY;
 

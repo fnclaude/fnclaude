@@ -15,15 +15,17 @@
   },
   "files": [
     "bin",
+    "dist",
     "prompts",
     "schemas",
-    "share",
-    "src"
+    "share"
   ],
   "scripts": {
     "lint": "echo 'lint stub (cli, rewrite window)' && exit 0",
     "test": "bun test",
-    "build": "echo 'no build step (bun runs ts directly)' && exit 0"
+    "build": "bun tools/build-dist.ts",
+    "test:composition": "bun tools/build-composition.ts",
+    "guards": "bun test test/guards.test.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -31,9 +33,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.99.0",
-    "confbox": "^0.3.1"
+    "confbox": "^0.3.1",
+    "@rhombus-std/di": "workspace:*",
+    "@rhombus-std/di.core": "workspace:*",
+    "@rhombus-std/primitives": "workspace:*"
   },
   "devDependencies": {
-    "json-schema-to-ts": "^3.1.1"
+    "json-schema-to-ts": "^3.1.1",
+    "@rhombus-std/di.extras": "workspace:*",
+    "@rhombus-std/primitives.extras": "workspace:*",
+    "@rhombus-std/transforms": "workspace:*",
+    "ttsc": "0.18.4",
+    "@ttsc/unplugin": "0.18.4",
+    "typescript": "7.0.2"
   }
 }

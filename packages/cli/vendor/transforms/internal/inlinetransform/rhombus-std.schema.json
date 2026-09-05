@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/fnioc/std/releases/latest/download/rhombus-std.schema.json",
+  "title": "rhombus-std config",
+  "description": "The grammar for a package's \"rhombus-std\" marker (its value in package.json) and for a standalone rhombus-std config file it, or a peer, extends.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Points an editor at this schema. A standalone rhombus-std.json file carries it; a package.json marker never needs it."
+    },
+    "extends": {
+      "description": "One path, or an array of paths (relative to the file that declares them), each to another rhombus-std-shaped file — JSON, YAML (.yaml/.yml), or TOML (.toml), chosen by the target's extension. An array applies left to right: each path's own resolved content deep-merges over everything accumulated from the paths before it, so a later path wins a leaf collision against an earlier one. The accumulated result of the whole \"extends\" list is this config's BASE — this config's own keys deep-merge OVER it and win every remaining leaf collision. Resolution is blind: a path that isn't a readable file contributes nothing, silently — the same whether this directive was written by hand or supplied by the workspace default. An extended file may itself carry \"extends\"; a chain may be arbitrarily long, and a cycle (a path already reached earlier in the chain) also contributes nothing rather than looping. The merge itself: an object recurses key-by-key, an array concatenates as base-then-winner with each element left atomic, and any other value replaces.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "typefor": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Controls how the typefor<T>() authoring primitive emits the runtime Type value it derives.",
+      "properties": {
+        "emit": {
+          "type": "string",
+          "enum": ["hoisted", "inline"],
+          "default": "hoisted",
+          "description": "\"hoisted\" lifts the derived Type to a shared module-level constant; \"inline\" writes it fresh at each call site."
+        }
+      }
+    },
+    "inline": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The type-driven sugar publish list: every entry names a member the inline stage substitutes at a consumer call site.",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "description": "The publish list, in declaration order.",
+          "items": { "$ref": "#/definitions/entry" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "entry": {
+      "description": "One publish-list entry, in one of four shapes distinguished by which fields are present.",
+      "oneOf": [
+        { "$ref": "#/definitions/instanceMemberEntry" },
+        { "$ref": "#/definitions/ownBodyMemberEntry" },
+        { "$ref": "#/definitions/staticMemberEntry" },
+        { "$ref": "#/definitions/floaterEntry" }
+      ]
+    },
+    "instanceMemberEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "impl", "member"],
+      "description": "An instance-member sugar entry: the interface member named by \"type\"/\"member\" is ambient, its body living on \"impl\"'s \"member\"-named property.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "A \"<package>:<Name>\" reference to the interface the member is declared on."
+        },
+        "impl": {
+          "type": "string",
+          "description": "A \"<package>:<Name>\" reference to the export whose \"member\"-named property holds the body."
+        },
+        "member": {
+          "type": "string",
+          "description": "The member name shared by \"type\" and \"impl\"."
+        }
+      }
+    },
+    "ownBodyMemberEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "member"],
+      "description": "An instance-member sugar entry whose own declaration is its body: the interface member named by \"type\"/\"member\" is not ambient, so there is no separate \"impl\" to hold it.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "A \"<package>:<Name>\" reference to the interface the member is declared on."
+        },
+        "member": {
+          "type": "string",
+          "description": "The member name on \"type\"."
+        }
+      }
+    },
+    "staticMemberEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["impl", "member"],
+      "description": "A static / namespace-const member sugar entry: \"impl\" is both the call-base anchor and the body holder.",
+      "properties": {
+        "impl": {
+          "type": "string",
+          "description": "A \"<package>:<Name>\" reference to the value that is both the call-base anchor and the body holder."
+        },
+        "member": {
+          "type": "string",
+          "description": "The member name on \"impl\"."
+        }
+      }
+    },
+    "floaterEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["impl"],
+      "description": "A free-standing sugar entry: \"impl\"'s own source is the body.",
+      "properties": {
+        "impl": {
+          "type": "string",
+          "description": "A \"<package>:<Name>\" reference to the function whose own source is the body."
+        }
+      }
+    }
+  }
+}

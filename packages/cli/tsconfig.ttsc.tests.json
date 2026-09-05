@@ -1,0 +1,9 @@
+{
+  "//": "The lowering stage for the composition-test tier (tools/build-composition.ts). Widens the root and include to the package so both src/** and test/composition/** lower through the same program the dist build uses.",
+  "extends": "./tsconfig.ttsc.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": ".ttsc-out-tests"
+  },
+  "include": ["src/**/*", "test/composition/**/*"]
+}

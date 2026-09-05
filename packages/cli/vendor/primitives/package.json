@@ -1,0 +1,35 @@
+{
+  "name": "@rhombus-std/primitives",
+  "version": "0.0.0",
+  "description": "Change-token primitives (IChangeToken, ChangeToken.onChange, CancellationChangeToken, CompositeChangeToken), the augmentation registry, and the Type system every other family builds on. A leaf package -- zero dependencies.",
+  "keywords": [
+    "primitives",
+    "change-token",
+    "typescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "libraries/primitives"
+  },
+  "type": "module",
+  "main": "./dist/bundle/index.js",
+  "exports": {
+    ".": "./dist/bundle/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun ../../scripts/build-lib.ts",
+    "lint": "bun x tsc --noEmit -p tsconfig.ci.json"
+  },
+  "dependencies": {
+    "@rhombus-toolkit/obj": "^3.0.1",
+    "@rhombus-toolkit/once": "^2.0.0",
+    "@rhombus-toolkit/platform": "^1.1.0",
+    "@rhombus-toolkit/type-guards": "^4.0.0",
+    "@rhombus-toolkit/types": "^2.0.0"
+  }
+}

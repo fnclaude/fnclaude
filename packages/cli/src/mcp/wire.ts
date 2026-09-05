@@ -69,6 +69,9 @@ const DEFAULT_CALL_TIMEOUT_MS = 10_000;
  * The connection lifetime is bounded by the call timeout — even an
  * actively-writing server can't keep us pinned past callTimeoutMs.
  */
+/** The dial-one-request-per-connection seam; a frozen function-shaped value (value door). */
+export type IWireClient = typeof dialAndCall;
+
 export async function dialAndCall(args: DialAndCallArgs): Promise<WireResponse> {
   const dialTimeoutMs = args.dialTimeoutMs ?? DEFAULT_DIAL_TIMEOUT_MS;
   const callTimeoutMs = args.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;

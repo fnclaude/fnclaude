@@ -1,0 +1,10 @@
+{
+  "$schema": "../../schema/rhombus-std.schema.json",
+  "inline": {
+    "entries": [
+      {
+        "impl": "@rhombus-std/primitives.extras:registerAugmentations"
+      }
+    ]
+  }
+}

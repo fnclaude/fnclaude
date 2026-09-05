@@ -1,0 +1,37 @@
+{
+  "name": "@rhombus-std/transforms",
+  "version": "0.0.0",
+  "description": "The Go transform engine behind every @rhombus-std authoring package: one host binary whose stage table runs on every file, shipped as source for ttsc to compile and spawn.",
+  "keywords": [
+    "typescript",
+    "transformer",
+    "compiler",
+    "ttsc",
+    "go"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnioc/std.git",
+    "directory": "transforms"
+  },
+  "type": "module",
+  "exports": {
+    "./ttsc": "./ttsc.mjs"
+  },
+  "files": [
+    "cmd",
+    "internal",
+    "go.mod",
+    "go.sum",
+    "ttsc.mjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "directory": "dist/publish",
+    "exports": {
+      "./ttsc": "./ttsc.mjs"
+    }
+  }
+}

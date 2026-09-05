@@ -21,8 +21,7 @@
  * affects server behavior, anything else is ignored.
  */
 
-import { readFileSync } from 'node:fs';
-
+import { createVersionReader } from '../composition/version-reader';
 import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server';
 import { TOOL_SCHEMAS } from './tool-schemas';
 import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire';
@@ -164,34 +163,19 @@ export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool>
   return tools;
 }
 
-let cachedVersion: string | null = null;
-
-function readPackageVersion(): string {
-  if (cachedVersion !== null) return cachedVersion;
-  try {
-    const pkgUrl = new URL('../../package.json', import.meta.url);
-    const raw = readFileSync(pkgUrl, 'utf8');
-    const parsed = JSON.parse(raw) as { version?: unknown };
-    cachedVersion = typeof parsed.version === 'string' ? parsed.version : '0.0.0-dev';
-  } catch {
-    cachedVersion = '0.0.0-dev';
-  }
-  return cachedVersion;
-}
-
 /**
  * Build the `initialize` result body shared between Go canonical and TS.
  * Per Go (`src/mcp.go:handleInitialize`): protocolVersion + capabilities
  * + serverInfo. `capabilities.tools` is the empty object — claude reads it
  * as "yes, tools/list is supported", not as a list itself.
  */
-function buildInitializeResponse(): object {
+export function buildInitializeResponse(version: string): object {
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
     capabilities: { tools: {} },
     serverInfo: {
       name: MCP_SERVER_NAME,
-      version: readPackageVersion(),
+      version,
     },
   };
 }
@@ -217,46 +201,26 @@ export async function handleMcpLine(line: string): Promise<string | null> {
   if (testServer === null) {
     testServer = createJsonRpcServer({
       tools: buildTools({ socketPath: process.env.FNC_SOCKET ?? '' }),
-      initializeResponse: buildInitializeResponse(),
+      initializeResponse: buildInitializeResponse(createVersionReader().read()),
     });
   }
   return testServer.handle(line);
 }
 
 /**
- * Entry point for `fnc mcp [--noop]`.
- *
- * Returns the process exit code. The launcher (main.ts) calls
- * `process.exit(exitCode)` with the return value.
+ * Newline-delimited JSON-RPC pump. Reads from `input` (process.stdin by
+ * default), hands each line to `server.handle()`, writes the resulting
+ * envelope (if any) to stdout. Notifications produce `null` and are dropped
+ * silently.
  */
-export async function runMcpServer(_flags: McpFlags): Promise<number> {
-  const socketPath = process.env.FNC_SOCKET;
-  if (socketPath === undefined || socketPath === '') {
-    process.stderr.write(
-      'fnc mcp: FNC_SOCKET not set; subprocess must be invoked by fnclaude launcher.\n',
-    );
-    return 2;
-  }
-
-  const server = createJsonRpcServer({
-    tools: buildTools({ socketPath }),
-    initializeResponse: buildInitializeResponse(),
-  });
-
-  await runStdinLoop(server);
-  return 0;
-}
-
-/**
- * Newline-delimited JSON-RPC pump. Reads from process.stdin, hands each
- * line to `server.handle()`, writes the resulting envelope (if any) to
- * stdout. Notifications produce `null` and are dropped silently.
- */
-async function runStdinLoop(server: { handle(line: string): Promise<string | null> }): Promise<void> {
+export async function runStdinLoop(
+  server: { handle(line: string): Promise<string | null> },
+  input: AsyncIterable<unknown> = process.stdin,
+): Promise<void> {
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
 
-  for await (const chunk of process.stdin) {
+  for await (const chunk of input) {
     buffer += decoder.decode(chunk as Uint8Array, { stream: true });
     let nl: number;
     while ((nl = buffer.indexOf('\n')) !== -1) {

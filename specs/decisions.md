@@ -480,3 +480,95 @@ When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), th
 **Why two separate prompts, and private-by-default remote:** the local bootstrap (mkdir + git init + git remote add) is fully reversible. Creating a GitHub remote is outward-facing and hard to undo, so it's gated behind its own explicit second prompt and defaults to `--private`. In a non-TTY context (CI, pipes), the confirm helper returns its default (No) without blocking, so non-interactive runs against a missing repo behave exactly as they did before this change — fnclaude never bootstraps or creates a remote by surprise.
 
 **Revisit when:** gh changes its not-found error wording (update the signatures in [`packages/cli/src/repo/clone-failure.ts`](../packages/cli/src/repo/clone-failure.ts)); or an explicit opt-in (`--new` flag or `+new` suffix) is wanted to skip the first prompt for the known-bootstrap case; or template-based creation (`gh repo create --template`) is wanted instead of a bare empty repo.
+
+---
+
+## 2026-09-05 — DI engine and lifetime model: `@rhombus-std/di` `Builder` + `standardLifetime` + full validation stack
+
+**Decision:** Containers are assembled with `Builder.useAddon(validateUniversalAddresses()).useAddon(validateBuildability()).useAddon(validateScopes()).useAddon(standardLifetime()).withServices(...).build()`. Pure-singleton containers; no scopes; explicit lifetimes on every registration under `Manifest<StandardLifetime>`.
+
+**Context:** fnclaude's only lifetime boundary is process-outlives-one-session, expressed natively by container singletons + disposal. `taggedLifetime` was evaluated and rejected: its sole distinguishing capability (nested request scopes resolving session services) is unused here, its built provider caches nothing (forcing scope machinery just to share instances), and it structurally cannot have a `validateScopes`. The closed vocabulary makes the lifetime argument compile-required, killing the silent-transient class. `validateScopes` rides dormant as free insurance.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Four composition roots; every cross-root value is frozen data
+
+**Decision:** `entry/plan.ts` (async, short-lived, emits a frozen ref-free `LaunchPlan` carrying `config` whole + drained `warnings`, then disposes), `entry/install.ts` (`install -y`), `entry/run.ts` (session; emits `SessionOutcome` carrying exit code, handoff argv, ring snapshot, run warnings **before** disposal), `entry/mcp.ts` (subprocess). `main.ts` is a pre-DI dispatcher. The hosting Generic Host is not used: it composes no lifetime model, never disposes its provider, and needs an explicit ordering orchestrator anyway.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Both execve tails live outside every container; teardown happens-before re-exec
+
+**Decision:** `replaceProcessImage` (handoff) and `reexecSelf` (cross-CWD) are never registered; `run.ts` invokes them after `await using` disposal completes. The registered `IHandoffDetector` does detection + the kill of claude only and returns the stashed argv. This converts today's teardown-vs-execve soft race into an asserted hard happens-before.
+
+**PR-4 note (run root landed; sketch-vs-leaf reconciliations):** implemented `entry/run.ts`, `registerRunServices`, `launch/session.ts` (the `ISession` consumer), and the listener/monitor/detector/dispatcher wrappers. Several §4 illustrative sketches were corrected to the real leaf signatures: (1) `SessionOutcome.ringSnapshot` is `Uint8Array`, not `string` — `RingBuffer.snapshot()` returns bytes and `decideCrossCwdRelaunch` consumes bytes (spec amended). (2) `IContextMonitor` is a `ContextMonitorService` wrapper **started post-spawn** via `start(proc)`, not eagerly `asDisposable(startContextMonitor(...))` — the own-session resolver needs claude's pid, unavailable at resolve time (spec amended). (3) Both tails call the one real `reexecSelf` (`handoff/awaiter.ts`); there is no separate `replaceProcessImage` leaf. (4) `McpBindError` + the `McpListenerService` wrapper live in `mcp/listener-service.ts` (the leaf `mcp/listener.ts` already exports an unrelated `McpListener` interface). (5) The PTY-writer/control-seam holders ride the `plan.mcpEnabled` overlay (the slash tools need them; `useTerminal ⊆ mcpEnabled`), not the `useTerminal` overlay. (6) A new always-on `ITerminalHost` seam (`ports/node-terminal-host.ts`) wraps `Bun.Terminal` + process stdin/stdout so the PTY branch is testable without a TTY; `Session`'s ctor takes it plus the control-seam holder (the §4 ctor sketch listed neither). (7) OOBE inputs are gathered async in `runSession` **before** the chain opens (the config-before-chain pattern) and passed to `registerRunServices` as an `OobeContext`, rather than riding `plan.oobe` + `OobeState.fromPlan`. (8) `IVersionReader` is not registered in the run root — no run-root consumer reads the version (the consolidation is an MCP-root concern). `run.ts`'s `runSession` takes optional test seams (`openSession`/`reexec`/`sessionExists`); the four-variant composition matrix (`test/composition/run.ctest.ts`) asserts `validateBuildability` + resolve-twice identity, and the guards' overlay/matrix-parity check is armed (3 overlays, 4 reachable variants).
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Sugar confinement + dialect rules
+
+**Decision:** di.extras sugar appears only in `entry/*`, `*/register.ts`, and `test/composition/*.ctest.ts` (CI grep-enforced). Explicit lifetimes always; function-shaped frozen seams register through `addValue` (the value door); no async construction (async work is a method; `resolveAsync` is the unused escape hatch); optional deps are `T | undefined` unions; tool handlers are multi-registrations aggregated into the dispatcher's `IToolHandler[]` ctor param. Leaf modules keep their deps-object factory signatures untouched; registration factories take typed params and call them.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Transform placement: build-to-dist behind `bin/fnc.js`, sentinel-gated
+
+**Decision:** The ttsc lowering runs as a stage (per-file, `@ttsc/unplugin/bun`, `.ttsc-out`) + plugin-free `Bun.build` bundle, `@rhombus-std/*` external. Dev = `ensureFreshDist()`; installed = pre-built `dist/`. The fork keys on `dist/.lowered`, written by the build tool only after a zero-`typefor(` assertion; the dev tsconfig is `noEmit` (emit lives in `tsconfig.build.json`), closing the un-lowered-dist trap. Plain `bun test` stays transform-free (sugar-free unit tier); composition tests ride their own stage+bundle lane (`bun run test:composition`). A runtime preload was rejected: broken in std with an unpinned root cause, never demonstrated out-of-monorepo.
+
+**PR-1 note:** the `bin/fnc.js` fork checks **src presence first** (dev rebuilds), then the sentinel (installed) — an `installed = dist exists` check first would skip dev rebuilds, since a dev checkout has both `src/` and a built `dist/`. The lowering runs a full tsgo typecheck, so it required the pre-existing cli tree to be type-clean; four latent type errors (a dead second arg to `promptBody`/`hasPromptBody`, and `BootFields` lacking an index signature — the cli lint was a stub) were corrected type-only. Warm rebuild at the 87-file cli scale measured ~1.2–2.3 s; the cold transform-host compile is a one-time ~30–70 s.
+
+**PR-3 note (two engine-reality corrections):** (1) `tsconfig.ttsc.json`'s `rootDir` was changed from `./src` to `.`. The transform emits the shared `__typefor__` intern module's import specifier relative to the tsconfig `rootDir`, but `stageLowering` emits with Bun's `root: dir` (the `src/` prefix kept). With `rootDir: ./src` the specifier is one level too shallow, so the dist bundle could not resolve `__typefor__` for a sugar file in a `src/` subdirectory (`entry/`, `launch/`, `install/`) — latent until PR-3, the first PR to bundle nested sugar files into `dist/` (PR-2's ports were plain). `rootDir: .` aligns the specifier with the emit base, matching the already-`.`-rooted `tsconfig.ttsc.tests.json`. (2) Registrations in a `register.ts` must be **separate statements** (`let s = m.add(...); s = s.add(...); …`), not one long chained `.add().add()…` expression: the transform's fixed-point loop does not converge on a long chain (`did not reach a fixed point after 16 passes`). The §4 spec example is amended to the separate-statement form.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Interim `@rhombus-std` consumption: vendored workspace dirs from std `bd2074fa`; three-gate `@next` flip
+
+**Decision:** `bun pm pack --destination` per library (checkout untouched) → extract → patch (`publishConfig` merge for di/di.core/primitives; `sed 's/0extends1/0 extends 1/g'` on di's broken `.d.ts` — a flagged upstream std bug) → re-tar into `vendor/` → `file:` + mirrored overrides + the `@rhombus-toolkit/types@2.0.0` pin, default hoisted linker. `file:`-directory links are forbidden (verified to fork package copies). Flip to `@next` only when (a) all six packages carry the tag, (b) the published surface typechecks against our usage, and (c) di's published `.d.ts` parses; then swap specifiers to the exact resolved versions, delete `vendor/` + the patch steps. Never a partial flip.
+
+**PR-0/PR-1 note:** implemented as unpacked **workspace dirs** under `vendor/<name>/` consumed `workspace:*`, not `file:` tarballs — bun resolves a `file:` override only as an absolute path (non-portable lockfile), while a workspace member dedupes to one copy and keeps the lockfile path-free. Two extra patches were forced by stale std artifacts at `bd2074fa`: `publishConfig` is merged for the extras too (else the consumer typechecks their unlowered source), and the extras' declarations are re-emitted from shipped src into `dtsgen/` (the committed dist declaration predates the current sugar surface, tripping `INLINE_UNRESOLVED_MEMBER`). Both are flagged upstream tasks; the flip drops them at gate (c′). `typescript 7.0.2` is a load-bearing devDependency (its platform-native optional dep is the transform host's compiler).
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Published artifact: external exact-pinned `@rhombus-std` runtime deps
+
+**Decision:** `di`, `di.core`, `primitives` are exact-pinned runtime dependencies of the published package; `di.extras`, `primitives.extras`, `transforms` are devDependencies (their sugar is lowered away). Identity safety: one hoisted copy each, version excluded from `Type` specifiers, `di.core`'s `stampSingleInstance` guards loudly. Inlining the runtime is the documented contingency only for a publish forced before real `@next` packages exist, behind a hard single-copy publish gate (`primitives` has no self-guard — a silent-fork hazard).
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Config stays a frozen value through DI; no `addOptions`
+
+**Decision:** `loadConfig` runs before the plan chain; the frozen record is `addValue`'d, rides the plan whole as `plan.config`, and is re-registered in the run root. `addOptions<T>()` is not adopted — it has no runtime form and would fight the no-runtime-validation / per-field-degrade invariant. Warnings bridge roots as data (`plan.warnings` in, `SessionOutcome.warnings` out; flush on plain exit only).
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — `IFileSystem` is a minimal, deliberate seam
+
+**Decision:** A filesystem port exists but only `config/load.ts` is converted (the one hermetic-test payoff). The other fs-using leaves keep inline `fs` behind real-tmpdir tests — the working status quo. A systematic port is a separately-justified future decision, not part of DI adoption.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Vendored `@rhombus-std` dist is committed; CI builds before it tests
+
+**Decision:** The vendored packages' built bundles (`vendor/<name>/dist/bundle/`) are committed artifacts, not build outputs. There is no in-tree step that regenerates them — each package's build script calls a `scripts/build-lib.ts` that does not exist in this checkout — and their `exports`/`main` point straight at `dist/bundle/index.js` with types resolved via the sibling `.d.ts`. Their dist IS the shipped artifact (per [proposals/design.fnioc-adoption.md](proposals/design.fnioc-adoption.md) Graft 2), the same reason their sources are committed. Consequence: `packages/cli/.gitignore` must keep these trees out of its ignore patterns — `dist/` carries a `!vendor/*/dist/` re-include, and `.cache/` is anchored `/.cache/`; an unanchored `dist/`/`.cache/` silently swallows the vendored trees, so a fresh checkout (CI) loses the types and the ttsc checker fails with "Cannot find module '@rhombus-std/di'". A unit guard (`test/unit/vendor-dist-present.test.ts`) asserts the artifacts are present so a cold checkout fails in the unit tier, not a multi-minute build.
+
+**Decision:** CI builds the lowered `dist/` before it tests, and only once. The e2e/unit tiers spawn `bin/fnc.js`, whose dev path rebuilds `dist/` when a source file is newer than the sentinel; on a cold runner, many spawns each started a full ttsc/Go host compile at once and every test timed out. `packages/cli`'s moon `test` task now depends on `~:build`, a bunfig preload builds `dist/` once before any test file loads, and `build-dist.ts` takes a cross-process lock (`--if-stale` skips when fresh) so concurrent builders serialize into one build. The repo-local ttsc host cache is persisted in CI keyed on the ttsc/typescript pins and the vendored transform source.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).

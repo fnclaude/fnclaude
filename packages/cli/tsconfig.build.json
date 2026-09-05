@@ -1,0 +1,10 @@
+{
+  "//": "The one emit-capable config, isolated from the default dev config (which sets `noEmit`) so a bare `tsc -p tsconfig.json` can never emit un-lowered JS a naive shim would prefer. The real dist build runs through tools/build-dist.ts (ttsc stage + Bun.build), which is the only writer of the `dist/.lowered` sentinel bin/fnc.js forks on; this file exists to keep emit off the default config.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "noEmit": false
+  },
+  "include": ["src/**/*"]
+}
