@@ -21,8 +21,7 @@
  * affects server behavior, anything else is ignored.
  */
 
-import { readFileSync } from 'node:fs';
-
+import { createVersionReader } from '../composition/version-reader';
 import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server';
 import { TOOL_SCHEMAS } from './tool-schemas';
 import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire';
@@ -164,28 +163,13 @@ export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool>
   return tools;
 }
 
-let cachedVersion: string | null = null;
-
-function readPackageVersion(): string {
-  if (cachedVersion !== null) return cachedVersion;
-  try {
-    const pkgUrl = new URL('../../package.json', import.meta.url);
-    const raw = readFileSync(pkgUrl, 'utf8');
-    const parsed = JSON.parse(raw) as { version?: unknown };
-    cachedVersion = typeof parsed.version === 'string' ? parsed.version : '0.0.0-dev';
-  } catch {
-    cachedVersion = '0.0.0-dev';
-  }
-  return cachedVersion;
-}
-
 /**
  * Build the `initialize` result body shared between Go canonical and TS.
  * Per Go (`src/mcp.go:handleInitialize`): protocolVersion + capabilities
  * + serverInfo. `capabilities.tools` is the empty object — claude reads it
  * as "yes, tools/list is supported", not as a list itself.
  */
-export function buildInitializeResponse(version: string = readPackageVersion()): object {
+export function buildInitializeResponse(version: string): object {
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
     capabilities: { tools: {} },
@@ -217,7 +201,7 @@ export async function handleMcpLine(line: string): Promise<string | null> {
   if (testServer === null) {
     testServer = createJsonRpcServer({
       tools: buildTools({ socketPath: process.env.FNC_SOCKET ?? '' }),
-      initializeResponse: buildInitializeResponse(),
+      initializeResponse: buildInitializeResponse(createVersionReader().read()),
     });
   }
   return testServer.handle(line);
