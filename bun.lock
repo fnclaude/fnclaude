@@ -26,7 +26,7 @@
       },
     },
     "packages/cli": {
-      "name": "@fnclaude/cli",
+      "name": "@rhombus.rocks/fnclaude",
       "version": "2.15.1",
       "bin": {
         "fnc": "./bin/fnc.js",
@@ -46,7 +46,7 @@
         "fnc": "./bin/fnc.js",
       },
       "dependencies": {
-        "@fnclaude/cli": "workspace:*",
+        "@rhombus.rocks/fnclaude": "workspace:*",
       },
     },
   },
@@ -191,8 +191,6 @@
 
     "@expressive-code/plugin-text-markers": ["@expressive-code/plugin-text-markers@0.44.2", "", { "dependencies": { "@expressive-code/core": "^0.44.2" } }, "sha512-SNI7EgUSiADqbqUzzMbj1ZeC/r2pa5eg3KyFOGAd3a7EsIA4qzjXQLp+ODWQtHVDKFCdGs4J3ovSJUqvKIK96g=="],
 
-    "@fnclaude/cli": ["@fnclaude/cli@workspace:packages/cli"],
-
     "@fnclaude/docs": ["@fnclaude/docs@workspace:docs"],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
@@ -272,6 +270,8 @@
     "@pagefind/windows-arm64": ["@pagefind/windows-arm64@1.5.2", "", { "os": "win32", "cpu": "arm64" }, "sha512-hN9Nh90fNW61nNRCW9ZyQrAj/mD0eRvmJ8NlTUzkbuW8kIzGJUi3cxjFkEcMZ5h/8FsKWD/VcouZl4yo1F7B6g=="],
 
     "@pagefind/windows-x64": ["@pagefind/windows-x64@1.5.2", "", { "os": "win32", "cpu": "x64" }, "sha512-Fa2Iyw7kaDRzGMfNYNUXNW2zbL5FQVDgSOcbDHdzBrDEdpqOqg8TcZ68F22ol6NJ9IGzvUdmeyZypLW5dyhqsg=="],
+
+    "@rhombus.rocks/fnclaude": ["@rhombus.rocks/fnclaude@workspace:packages/cli"],
 
     "@rolldown/binding-android-arm-eabi": ["@rolldown/binding-android-arm-eabi@1.2.7", "", { "os": "android", "cpu": "arm" }, "sha512-EypzgnYCwyVY4NDHKzGmNJT5b+XaQEBniHxsMdeIQLB/tcCzZnhqrzHpZFbX9iaxx+5RiB8caATBtfvZP7zVxQ=="],
 

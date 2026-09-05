@@ -323,7 +323,7 @@ Alternatives weighed: `/proc/self/cmdline` works on Linux but Windows + macOS ne
 
 **Why this (vs. just `fncBin`):** the subprocess `claude` spawns receives this argv literally; whatever `command` resolves to is what runs. Setting `command=process.execPath` (bun) and feeding `fncBin` as the first arg lets bun execute the script via its CLI shape (`bun /abs/fnc.js mcp`). The same shape works under `npm i -g`, under a version manager's shim, and on the in-repo `bun packages/cli/bin/fnc.js` dev path — all of them resolve `process.execPath` to whichever bun is hosting the launcher.
 
-**Why `realpathSync` on `process.argv[1]`:** npm installs link the bin via `.bin/fnc → ../@fnclaude/cli/bin/fnc.js`. `process.argv[1]` is the symlink path; realpath resolves to the actual on-disk script. Same reasoning as the §5.5 prompts dir + §19 noop template seed — both already realpath here.
+**Why `realpathSync` on `process.argv[1]`:** npm installs link the bin via `.bin/fnc → ../@rhombus.rocks/fnclaude/bin/fnc.js`. `process.argv[1]` is the symlink path; realpath resolves to the actual on-disk script. Same reasoning as the §5.5 prompts dir + §19 noop template seed — both already realpath here.
 
 **Why skip when `argv[1] === ''`:** vanishingly rare (would need fnclaude invoked from an embedded runtime that doesn't populate argv[1]) but the alternative — emitting an empty `args[0]` — would silently produce a broken MCP config. Skipping the injection lets claude launch normally without MCP tools, which degrades gracefully.
 

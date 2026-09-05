@@ -1,5 +1,5 @@
 {
-  "name": "@fnclaude/cli",
+  "name": "@rhombus.rocks/fnclaude",
   "version": "2.15.1",
   "description": "fnclaude CLI implementation (TypeScript rewrite, in progress)",
   "license": "MIT",

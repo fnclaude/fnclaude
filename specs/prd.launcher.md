@@ -242,7 +242,7 @@ Completions for zsh, bash, and fish are in the `completions/` directory of the r
 
 **npm:**
 ```sh
-npm install -g @fnclaude/cli
+npm install -g @rhombus.rocks/fnclaude
 ```
 
 **GitHub Releases:** grab the binary for your platform from the [releases page](https://github.com/fnclaude/fnclaude/releases).

@@ -1,4 +1,4 @@
-# @fnclaude/cli
+# @rhombus.rocks/fnclaude
 
 `claude`, with the rough edges filed off.
 
@@ -6,7 +6,7 @@
 fnc opus max ~/src/myproject -- "refactor the auth module"
 ```
 
-No `--model claude-opus-4-5`, no `--effort max`, no `--print` gymnastics. `@fnclaude/cli` (the `fnc` binary) sits in front of `claude` and translates short, readable invocations into the full-form flags `claude` expects. Magic positional words for model and effort, capital-letter short flags for everything claude makes you spell out, and a config file for the auto-features you want on every launch. Bun-runtime; install via `bun add -g fnclaude` (or `npm i -g fnclaude`).
+No `--model claude-opus-4-5`, no `--effort max`, no `--print` gymnastics. `@rhombus.rocks/fnclaude` (the `fnc` binary) sits in front of `claude` and translates short, readable invocations into the full-form flags `claude` expects. Magic positional words for model and effort, capital-letter short flags for everything claude makes you spell out, and a config file for the auto-features you want on every launch. Bun-runtime; install via `bun add -g fnclaude` (or `npm i -g fnclaude`).
 
 ## Platform support
 

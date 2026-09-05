@@ -1,6 +1,6 @@
 # fnclaude
 
-Umbrella package for the fnclaude Claude Code launcher. Wraps `@fnclaude/cli` behind a single install.
+Umbrella package for the fnclaude Claude Code launcher. Wraps `@rhombus.rocks/fnclaude` behind a single install.
 
 ## Installation
 
@@ -13,7 +13,7 @@ This installs the full fnclaude CLI. The package exports a shim entrypoint (`fnc
 
 ### Install details
 
-fnclaude re-exports `@fnclaude/cli` as a single umbrella package. The dependency is resolved via a workspace reference, so the umbrella and the CLI always ship compatible versions.
+fnclaude re-exports `@rhombus.rocks/fnclaude` as a single umbrella package. The dependency is resolved via a workspace reference, so the umbrella and the CLI always ship compatible versions.
 
 ## Compatibility
 
@@ -21,7 +21,7 @@ fnclaude re-exports `@fnclaude/cli` as a single umbrella package. The dependency
 
 ## What's included
 
-- `@fnclaude/cli` — the fnclaude command-line launcher
+- `@rhombus.rocks/fnclaude` — the fnclaude command-line launcher
 
 ## Quick start
 

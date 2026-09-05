@@ -22,7 +22,7 @@ describe('fnclaude (umbrella)', () => {
     // Bun does NOT auto-link bare "*" — it tries the registry (Bun issue
     // #25177). Use "workspace:*" instead. `bun publish` and release-please's
     // node-workspace plugin both rewrite this to a concrete version on publish.
-    expect(pkg.dependencies['@fnclaude/cli']).toBe('workspace:*');
+    expect(pkg.dependencies['@rhombus.rocks/fnclaude']).toBe('workspace:*');
   });
 
   // The renderer package was excised from the monorepo; the umbrella must not

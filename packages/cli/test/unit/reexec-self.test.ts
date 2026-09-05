@@ -144,7 +144,7 @@ describe('reexecSelf — stale captured bin path after an upgrade', () => {
   // whatever version is current — and exec it directly, with no bun prefix,
   // since that entry point re-bootstraps the runtime itself.
   const STALE_BIN =
-    '/opt/pkgs/installs/fnclaude/2.13.1/lib/node_modules/@fnclaude/cli/bin/fnc.js';
+    '/opt/pkgs/installs/fnclaude/2.13.1/lib/node_modules/@rhombus.rocks/fnclaude/bin/fnc.js';
   const SHIM = '/home/tom/.local/bin/fnc';
   const BUN = '/runtime/bin/bun';
 

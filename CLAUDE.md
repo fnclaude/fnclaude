@@ -21,13 +21,17 @@ Anything that lands in `fnrhombus/fnclaude` is misplaced by definition — trans
 
 ## Release flow
 
-This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 2-package monorepo (`fnclaude`, `@fnclaude/cli`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
+This repo uses [release-please](https://github.com/googleapis/release-please) in manifest mode for per-package versioning across a 2-package monorepo (`fnclaude`, `@rhombus.rocks/fnclaude`). Every PR merge eventually publishes the affected package directly to `@latest`; the release PR's branch-protection-gated `verify` check IS the gate — there is no second-stage promotion dance.
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
-  `CI` workflow's `release-please` job via `googleapis/release-please-action`.
+  `release` workflow (`.github/workflows/release.yml`), which invokes
+  `googleapis/release-please-action`. The file is named `release.yml`
+  because npm's trusted publisher is registered against that filename and
+  the `production` environment; renaming it breaks publishing. `ci.yml`
+  holds the `verify` gate and nothing else.
   For each package with new conventional commits scoped to its path, the
   action opens or updates a per-package **release PR** (titled like
-  `chore(main): release @fnclaude/cli 0.2.0`).
+  `chore(main): release @rhombus.rocks/fnclaude 0.2.0`).
 - Release PRs are non-draft, so `auto-merge.yml` covers them — they merge
   the moment `verify` is green. Merging a release PR triggers another
   push to `main`, which fires release-please-action again; this time the
