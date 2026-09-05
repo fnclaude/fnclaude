@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.4.0...renderer-v3.5.0) (2026-09-05)
+
+
+### Features
+
+* **docs:** documentation site (Astro Starlight) + rename docs/ to specs/ ([#356](https://github.com/fnclaude/fnclaude/issues/356)) ([cc0f50d](https://github.com/fnclaude/fnclaude/commit/cc0f50d464418eba6e4f670bbd8c67007f7c0ef5))
+
 ## [3.4.0](https://github.com/fnclaude/fnclaude/compare/renderer-v3.3.1...renderer-v3.4.0) (2026-07-03)
 
 
