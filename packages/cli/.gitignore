@@ -7,3 +7,6 @@ dist/
 # Per-member node_modules the workspace install creates inside the vendored trees;
 # the vendored package sources themselves are committed.
 vendor/*/node_modules/
+
+# ttsc/Go transform-host caches (repo-local; rebuilt on demand)
+.cache/

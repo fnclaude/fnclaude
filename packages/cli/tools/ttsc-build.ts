@@ -7,29 +7,33 @@
 // commutes with bundling, so the bundle is what a no-sugar author would have written.
 
 import { mkdirSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
  * Pins the Go toolchain for the transform host to ttsc's own bundled SDK.
  *
  * ttsc resolves `@ttsc/<platform>/bin/go` when `TTSC_GO_BINARY` is unset, so contributor
- * setup needs no system Go. The scratch and object caches live under a shared home dir
- * because a cold host compile overruns tmpfs; the object cache is content-keyed, so one
- * location is safe across every worktree and session. Ambient `GOROOT`/`GOBIN` are cleared
- * so the bundled binary uses its own built-in root.
+ * setup needs no system Go. Every cache — ttsc's plugin cache, Go's build/module/scratch
+ * caches, and GOPATH — defaults to one repo-local directory rather than under `$HOME`, so a
+ * HOME-isolated test never triggers a cold host compile under its throwaway HOME. The object
+ * caches are content-keyed, so a single per-checkout location is safe across every worktree
+ * and session, and an explicit environment value always wins. Ambient `GOROOT`/`GOBIN` are
+ * cleared so the bundled binary uses its own built-in root.
  */
 export function ttscEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env } as NodeJS.ProcessEnv;
   env.GOTOOLCHAIN = 'local';
-  const cacheHome = join(homedir(), '.cache', 'fnclaude-ttsc');
-  const goTmp = process.env.GOTMPDIR ?? join(cacheHome, 'gotmp');
-  mkdirSync(goTmp, { recursive: true });
-  env.GOTMPDIR = goTmp;
-  const ttscCache = process.env.TTSC_CACHE_DIR ?? join(cacheHome, 'cache');
-  mkdirSync(ttscCache, { recursive: true });
-  env.TTSC_CACHE_DIR = ttscCache;
-  env.GOCACHE = process.env.GOCACHE ?? join(homedir(), '.cache', 'go-build');
+  const cacheHome = join(import.meta.dir, '..', '.cache', 'ttsc');
+  function repoLocal(name: string, subdir: string): string {
+    const dir = process.env[name] ?? join(cacheHome, subdir);
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  env.GOTMPDIR = repoLocal('GOTMPDIR', 'gotmp');
+  env.TTSC_CACHE_DIR = repoLocal('TTSC_CACHE_DIR', 'plugins');
+  env.GOCACHE = repoLocal('GOCACHE', 'go-build');
+  env.GOMODCACHE = repoLocal('GOMODCACHE', 'gomodcache');
+  env.GOPATH = repoLocal('GOPATH', 'gopath');
   delete env.GOROOT;
   env.GOBIN = '';
   return env;
