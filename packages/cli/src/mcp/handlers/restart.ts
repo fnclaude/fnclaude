@@ -2,7 +2,7 @@
  * §8.1 — `fnc_restart` handler.
  *
  * Ports the Go canonical `handleRestart` from
- * `fnclaude@fnrhombus/src/socket_listener.go` lines 221-256. This handler is
+ * `fnclaude/src/socket_listener.go` lines 221-256. This handler is
  * now a THIN wire adapter over the shared {@link restartInPlace} core
  * (`../../restart/restart-core`): it validates the wire request shape, maps
  * snake_case override fields → the core's `OverrideRequest`, delegates the

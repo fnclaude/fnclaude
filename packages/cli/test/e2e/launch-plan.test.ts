@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 
@@ -25,6 +25,21 @@ const BIN = resolve(CLI_ROOT, 'bin', 'fnc.js');
 // no-ops in tests that don't care about the system-prompt block. Tests
 // that DO want fragment injection can override extraEnv.FNC_PROMPTS_DIR.
 const EMPTY_PROMPTS_DIR = mkdtempSync(join(tmpdir(), 'fnc-e2e-no-prompts-'));
+
+// A PATH carrying only what the launcher itself needs — `node` to start it
+// and `bun` for bin/fnc.js's Node→Bun re-exec — and deliberately no `fngit`.
+// Used by the "fngit not installed" case, which must hold on a developer's
+// machine (where fngit IS installed) as well as in CI.
+const MINIMAL_PATH = (() => {
+  const dir = mkdtempSync(join(tmpdir(), 'fnc-e2e-minimal-path-'));
+  for (const tool of ['node', 'bun']) {
+    const real = Bun.which(tool);
+    // A missing tool leaves the dir short of it; the test that uses this PATH
+    // then fails to spawn, which is a louder signal than silently passing.
+    if (real !== null) symlinkSync(real, join(dir, tool));
+  }
+  return dir;
+})();
 
 interface PlanResult {
   cwd: string;
@@ -96,7 +111,7 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — cwd resolution', () => {
     const { plan, exitCode } = await runPlan([]);
     expect(exitCode).toBe(0);
     expect(plan!.usedNoopFallback).toBe(true);
-    expect(plan!.cwd).toContain('fnclaude/noop');
+    expect(plan!.cwd).toContain('rhombus.rocks/fnclaude/noop');
   });
 
   test('absolute path arg → that path as cwd', async () => {
@@ -119,32 +134,39 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — cwd resolution', () => {
     }
   });
 
-  test('bare name + local dir match → ambiguous (spec §18.1 disambiguation)', async () => {
-    // bare name 'foo' could mean local <shellCwd>/foo OR a gh repo 'foo'.
-    // Per spec, that ambiguity surfaces as a clean error — user has to be
-    // explicit (e.g. absolute path or owner-qualified).
-    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-ambig-'));
+  // Was "ambiguous" before the fngit adoption: fnc used to compute the clone
+  // destination itself, so it could see that a local directory and a clone
+  // both existed and refuse. It no longer computes clone destinations — fngit
+  // does — so it cannot see that collision, and a bare word naming a real
+  // directory right here resolves to that directory. `./name` still forces
+  // the path reading; a repo of the same name needs `name@owner`.
+  test('bare name + local dir match → launches the local directory', async () => {
+    const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-localdir-'));
     try {
       mkdirSync(join(shell, 'some-dir'));
-      const { stderr, exitCode } = await runPlan(['some-dir'], { cwd: shell });
-      expect(exitCode).toBe(2);
-      expect(stderr).toMatch(/ambiguous/i);
+      const { plan, exitCode } = await runPlan(['some-dir'], { cwd: shell });
+      expect(exitCode).toBe(0);
+      expect(plan!.cwd).toBe(join(shell, 'some-dir'));
     } finally {
       rmSync(shell, { recursive: true, force: true });
     }
   });
 
-  test('bare name with no local dir and no matching gh repo → clean error', async () => {
+  // A bare name that is not a local directory is a repo reference, and repo
+  // references are fngit's. What fnc guarantees on its own is the degraded
+  // mode: with no fngit on PATH, the error names `fnc install` rather than
+  // failing somewhere obscure. PATH is emptied so the assertion holds on a
+  // machine that has fngit installed as well as one that doesn't.
+  test('repo reference with no fngit on PATH → error naming `fnc install`', async () => {
     const shell = mkdtempSync(join(tmpdir(), 'fnc-e2e-bare-'));
     try {
-      // This test invokes the real gh CLI to verify the not-found path.
-      // The name is chosen to be unlikely to exist in any reasonable
-      // user/org combination. If a user happens to own a repo by this
-      // name, the test would launch instead — that's the user's call to
-      // adjust if it ever happens.
-      const { stderr, exitCode } = await runPlan(['totally-unique-name-xyz-fnclaude-test'], { cwd: shell });
+      const { stderr, exitCode } = await runPlan(['totally-unique-name-xyz-fnclaude-test'], {
+        cwd: shell,
+        extraEnv: { PATH: MINIMAL_PATH },
+      });
       expect(exitCode).toBe(2);
-      expect(stderr).toMatch(/no repo named|gh CLI|owner|not authenticated/i);
+      expect(stderr).toMatch(/fngit is not installed/i);
+      expect(stderr).toContain('fnc install');
     } finally {
       rmSync(shell, { recursive: true, force: true });
     }

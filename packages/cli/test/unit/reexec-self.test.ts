@@ -134,18 +134,18 @@ describe('reexecSelf — relaunch argv overrides inherited FNC_ARGS_JSON', () =>
   });
 });
 
-describe('reexecSelf — stale captured bin path after mise upgrade', () => {
-  // A long-running session captures the fnc bin as the VERSION-PINNED mise
-  // path (…/installs/npm-fnclaude-cli/<VER>/…/bin/fnc.js). `mise upgrade`
-  // deletes that version dir out from under the live session, so the
-  // captured path no longer exists. Re-exec'ing `bun <stale-path>` dies with
-  // "Module not found". When the captured bin is gone, reexecSelf must
-  // re-resolve the `fnc` COMMAND from PATH (the stable mise shim, which
-  // survives version-dir deletion) and exec it directly — no bun prefix,
-  // since the shim re-bootstraps the runtime itself.
+describe('reexecSelf — stale captured bin path after an upgrade', () => {
+  // A long-running session captures the fnc bin as an absolute path into a
+  // VERSION-PINNED install directory. Upgrading fnc deletes that directory
+  // out from under the live session, so the captured path no longer exists
+  // and re-exec'ing `bun <stale-path>` dies with "Module not found". When the
+  // captured bin is gone, reexecSelf must re-resolve the `fnc` COMMAND from
+  // PATH — the shim or symlink the install put there, which points at
+  // whatever version is current — and exec it directly, with no bun prefix,
+  // since that entry point re-bootstraps the runtime itself.
   const STALE_BIN =
-    '/home/tom/.local/share/mise/installs/npm-fnclaude-cli/2.13.1/lib/node_modules/@fnclaude/cli/bin/fnc.js';
-  const SHIM = '/home/tom/.local/share/mise/shims/fnc';
+    '/opt/pkgs/installs/fnclaude/2.13.1/lib/node_modules/@fnclaude/cli/bin/fnc.js';
+  const SHIM = '/home/tom/.local/bin/fnc';
   const BUN = '/runtime/bin/bun';
 
   test('bin gone + PATH resolves → exec the shim directly, no bun prefix', async () => {
@@ -155,7 +155,7 @@ describe('reexecSelf — stale captured bin path after mise upgrade', () => {
       bunExec: BUN,
       fncBin: STALE_BIN,
       clearScreen: () => {},
-      binExists: () => false, // version dir deleted by `mise upgrade`
+      binExists: () => false, // version dir deleted by the upgrade
       whichFnc: () => SHIM,
       exec: (argv) => {
         execArgv = argv;

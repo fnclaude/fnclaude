@@ -1,78 +1,62 @@
 /**
- * Resolver orchestrator — takes the first positional argument (or null)
- * and decides what fnclaude should do with it. Pure dispatch + filesystem
- * existence checks; gh-CLI-bound side effects (owner lookup, clone
- * execution) are surfaced as result variants so the caller (CLI main)
- * handles them at the boundary.
+ * Resolver orchestrator — takes the first positional argument (or null) and
+ * decides what fnclaude should do with it.
  *
- * Mirrors Go canonical `src/resolver.go:resolveLaunchCwd` minus the gh
- * branches:
- *   - Short-circuit for /, ~, ~/, ., .., ./x, ../x → launch unconditionally
- *     (explicit paths, no fs check)
- *   - Everything else → dual lookup
- *       path:  is <shellCwd>/<input> a directory?
- *       repo:  parse, compute clone destination, does it exist?
- *   - Both found  → ambiguous (caller errors with disambiguation msg)
- *   - One found   → launch that one
- *   - Neither     → needs-clone (resolved owner) or needs-owner-lookup
- *                   (bare name) — caller invokes gh CLI
+ * What is left here is only the glue that is fnc's, not fngit's:
  *
- * See specs.md §18.1 for the user-facing description.
+ *   1. **No argument** → the noop fallback (fnc's starting directory).
+ *   2. **A path** (`/`, `~`, `~/x`, `.`, `..`, `./x`, `../x`) → launch there,
+ *      unconditionally. Don't stat it — the user said "go here", so we go, and
+ *      `ensureCwd` fabricates the tree if it's missing. Short-circuiting is
+ *      also what keeps `fnc .` out of the repo path entirely.
+ *   3. **Anything else** is a repo reference → `+workspace` comes off the end
+ *      and the rest goes to `fngit clone`, which prints the directory.
+ *
+ * Everything the old resolver did between (2) and (3) — parsing `name@owner`,
+ * expanding a clone template, searching source directories, disambiguating a
+ * bare name against local clones, asking `gh` who owns it, cloning,
+ * bootstrapping a repo that doesn't exist — is fngit's now. So are the
+ * `ambiguous` / `ambiguous-local` outcomes: fngit either resolves a reference
+ * or fails with its own reason, and fnc relays that.
+ *
+ * The one deliberate behavioural change is the path-versus-repo tie. The old
+ * resolver checked `<shellCwd>/<input>` FIRST and reported `ambiguous` when a
+ * local directory and a clone destination both existed. fnc no longer computes
+ * clone destinations, so it cannot see that collision — and asking fngit first
+ * would make `fnc somedir` ignore a directory sitting right there. So a
+ * bare-word input that names an existing directory in the shell cwd wins, and
+ * `<name>@<owner>`-style references (which can't be filenames in practice)
+ * go straight to fngit. `./name` remains the way to force the path reading.
+ *
+ * See specs/rhombus-rocks-config.md § "fngit CLI contract".
  */
 
-import { realpathSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
-import { expandTilde, noopDir } from '../path/resolve';
-import { buildCloneUrl, computeCloneDestination } from './clone';
-import { findLocalClones } from './local-clones';
-import { effectiveHost, hasResolvedOwner, parseRepoRef } from './ref';
+import { expandTilde } from '../path/resolve';
+import { type FngitRunner, locateRepo } from './fngit';
+import { splitWorkspaceSuffix } from './workspace-suffix';
 
 export interface ResolveInputArgs {
   input: string | null;
   shellCwd: string;
   home: string;
-  xdgConfigHome: string | undefined;
-  settings: {
-    cloneTemplate: string;
-    /**
-     * The user's `worktreeTemplate` (repoSettings). Drives worktree-sibling
-     * exclusion when disambiguating bare names against local clones. Optional:
-     * absent falls back to the documented default marker.
-     */
-    worktreeTemplate?: string;
-    hostAliases: Record<string, string>;
-  };
+  /** fnc's starting directory, already expanded to an absolute path. */
+  noopDir: string;
+  /** Injected fngit runner. Null when fngit is not on PATH. */
+  fngit: FngitRunner | null;
+  /** Progress sink for the "resolving…" line. Defaults to no output. */
+  onProgress?: (line: string) => void;
 }
 
 export type ResolveResult =
   | {
       kind: 'launch';
       launchCwd: string;
+      /** The `+workspace` suffix, or `''`. Fed to the worktree intercept. */
       workspace: string;
       usedNoopFallback: boolean;
-    }
-  | {
-      kind: 'needs-clone';
-      url: string;
-      destination: string;
-      workspace: string;
-    }
-  | {
-      kind: 'needs-owner-lookup';
-      name: string;
-      workspace: string;
-    }
-  | {
-      kind: 'ambiguous';
-      path: string;
-      cloneDestination?: string;
-      repoRef?: string;
-    }
-  | {
-      kind: 'ambiguous-local';
-      name: string;
-      paths: string[];
     }
   | { kind: 'error'; error: string };
 
@@ -85,168 +69,54 @@ function isDirectory(path: string): boolean {
 }
 
 /**
- * Do two paths point at the same on-disk location? A cheap string equality
- * catches the common case (both already normalized by `join`/`expandTilde`);
- * `realpathSync` additionally collapses symlinks and any residual `.`/`..`
- * segments so a path reached through a symlinked prefix isn't mistaken for a
- * distinct directory. Callers pass paths that are known to exist, but guard
- * the realpath calls anyway — a race that removes one between the existence
- * check and here just means "treat as different", which is the safe default.
+ * Forms that are unambiguously filesystem paths and never repo references.
+ * `.` and `..` can't be repo names, and `./<name>` is the syntax that forces
+ * the path reading of a word that could be either.
  */
-function sameLocation(a: string, b: string): boolean {
-  if (a === b) return true;
-  try {
-    return realpathSync(a) === realpathSync(b);
-  } catch {
-    return false;
-  }
-}
-
-function isPathShortCircuit(input: string): boolean {
+export function isPathShortCircuit(input: string): boolean {
   if (input === '~') return true;
   if (input.startsWith('/')) return true;
   if (input.startsWith('~/')) return true;
-  // Explicit relative paths are unambiguously paths, never repo refs. `.`
-  // and `..` can't be repo names, and `./<name>` is the very syntax the
-  // ambiguous-reference error tells the user to type for "the local path".
-  // Short-circuiting here keeps a bare `.` (or `./foo`) out of the bare-name
-  // dual-lookup branch, where `join(shellCwd, ".")` always exists and so
-  // every `fnc .` resolved to `ambiguous`.
   if (input === '.' || input === '..') return true;
   if (input.startsWith('./') || input.startsWith('../')) return true;
   return false;
 }
 
-export function resolveInput(args: ResolveInputArgs): ResolveResult {
-  const { input, shellCwd, home, xdgConfigHome, settings } = args;
+export async function resolveInput(args: ResolveInputArgs): Promise<ResolveResult> {
+  const { input, shellCwd, home, noopDir } = args;
 
-  // 1. Null / empty → noop fallback
+  // 1. No argument → the noop fallback.
   if (input === null || input === '') {
-    return {
-      kind: 'launch',
-      launchCwd: noopDir({ xdgConfigHome, home }),
-      usedNoopFallback: true,
-      workspace: '',
-    };
+    return { kind: 'launch', launchCwd: noopDir, usedNoopFallback: true, workspace: '' };
   }
 
-  // 2. Path short-circuit: /, ~, ~/, ., .., ./x, ../x skip the repo lookup
-  //    entirely (per specs.md §18.1). Don't check whether the directory
-  //    exists — user said "go here", we go there.
+  // 2. Explicit path forms skip the repo lookup entirely.
   if (isPathShortCircuit(input)) {
-    const expanded = expandTilde(input, home);
+    const { body, workspace } = splitWorkspaceSuffix(input);
+    const expanded = expandTilde(body, home);
     const launchCwd = isAbsolute(expanded) ? expanded : join(shellCwd, expanded);
-    return { kind: 'launch', launchCwd, usedNoopFallback: false, workspace: '' };
+    return { kind: 'launch', launchCwd, usedNoopFallback: false, workspace };
   }
 
-  // 3. Dual lookup: check both path-on-disk and repo-ref interpretation.
-  const pathCandidate = join(shellCwd, input);
-  const pathExists = isDirectory(pathCandidate);
-
-  const parseResult = parseRepoRef(input);
-
-  // If repo-ref parse failed: path is the only chance.
-  if (!parseResult.ok) {
-    if (pathExists) {
-      return {
-        kind: 'launch',
-        launchCwd: pathCandidate,
-        usedNoopFallback: false,
-        workspace: '',
-      };
-    }
-    return { kind: 'error', error: parseResult.error };
+  const { body, workspace } = splitWorkspaceSuffix(input);
+  if (body === '') {
+    return { kind: 'error', error: `empty repo reference in ${JSON.stringify(input)}` };
   }
 
-  const ref = parseResult.ref;
-
-  // Bare name (owner not in input). Disk presence disambiguates BEFORE any
-  // remote owner lookup: a single local clone wins over remote ambiguity.
-  if (!hasResolvedOwner(ref)) {
-    if (pathExists) {
-      return { kind: 'ambiguous', path: pathCandidate, repoRef: input };
-    }
-    if (settings.cloneTemplate !== '') {
-      const local = findLocalClones({
-        name: ref.name,
-        template: settings.cloneTemplate,
-        worktreeTemplate: settings.worktreeTemplate,
-        host: effectiveHost(ref),
-        hostAliases: settings.hostAliases,
-        home,
-      });
-      if (local.ok) {
-        if (local.paths.length === 1) {
-          return {
-            kind: 'launch',
-            launchCwd: local.paths[0]!,
-            usedNoopFallback: false,
-            workspace: ref.workspace,
-          };
-        }
-        if (local.paths.length > 1) {
-          return { kind: 'ambiguous-local', name: ref.name, paths: local.paths };
-        }
-      }
-      // local.ok === false (template error) or zero matches: fall through to
-      // the existing remote owner-lookup behavior, unchanged.
-    }
-    return { kind: 'needs-owner-lookup', name: ref.name, workspace: ref.workspace };
+  // 3. A bare word that names a directory right here is that directory. This
+  //    is checked before fngit so `fnc packages` in a monorepo doesn't go
+  //    looking for a repo named "packages" on GitHub.
+  const pathCandidate = join(shellCwd, body);
+  if (!body.includes('@') && !body.includes(':') && isDirectory(pathCandidate)) {
+    return { kind: 'launch', launchCwd: pathCandidate, usedNoopFallback: false, workspace };
   }
 
-  // Owner is resolved; compute clone destination.
-  if (settings.cloneTemplate === '') {
-    return {
-      kind: 'error',
-      error:
-        'cloneTemplate is not configured in repoSettings; cannot resolve repo references. Set repoSettings.cloneTemplate in ~/.claude/settings.json (e.g. "~/src/{repo}@{owner}")',
-    };
-  }
-
-  const destResult = computeCloneDestination({
-    ref,
-    template: settings.cloneTemplate,
-    hostAliases: settings.hostAliases,
-    home,
+  // 4. Everything else is fngit's to resolve.
+  const located = await locateRepo({
+    ref: body,
+    fngit: args.fngit,
+    ...(args.onProgress !== undefined ? { onProgress: args.onProgress } : {}),
   });
-  if (!destResult.ok) {
-    return { kind: 'error', error: destResult.error };
-  }
-  const destination = destResult.path;
-  const destExists = isDirectory(destination);
-
-  if (pathExists && destExists) {
-    // Only ambiguous if the two candidates are genuinely different places.
-    // When `join(shellCwd, input)` and the clone destination resolve to the
-    // same directory (e.g. `fnc name@owner` run from the very dir the
-    // cloneTemplate expands into), there's one target reachable by two names —
-    // collapse to a single launch instead of erroring "the local directory X
-    // OR X" against identical paths (issue #239).
-    if (!sameLocation(pathCandidate, destination)) {
-      return { kind: 'ambiguous', path: pathCandidate, cloneDestination: destination };
-    }
-  }
-  if (pathExists) {
-    return {
-      kind: 'launch',
-      launchCwd: pathCandidate,
-      usedNoopFallback: false,
-      workspace: ref.workspace,
-    };
-  }
-  if (destExists) {
-    return {
-      kind: 'launch',
-      launchCwd: destination,
-      usedNoopFallback: false,
-      workspace: ref.workspace,
-    };
-  }
-
-  return {
-    kind: 'needs-clone',
-    url: buildCloneUrl(ref),
-    destination,
-    workspace: ref.workspace,
-  };
+  if (!located.ok) return { kind: 'error', error: located.error };
+  return { kind: 'launch', launchCwd: located.path, usedNoopFallback: false, workspace };
 }

@@ -1,396 +1,289 @@
+/**
+ * Unit tests for the resolver, now that repo location belongs to fngit.
+ *
+ * What is left for fnc, and therefore what is tested here:
+ *   - no argument → the starting directory;
+ *   - explicit path forms, which never reach fngit;
+ *   - the `+workspace` suffix, which fnc strips and fngit never sees;
+ *   - the bare-word-that-is-a-directory case, which wins over fngit;
+ *   - handing everything else to fngit and relaying its answer or its error;
+ *   - the missing-fngit error, which must name `fnc install`.
+ *
+ * fngit is driven entirely through the injected runner. That is not just
+ * convenience: the npm build available while this was written (1.3.0) predates
+ * the CLI contract in specs/rhombus-rocks-config.md, so a test against a real
+ * binary would be testing the wrong thing. The seam is the contract.
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-  resolveInput,
-  type ResolveInputArgs,
-  type ResolveResult,
-} from '../../src/repo/resolve-input';
+import type { FngitResult, FngitRunner } from '../../src/repo/fngit';
+import { type ResolveResult, resolveInput } from '../../src/repo/resolve-input';
 
 let tmpRoot: string;
 let HOME: string;
 let SHELL_CWD: string;
+let NOOP: string;
 
 beforeEach(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), 'fnc-resolve-input-'));
+  tmpRoot = mkdtempSync(join(tmpdir(), 'fnc-resolve-'));
   HOME = join(tmpRoot, 'home');
   SHELL_CWD = join(tmpRoot, 'cwd');
-  mkdirSync(HOME);
-  mkdirSync(SHELL_CWD);
+  NOOP = join(HOME, '.config', 'rhombus.rocks', 'fnclaude', 'noop');
+  mkdirSync(HOME, { recursive: true });
+  mkdirSync(SHELL_CWD, { recursive: true });
 });
 
 afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-function args(overrides: Partial<ResolveInputArgs> = {}): ResolveInputArgs {
+/** A runner that records its calls and replies with a canned result. */
+function stubFngit(result: Partial<FngitResult>): {
+  run: FngitRunner;
+  calls: string[][];
+} {
+  const calls: string[][] = [];
+  const run: FngitRunner = async (args) => {
+    calls.push([...args]);
+    return { ok: true, stdout: '', stderr: '', exitCode: 0, ...result };
+  };
+  return { run, calls };
+}
+
+/** A runner that fails the test if it is ever called. */
+const neverCalled: FngitRunner = async (args) => {
+  throw new Error(`fngit should not have been invoked, but got: ${args.join(' ')}`);
+};
+
+function args(over: Partial<Parameters<typeof resolveInput>[0]> = {}): Parameters<
+  typeof resolveInput
+>[0] {
   return {
     input: null,
     shellCwd: SHELL_CWD,
     home: HOME,
-    xdgConfigHome: undefined,
-    settings: {
-      cloneTemplate: '~/src/{repo}@{owner}',
-      hostAliases: { 'github.com': 'gh' },
-    },
-    ...overrides,
+    noopDir: NOOP,
+    fngit: neverCalled,
+    ...over,
   };
 }
 
-// Helper: assert ok-discriminant
-function assertKind<K extends ResolveResult['kind']>(
-  r: ResolveResult,
-  kind: K,
-): Extract<ResolveResult, { kind: K }> {
-  expect(r.kind).toBe(kind);
-  return r as Extract<ResolveResult, { kind: K }>;
+function assertLaunch(r: ResolveResult): Extract<ResolveResult, { kind: 'launch' }> {
+  if (r.kind !== 'launch') throw new Error(`expected launch, got ${r.kind}: ${JSON.stringify(r)}`);
+  return r;
 }
 
-describe('resolveInput — null/empty → noop fallback', () => {
-  test('null input → launch in noopDir', () => {
-    const r = assertKind(resolveInput(args({ input: null })), 'launch');
+function assertError(r: ResolveResult): Extract<ResolveResult, { kind: 'error' }> {
+  if (r.kind !== 'error') throw new Error(`expected error, got ${r.kind}: ${JSON.stringify(r)}`);
+  return r;
+}
+
+describe('no argument → the starting directory', () => {
+  test('null input', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: null })));
+    expect(r.launchCwd).toBe(NOOP);
     expect(r.usedNoopFallback).toBe(true);
-    expect(r.launchCwd).toContain('fnclaude/noop');
-    expect(r.workspace).toBe('');
   });
 
-  test('empty string → launch in noopDir', () => {
-    const r = assertKind(resolveInput(args({ input: '' })), 'launch');
+  test('empty string', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: '' })));
+    expect(r.launchCwd).toBe(NOOP);
     expect(r.usedNoopFallback).toBe(true);
+  });
+
+  test('the caller-supplied noopDir is used verbatim — a configured noopDir wins', async () => {
+    const custom = join(tmpRoot, 'elsewhere');
+    const r = assertLaunch(await resolveInput(args({ input: null, noopDir: custom })));
+    expect(r.launchCwd).toBe(custom);
   });
 });
 
-describe('resolveInput — path short-circuit (/, ~, ~/) skips repo lookup', () => {
-  test('absolute path → launch there, no clone planned', () => {
-    const r = assertKind(resolveInput(args({ input: '/tmp/foo' })), 'launch');
-    expect(r.launchCwd).toBe('/tmp/foo');
+describe('path short-circuit — never reaches fngit', () => {
+  test('absolute path', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: '/srv/thing' })));
+    expect(r.launchCwd).toBe('/srv/thing');
     expect(r.usedNoopFallback).toBe(false);
   });
 
-  test('bare tilde → launch in home', () => {
-    const r = assertKind(resolveInput(args({ input: '~' })), 'launch');
-    expect(r.launchCwd).toBe(HOME);
+  test('bare tilde → home', async () => {
+    expect(assertLaunch(await resolveInput(args({ input: '~' }))).launchCwd).toBe(HOME);
   });
 
-  test('~/foo → launch in HOME/foo', () => {
-    const r = assertKind(resolveInput(args({ input: '~/projects/thing' })), 'launch');
-    expect(r.launchCwd).toBe(join(HOME, 'projects/thing'));
-  });
-
-  test('path short-circuit does NOT check whether the directory exists', () => {
-    // /nonexistent shouldn't fail; spec §18.1 says skip the repo lookup,
-    // path is taken as-given.
-    const r = assertKind(resolveInput(args({ input: '/totally/missing/path' })), 'launch');
-    expect(r.launchCwd).toBe('/totally/missing/path');
-  });
-});
-
-describe('resolveInput — explicit relative paths (., .., ./x, ../x) are paths, never repo refs', () => {
-  // `.` is unambiguously the current directory — it can't be a repo named ".".
-  // Before the fix it hit the bare-name dual-lookup branch: join(shellCwd, ".")
-  // always exists, so it resolved to `ambiguous` and `fnc .` errored out. The
-  // ambiguity-disambiguation message itself names `./<name>` as the local-path
-  // syntax, so `.`/`..`/`./…`/`../…` must short-circuit to launch like /, ~, ~/.
-
-  test('bare "." → launch in shellCwd (never ambiguous)', () => {
-    const r = assertKind(resolveInput(args({ input: '.' })), 'launch');
-    expect(r.launchCwd).toBe(SHELL_CWD);
-    expect(r.usedNoopFallback).toBe(false);
-  });
-
-  test('bare "." is not treated as a bare repo name even though shellCwd exists', () => {
-    // Regression guard: shellCwd always exists, so the old code returned
-    // `ambiguous` here. Pin that it never does again.
-    const r = resolveInput(args({ input: '.' }));
-    expect(r.kind).not.toBe('ambiguous');
-    expect(r.kind).not.toBe('needs-owner-lookup');
-  });
-
-  test('"./name" → launch in shellCwd/name (the disambiguation syntax), not a clone', () => {
-    const r = assertKind(resolveInput(args({ input: './arch-setup' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, 'arch-setup'));
-  });
-
-  test('".." → launch in the parent of shellCwd', () => {
-    const r = assertKind(resolveInput(args({ input: '..' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, '..'));
-  });
-
-  test('"../sibling" → launch in the sibling dir', () => {
-    const r = assertKind(resolveInput(args({ input: '../sibling' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, '../sibling'));
-  });
-
-  test('explicit relative path short-circuit does NOT check existence', () => {
-    const r = assertKind(resolveInput(args({ input: './nope/missing' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, 'nope/missing'));
-  });
-});
-
-describe('resolveInput — resolved-owner repo refs (owner already known)', () => {
-  test('owner/name with clone destination not on disk → needs-clone', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'fnrhombus/arch-setup' })),
-      'needs-clone',
+  test('~/foo → HOME/foo', async () => {
+    expect(assertLaunch(await resolveInput(args({ input: '~/foo' }))).launchCwd).toBe(
+      join(HOME, 'foo'),
     );
-    expect(r.url).toBe('https://github.com/fnrhombus/arch-setup.git');
-    expect(r.destination).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
+  });
+
+  test('. and .. resolve against the shell cwd', async () => {
+    expect(assertLaunch(await resolveInput(args({ input: '.' }))).launchCwd).toBe(
+      join(SHELL_CWD, '.'),
+    );
+    expect(assertLaunch(await resolveInput(args({ input: '..' }))).launchCwd).toBe(
+      join(SHELL_CWD, '..'),
+    );
+  });
+
+  test('./name forces the path reading of a word that could be a repo', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: './fnclaude' })));
+    expect(r.launchCwd).toBe(join(SHELL_CWD, 'fnclaude'));
+  });
+
+  test('the directory need not exist — the user said "go here"', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: '/definitely/not/here' })));
+    expect(r.launchCwd).toBe('/definitely/not/here');
+  });
+
+  test('a path may carry a +workspace suffix too', async () => {
+    const r = assertLaunch(await resolveInput(args({ input: '~/src/thing+feat' })));
+    expect(r.launchCwd).toBe(join(HOME, 'src', 'thing'));
+    expect(r.workspace).toBe('feat');
+  });
+});
+
+describe('a bare word naming a real directory wins over fngit', () => {
+  test('an existing directory in the shell cwd is launched, fngit untouched', async () => {
+    mkdirSync(join(SHELL_CWD, 'packages'), { recursive: true });
+    const r = assertLaunch(await resolveInput(args({ input: 'packages' })));
+    expect(r.launchCwd).toBe(join(SHELL_CWD, 'packages'));
+  });
+
+  test('a name@owner form goes to fngit even if a like-named directory exists', async () => {
+    mkdirSync(join(SHELL_CWD, 'thing@owner'), { recursive: true });
+    const { run, calls } = stubFngit({ stdout: '/resolved/thing' });
+    const r = assertLaunch(await resolveInput(args({ input: 'thing@owner', fngit: run })));
+    expect(r.launchCwd).toBe('/resolved/thing');
+    expect(calls).toEqual([['clone', 'thing@owner']]);
+  });
+
+  test('a bare word that is NOT a directory goes to fngit', async () => {
+    const { run, calls } = stubFngit({ stdout: '/src/fnclaude@fnclaude' });
+    const r = assertLaunch(await resolveInput(args({ input: 'fnclaude', fngit: run })));
+    expect(r.launchCwd).toBe('/src/fnclaude@fnclaude');
+    expect(calls).toEqual([['clone', 'fnclaude']]);
+  });
+});
+
+describe('repo references go to fngit', () => {
+  test('every reference form is passed through verbatim — fnc does not parse them', async () => {
+    for (const ref of [
+      'fnclaude',
+      'fnclaude@fnclaude',
+      'fnclaude/fnclaude',
+      'gh:fnclaude/fnclaude',
+      'https://github.com/fnclaude/fnclaude',
+      'https://github.com/fnclaude/fnclaude.git',
+      'git@github.com:fnclaude/fnclaude.git',
+      'ssh://git@github.com/fnclaude/fnclaude.git',
+    ]) {
+      const { run, calls } = stubFngit({ stdout: '/p' });
+      const r = assertLaunch(await resolveInput(args({ input: ref, fngit: run })));
+      expect(r.launchCwd).toBe('/p');
+      expect(calls).toEqual([['clone', ref]]);
+    }
+  });
+
+  test('the +workspace suffix is stripped before the call and returned separately', async () => {
+    const { run, calls } = stubFngit({ stdout: '/src/arch-setup@fnclaude' });
+    const r = assertLaunch(
+      await resolveInput(args({ input: 'fnclaude/arch-setup+my-feature', fngit: run })),
+    );
+    expect(calls).toEqual([['clone', 'fnclaude/arch-setup']]);
+    expect(r.workspace).toBe('my-feature');
+    expect(r.launchCwd).toBe('/src/arch-setup@fnclaude');
+  });
+
+  test('a worktree name may itself contain +', async () => {
+    const { run, calls } = stubFngit({ stdout: '/p' });
+    const r = assertLaunch(await resolveInput(args({ input: 'repo+a+b', fngit: run })));
+    expect(calls).toEqual([['clone', 'repo']]);
+    expect(r.workspace).toBe('a+b');
+  });
+
+  test('a trailing + is a typo, not a request for a worktree named ""', async () => {
+    const { run } = stubFngit({ stdout: '/p' });
+    const r = assertLaunch(await resolveInput(args({ input: 'repo+', fngit: run })));
     expect(r.workspace).toBe('');
   });
 
-  test('owner/name with clone destination on disk → launch', () => {
-    mkdirSync(join(HOME, 'src/arch-setup@fnrhombus'), { recursive: true });
-    const r = assertKind(
-      resolveInput(args({ input: 'fnrhombus/arch-setup' })),
-      'launch',
-    );
-    expect(r.launchCwd).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
+  test('a reference that is only a +suffix is an error', async () => {
+    const r = assertError(await resolveInput(args({ input: '+feat' })));
+    expect(r.error).toContain('empty repo reference');
   });
 
-  test('name@owner with clone destination on disk → launch', () => {
-    mkdirSync(join(HOME, 'src/arch-setup@fnrhombus'), { recursive: true });
-    const r = assertKind(
-      resolveInput(args({ input: 'arch-setup@fnrhombus' })),
-      'launch',
+  test("only the last stdout line is taken as the path, so a stray line can't corrupt the cwd", async () => {
+    const { run } = stubFngit({ stdout: 'Cloning…\n/src/thing\n' });
+    expect(assertLaunch(await resolveInput(args({ input: 'thing', fngit: run }))).launchCwd).toBe(
+      '/src/thing',
     );
-    expect(r.launchCwd).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
-  });
-
-  test('gh:owner/name → uses github.com host explicitly', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'gh:fnrhombus/arch-setup' })),
-      'needs-clone',
-    );
-    expect(r.url).toBe('https://github.com/fnrhombus/arch-setup.git');
-  });
-
-  test('https URL → needs-clone with that URL', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'https://gitlab.com/org/thing' })),
-      'needs-clone',
-    );
-    expect(r.url).toBe('https://gitlab.com/org/thing.git');
-    expect(r.destination).toBe(join(HOME, 'src/thing@org'));
-  });
-
-  test('git@host:owner/name (scp form) → needs-clone with derived https URL', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'git@gitlab.com:org/thing' })),
-      'needs-clone',
-    );
-    expect(r.url).toBe('https://gitlab.com/org/thing.git');
   });
 });
 
-describe('resolveInput — bare name → needs-owner-lookup', () => {
-  test('bare name → needs-owner-lookup with name preserved', () => {
-    const r = assertKind(resolveInput(args({ input: 'arch-setup' })), 'needs-owner-lookup');
-    expect(r.name).toBe('arch-setup');
-    expect(r.workspace).toBe('');
+describe('fngit failures are relayed, never reinterpreted', () => {
+  test("fngit's stderr becomes the error message verbatim", async () => {
+    const { run } = stubFngit({
+      ok: false,
+      exitCode: 4,
+      stderr: 'no repository named "nope" and gh reports no owner',
+    });
+    const r = assertError(await resolveInput(args({ input: 'nope', fngit: run })));
+    expect(r.error).toContain('no repository named "nope" and gh reports no owner');
   });
 
-  test('bare name where local dir exists at <shellCwd>/<name> → ambiguous', () => {
-    mkdirSync(join(SHELL_CWD, 'arch-setup'));
-    const r = assertKind(resolveInput(args({ input: 'arch-setup' })), 'ambiguous');
-    expect(r.path).toBe(join(SHELL_CWD, 'arch-setup'));
-    expect(r.repoRef).toBe('arch-setup');
-  });
-});
-
-describe('resolveInput — bare name disambiguated by local clones on disk', () => {
-  // Row 1: exactly one local clone → launch it, skip remote owner-lookup.
-  test('one local clone → launch in it, no owner-lookup', () => {
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'launch');
-    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
-    expect(r.workspace).toBe('');
+  test('a silent non-zero exit still produces a message naming the code', async () => {
+    const { run } = stubFngit({ ok: false, exitCode: 3, stderr: '' });
+    const r = assertError(await resolveInput(args({ input: 'nope', fngit: run })));
+    expect(r.error).toContain('fngit exited 3');
   });
 
-  test('one local clone carries the +workspace suffix onto launch', () => {
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnclaude+feat-x' })), 'launch');
-    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
-    expect(r.workspace).toBe('feat-x');
+  test('a zero exit with no path is an error, not a launch in ""', async () => {
+    const { run } = stubFngit({ ok: true, stdout: '' });
+    const r = assertError(await resolveInput(args({ input: 'thing', fngit: run })));
+    expect(r.error).toContain('printed no path');
   });
 
-  // Row 2: multiple local clones (two owners) → ambiguous-local.
-  test('two local clones (different owners) → ambiguous-local listing both', () => {
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
-    mkdirSync(join(HOME, 'src/fnclaude@fnrhombus'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'ambiguous-local');
-    expect(r.name).toBe('fnclaude');
-    expect(r.paths.sort()).toEqual(
-      [join(HOME, 'src/fnclaude@fnclaude'), join(HOME, 'src/fnclaude@fnrhombus')].sort(),
-    );
-  });
-
-  // Row 3: zero local clones → unchanged needs-owner-lookup.
-  test('no local clone → needs-owner-lookup (remote path unchanged)', () => {
-    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'needs-owner-lookup');
-    expect(r.name).toBe('fnclaude');
-  });
-
-  // Row 4: clone + its +workspace worktree sibling → resolves to the one clone.
-  test('clone plus its +workspace worktree sibling → exactly one match (worktree excluded)', () => {
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude+feat-renderer'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'launch');
-    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
-  });
-
-  test('a different repo name in the same dir does not count as a match', () => {
-    mkdirSync(join(HOME, 'src/other@fnclaude'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnclaude' })), 'needs-owner-lookup');
-    expect(r.name).toBe('fnclaude');
-  });
-
-  // Worktree exclusion must follow the user's configured worktreeTemplate
-  // separator, not a hardcoded `+`. A user whose worktrees are named
-  // `<clone>--wt--<workspace>` gets a clone-plus-worktree pair that must still
-  // resolve to exactly one clone.
-  test('custom worktreeTemplate separator excludes the worktree sibling', () => {
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude'), { recursive: true });
-    mkdirSync(join(HOME, 'src/fnclaude@fnclaude--wt--feat-renderer'), { recursive: true });
-    const r = assertKind(
-      resolveInput(
-        args({
-          input: 'fnclaude',
-          settings: {
-            cloneTemplate: '~/src/{repo}@{owner}',
-            worktreeTemplate: '~/src/{repo}@{owner}--wt--{input}',
-            hostAliases: { 'github.com': 'gh' },
-          },
-        }),
-      ),
-      'launch',
-    );
-    expect(r.launchCwd).toBe(join(HOME, 'src/fnclaude@fnclaude'));
+  test('a runner that throws is caught', async () => {
+    const boom: FngitRunner = async () => {
+      throw new Error('ENOENT');
+    };
+    const r = assertError(await resolveInput(args({ input: 'thing', fngit: boom })));
+    expect(r.error).toContain('failed to run fngit');
   });
 });
 
-describe('resolveInput — dual lookup ambiguity', () => {
-  test('owner/name where BOTH local <shellCwd>/owner/name AND clone destination exist → ambiguous', () => {
-    mkdirSync(join(SHELL_CWD, 'fnrhombus/arch-setup'), { recursive: true });
-    mkdirSync(join(HOME, 'src/arch-setup@fnrhombus'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnrhombus/arch-setup' })), 'ambiguous');
-    expect(r.path).toBe(join(SHELL_CWD, 'fnrhombus/arch-setup'));
-    expect(r.cloneDestination).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
+describe('fngit not installed', () => {
+  test('a repo reference errors, and the message names `fnc install`', async () => {
+    const r = assertError(await resolveInput(args({ input: 'fnclaude', fngit: null })));
+    expect(r.error).toContain('fnc install');
+    expect(r.error).toContain('fngit is not installed');
   });
 
-  test('owner/name where ONLY local path exists → launch in local path', () => {
-    mkdirSync(join(SHELL_CWD, 'fnrhombus/arch-setup'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'fnrhombus/arch-setup' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, 'fnrhombus/arch-setup'));
-  });
-
-  // Issue #239: when the local path candidate and the clone destination
-  // resolve to the SAME on-disk directory, there is nothing ambiguous — it's
-  // one directory reachable by two names. The old code returned `ambiguous`
-  // and main.ts rendered "the local directory X OR X" with two identical
-  // paths, wrongly rejecting valid input. Collapse to a single launch instead.
-  test('name@owner where local path === clone destination → launch, NOT ambiguous', () => {
-    // Run from ~/src with cloneTemplate ~/src/{repo}@{owner}: join(shellCwd,
-    // input) and computeCloneDestination() land on the identical path.
-    const srcDir = join(HOME, 'src');
-    const target = join(srcDir, 'arch-setup@fnrhombus');
-    mkdirSync(target, { recursive: true });
-    const r = resolveInput(args({ input: 'arch-setup@fnrhombus', shellCwd: srcDir }));
-    expect(r.kind).not.toBe('ambiguous');
-    const launch = assertKind(r, 'launch');
-    expect(launch.launchCwd).toBe(target);
-  });
-});
-
-describe('resolveInput — workspace suffix propagation', () => {
-  test('owner/name+workspace → workspace surfaced on needs-clone result', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'fnrhombus/arch-setup+my-feature' })),
-      'needs-clone',
+  test('paths still work — that is the documented degraded mode', async () => {
+    expect(assertLaunch(await resolveInput(args({ input: '/srv/x', fngit: null }))).launchCwd).toBe(
+      '/srv/x',
     );
-    expect(r.workspace).toBe('my-feature');
-    expect(r.destination).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
-  });
-
-  test('owner/name+workspace where destination exists → workspace surfaced on launch', () => {
-    mkdirSync(join(HOME, 'src/arch-setup@fnrhombus'), { recursive: true });
-    const r = assertKind(
-      resolveInput(args({ input: 'fnrhombus/arch-setup+my-feature' })),
-      'launch',
+    expect(assertLaunch(await resolveInput(args({ input: '~/x', fngit: null }))).launchCwd).toBe(
+      join(HOME, 'x'),
     );
-    expect(r.workspace).toBe('my-feature');
-    expect(r.launchCwd).toBe(join(HOME, 'src/arch-setup@fnrhombus'));
-  });
-
-  test('bare-name+workspace → workspace surfaced on needs-owner-lookup', () => {
-    const r = assertKind(
-      resolveInput(args({ input: 'arch-setup+my-feature' })),
-      'needs-owner-lookup',
+    expect(assertLaunch(await resolveInput(args({ input: './x', fngit: null }))).launchCwd).toBe(
+      join(SHELL_CWD, 'x'),
     );
-    expect(r.workspace).toBe('my-feature');
-    expect(r.name).toBe('arch-setup');
   });
-});
 
-describe('resolveInput — settings errors', () => {
-  test('cloneTemplate is empty + repo-shaped input → error names the missing config', () => {
-    const r = assertKind(
-      resolveInput(
-        args({
-          input: 'fnrhombus/arch-setup',
-          settings: { cloneTemplate: '', hostAliases: {} },
-        }),
-      ),
-      'error',
+  test('and so does the no-argument case', async () => {
+    expect(assertLaunch(await resolveInput(args({ input: null, fngit: null }))).usedNoopFallback).toBe(
+      true,
     );
-    expect(r.error).toContain('cloneTemplate');
   });
 
-  test('cloneTemplate empty does NOT block path short-circuit', () => {
-    const r = assertKind(
-      resolveInput(
-        args({
-          input: '/some/abs/path',
-          settings: { cloneTemplate: '', hostAliases: {} },
-        }),
-      ),
-      'launch',
+  test('a bare word naming a real directory still resolves without fngit', async () => {
+    mkdirSync(join(SHELL_CWD, 'here'), { recursive: true });
+    expect(assertLaunch(await resolveInput(args({ input: 'here', fngit: null }))).launchCwd).toBe(
+      join(SHELL_CWD, 'here'),
     );
-    expect(r.launchCwd).toBe('/some/abs/path');
-  });
-
-  test('cloneTemplate uses {host-short} but alias missing → error names host', () => {
-    const r = assertKind(
-      resolveInput(
-        args({
-          input: 'org/name',
-          settings: {
-            cloneTemplate: '~/src/{host-short}/{owner}/{repo}',
-            hostAliases: {}, // no github.com entry
-          },
-        }),
-      ),
-      'error',
-    );
-    expect(r.error).toContain('github.com');
-  });
-});
-
-describe('resolveInput — bad parses', () => {
-  test('a/b/c (ambiguous multi-slash) with no local dir → error', () => {
-    const r = assertKind(resolveInput(args({ input: 'a/b/c' })), 'error');
-    expect(r.error).toMatch(/ambiguous|unparseable/);
-  });
-
-  test('a/b/c WHERE local dir exists → launch in that local dir', () => {
-    mkdirSync(join(SHELL_CWD, 'a/b/c'), { recursive: true });
-    const r = assertKind(resolveInput(args({ input: 'a/b/c' })), 'launch');
-    expect(r.launchCwd).toBe(join(SHELL_CWD, 'a/b/c'));
-  });
-
-  test('empty workspace (+ with nothing after) → parser-level error', () => {
-    const r = assertKind(resolveInput(args({ input: 'arch-setup+' })), 'error');
-    expect(r.error).toMatch(/empty workspace/);
   });
 });

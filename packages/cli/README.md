@@ -103,15 +103,14 @@ Each extra dir gets `--mcp-config <dir>/.mcp.json` (if the file exists) and `--s
 
 Tired of typing `--tmux` every launch? Set it once in config and forget it.
 
-```toml
-# ~/.config/fnclaude/config.toml
-[auto]
-tmux = "worktree"   # inject --tmux when you're creating a worktree via -w
+```json
+// ~/.config/rhombus.rocks/fnclaude/config.json
+{ "auto": { "tmux": "worktree" } }
 ```
 
-Off by default. The per-invocation override `--no-tmux` lets you escape for a single run without touching config.
+Off by default. The per-invocation override `--no-tmux` lets you escape for a single run without touching config — it wins under every setting.
 
-`auto.tmux = "worktree"` is the only valid non-default value: it injects `--tmux` only when you're explicitly creating a new worktree via `-w` (which claude requires for `--tmux` anyway). `fnc` never spawns worktrees on its own — that's always a user-initiated action.
+`auto.tmux` takes `never` (the default), `always`, or `worktree`. `worktree` injects `--tmux` only when you're explicitly creating a new worktree via `-w`. `fnc` never spawns worktrees on its own — that's always a user-initiated action.
 
 > **What about `--dangerously-skip-permissions` and `--ide`?** Use claude's own settings: `permissions.defaultMode` and `skipDangerousModePermissionPrompt` in `~/.claude/settings.json`, plus `autoConnectIde` in `~/.claude.json`. The CLI flags themselves (`-D`, `--dangerously-skip-permissions`, `-I`, `--ide`) still pass through verbatim for per-invocation use.
 
@@ -204,66 +203,66 @@ Short flags follow standard POSIX collapsing: `-BVC` expands to `-B -V -C`. Only
 
 ### Config file
 
-Location: `$XDG_CONFIG_HOME/fnclaude/config.toml` (fallback `~/.config/fnclaude/config.toml`). A missing file is not an error — all defaults apply.
+Location: `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json` (fallback `~/.config/rhombus.rocks/fnclaude/config.json`). A missing file is not an error — all defaults apply. `config.jsonc`, `config.toml`, and `config.yaml` are read too, in that order after `config.json`; `fnc` always *writes* JSON so the `$schema` line gives editors completion.
+
+There is no runtime schema validation. A wrong-shaped key costs you that key and the rest of the file still loads.
+
+If you have a pre-2.16 `$XDG_CONFIG_HOME/fnclaude/config.toml`, it is read once and rewritten to the new location as JSON, with `spawn_command` → `spawnCommand` and `notice_*` → `notice*`.
 
 Precedence: **CLI flag > env var > config file > built-in default**
 
-```toml
-[name]
-model = "claude-haiku-4-5"   # model for auto-generated session names
-timeout = "3s"               # timeout for the name-generation API call
-quiet_missing_api_key = false
-
-[auto]
-tmux = "never"      # "never" | "worktree"
-handoff = "ask"     # "never" | "ask" | non-negative integer seconds
-
-[[context.notice_tiers]]
-at = "88%"          # tokens (860000) OR "NN%" of the auto-compact point
-level = "now"       # "consider" | "plan" | "now" | "urgent"
-
-[[context.notice_tiers]]
-at = "94%"
-level = "urgent"
-
-[context.notice_repeat]
-every = "2.5%"      # cadence past the last tier, same unit as `at`
-level = "urgent"
+```json
+{
+  "$schema": "https://json.schemastore.org/rhombus-rocks-fnclaude-config.json",
+  "noOobe": true,
+  "noopDir": "~/.config/rhombus.rocks/fnclaude/noop",
+  "auto": {
+    "tmux": "never",
+    "handoff": "ask",
+    "spawnCommand": "ghostty -e {bin} {dest} --name {name} @{summary}"
+  },
+  "claude": { "defaultArgs": ["--chrome", "--brief"] },
+  "exec": { "env": { "NAME": "value" } },
+  "context": {
+    "noticeTiers": [
+      { "at": "88%", "level": "now" },
+      { "at": "94%", "level": "urgent" }
+    ],
+    "noticeRepeat": { "every": "2.5%", "level": "urgent" }
+  }
+}
 ```
 
-#### Context-size compaction notices `[context]`
+#### Context-size compaction notices (`context`)
 
 As a session's context grows, fnclaude injects a one-shot notice line into the running `claude` suggesting a manual `/compact` before Claude Code's own auto-compaction fires. Notices escalate through a **ladder** of tiers (`consider → plan → now → urgent`), each firing once as context crosses it, plus an optional repeating tier past the last one.
 
-- `[[context.notice_tiers]]` — an array of `{ at, level }` tables. `at` is the threshold; `level` is one of `consider`, `plan`, `now`, `urgent`.
-- `[context.notice_repeat]` — a single `{ every, level }` table. After the highest fixed tier, re-fire `level` every `every` further along.
+- `context.noticeTiers` — an array of `{ at, level }` objects. `at` is the threshold; `level` is one of `consider`, `plan`, `now`, `urgent`.
+- `context.noticeRepeat` — a single `{ every, level }` object. After the highest fixed tier, re-fire `level` every `every` further along.
 
-Each `at`/`every` is **either** a bare integer (absolute token count) **or** a quoted percentage string like `"94%"`:
+Each `at`/`every` is **either** a number (absolute token count) **or** a percentage string like `"94%"`:
 
-- **Bare integer** — an absolute token count: `at = 860000`.
+- **A number** — an absolute token count: `"at": 860000`.
 - **`"NN%"`** — a percentage of the *derived auto-compact threshold*, where **100% is the exact point Claude Code will auto-compact**, computed per active model / surface / env. `"94%"` resolves to ≈878k on a default 1M `cli` session (100% = 934,000) and ≈439k on a 500k `local-agent` surface (100% = 467,000) — the **same config self-adjusts** to each model with no re-tuning. Percentages are re-resolved whenever the active model changes, and are **not** capped at 100% (with auto-compact disabled, usage climbs past the wall). The derived threshold tracks Claude Code's own knobs — setting `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (or the `local-agent`/`remote_cowork` entrypoint, or `CLAUDE_CODE_DISABLE_1M_CONTEXT`) moves both Claude Code's real behavior and this derivation together.
 
 The **built-in default** is the percentage ladder `76%` consider / `82%` plan / `88%` now / `94%` urgent, with a `2.5%` urgent repeat.
 
-A malformed tier or a bare-number `notice_repeat` (it must be a `{ every, level }` table) is dropped **with a warning on stderr** — not silently discarded.
+A malformed tier or a bare-number `noticeRepeat` (it must be an `{ every, level }` object) is dropped **with a warning on stderr** — not silently discarded.
 
-The legacy single threshold `[context] notice_threshold = 250000` (absolute tokens, maps to a one-tier `now` ladder) is still honored, and the `FNC_CONTEXT_NOTICE_THRESHOLD` env var overrides everything above with a single absolute-token `now` tier.
+The legacy single threshold `context.noticeThreshold` (absolute tokens, maps to a one-tier `now` ladder) is still honored, and the `FNC_CONTEXT_NOTICE_THRESHOLD` env var overrides everything above with a single absolute-token `now` tier.
 
 #### Env var mapping
 
 | Config key | Env var |
 |---|---|
-| `name.model` | `FNCLAUDE_NAME_MODEL` |
-| `name.timeout` | `FNCLAUDE_NAME_TIMEOUT` |
-| `name.quiet_missing_api_key` | `FNCLAUDE_QUIET_MISSING_API_KEY` |
 | `auto.tmux` | `FNCLAUDE_TMUX` |
 | `auto.handoff` | `FNCLAUDE_HANDOFF` |
-| `context.notice_threshold` (single-tier override) | `FNC_CONTEXT_NOTICE_THRESHOLD` |
+| `context.noticeThreshold` (single-tier override) | `FNC_CONTEXT_NOTICE_THRESHOLD` |
 
 `ANTHROPIC_API_KEY` is read (standard) for the auto-name LLM call.
 
 ## Status
 
-The CLI is a recent TypeScript rewrite of the original Go binary. It is actively maintained and published to npm under `@latest`. See the [main fnclaude repository](https://github.com/fnrhombus/fnclaude) for release notes and version history.
+The CLI is a recent TypeScript rewrite of the original Go binary. It is actively maintained and published to npm under `@latest`. See the [main fnclaude repository](https://github.com/fnclaude/fnclaude) for release notes and version history.
 
-File bugs and feature requests on [GitHub Issues](https://github.com/fnrhombus/fnclaude/issues).
+File bugs and feature requests on [GitHub Issues](https://github.com/fnclaude/fnclaude/issues).

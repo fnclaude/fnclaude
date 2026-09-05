@@ -15,12 +15,18 @@
  *
  * promptsDir is passed in — the resolver (caller) handles the directory
  * search order ($FNC_PROMPTS_DIR → <exe-dir>/prompts → FHS share path).
+ *
+ * overridesDir, when given, takes precedence PER FRAGMENT: a file of the same
+ * name in the user's `rhombus.rocks/fnclaude/prompts/` replaces the packaged
+ * one, and the fragments they haven't overridden still come from the package
+ * (see prompts/overrides.ts).
  */
 
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { insertFlagsBeforeSentinel } from '../argv/sentinel';
+import { resolveFragmentPath } from './overrides';
 
 export interface LoadFragmentsResult {
   content: string;
@@ -30,21 +36,21 @@ export interface LoadFragmentsResult {
 export function loadFragments(
   names: readonly string[],
   promptsDir: string,
+  overridesDir: string | null = null,
 ): LoadFragmentsResult {
   const pieces: string[] = [];
   const warnings: string[] = [];
 
   for (const name of names) {
-    const path = join(promptsDir, name);
+    const path = resolveFragmentPath(name, promptsDir, overridesDir);
+    if (path === null) {
+      warnings.push(`fnclaude: prompt fragment ${name} missing from ${promptsDir}`);
+      continue;
+    }
     try {
-      const st = statSync(path);
-      if (!st.isFile()) {
-        warnings.push(`fnclaude: prompt fragment ${name} not a regular file at ${path}`);
-        continue;
-      }
       pieces.push(readFileSync(path, 'utf8'));
     } catch {
-      warnings.push(`fnclaude: prompt fragment ${name} missing from ${promptsDir}`);
+      warnings.push(`fnclaude: prompt fragment ${name} could not be read from ${path}`);
     }
   }
 

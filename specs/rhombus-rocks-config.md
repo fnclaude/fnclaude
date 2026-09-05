@@ -66,6 +66,8 @@ Schema: `rhombus-rocks-fnclaude-config.json`, hand-written, lives in the fnclaud
 
 fnc talks to fngit **as a CLI on PATH**, never as a library. fngit is optional: when `fngit` is not on PATH, fnc accepts only real paths (absolute, `~`-prefixed, `./`-prefixed) and errors on any repo reference with a message naming `fnc install`.
 
+`fnc install` installs it with plain `npm install -g @rhombus.rocks/fngit` and nothing else. **No version manager is ever named** in fnc's code, docs, help text, or tests (owner, 2026-09-05: most users don't have one).
+
 - `fngit clone <ref> [git-clone-flags]` — resolves `<ref>` (bare name, `name@owner`, `owner/name`, `gh:owner/name`, HTTPS or SSH URL), finds an existing clone in the clone-template location or `additionalSrcDirs`, else clones via `gh`. **Prints the absolute path on stdout and nothing else**; progress on stderr; non-zero exit on failure with the reason on stderr. Already-cloned = prints the path, no network.
 - `fngit install -y [--clone-template T] [--worktree-template T] [--additional-src-dirs a,b] [--host-alias host=alias]... [--plugin|--no-plugin] [--shadow-git|--no-shadow-git]` — non-interactive; never prompts when `-y` is given; writes the shared config (merge) and performs the install actions. `fnc install` drives this with the answers it collected; fnc owns the interview (`specs/oobe-interview.md`).
 - Exit codes: 0 ok; non-zero with stderr reason. fnc must not parse stderr.

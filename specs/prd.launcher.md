@@ -240,16 +240,11 @@ Completions for zsh, bash, and fish are in the `completions/` directory of the r
 
 ## Install
 
-**npm (recommended):**
+**npm:**
 ```sh
 npm install -g @fnclaude/cli
 ```
 
-Or with mise (keeps it project-local or per-user without global npm pollution):
-```sh
-mise use -g npm:@fnclaude/cli
-```
-
-**GitHub Releases:** grab the binary for your platform from the [releases page](https://github.com/fnrhombus/fnclaude/releases).
+**GitHub Releases:** grab the binary for your platform from the [releases page](https://github.com/fnclaude/fnclaude/releases).
 
 Linux is the daily-driver target. Windows and macOS binaries ship in every release and are fully supported — Windows is the first-class non-Linux platform.

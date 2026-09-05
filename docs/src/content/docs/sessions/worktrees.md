@@ -34,21 +34,20 @@ on the last segment of the worktree's path, in that order.
 
 ## Where worktrees land
 
-Paths come from `repoSettings` in `~/.claude/settings.json`: `worktreeTemplate` for
-the directory and `branchTemplate` for the branch. fnclaude shares both with the
-claude-code-worktree-paths plugin. The user, project, local, and managed settings
-files layer in the usual claude order, so one repository can override the default
-placement.
+Paths come from `repos` in the shared `~/.config/rhombus.rocks/config.json`:
+`worktreeTemplate` for the directory and `branchTemplate` for the branch. The
+worktree-paths plugin reads the same two keys, so a worktree Claude Code creates
+lands where one you ask fnclaude for does.
 
 ## Auto-tmux
 
-A new worktree is a natural moment for a new tmux session. With this in
-`config.toml`:
+Claude Code has no persistent setting for `--tmux`, so fnclaude supplies one. A new
+worktree is a natural moment for a new tmux session:
 
-```toml
-[auto]
-tmux = "worktree"
+```json
+{ "auto": { "tmux": "worktree" } }
 ```
 
-fnclaude adds `--tmux` whenever `-w <name>` creates a new worktree. Pass `--no-tmux`
-to skip it once without touching config. The default is `tmux = "never"`.
+fnclaude then adds `--tmux` whenever `-w <name>` creates a new worktree. `"always"`
+adds it to every launch; `"never"` is the default. Pass `--no-tmux` to skip it once
+without touching the config — that wins under every setting.

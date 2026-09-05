@@ -315,7 +315,7 @@ Callers (`handleRestart`, `handleSwitch`) inject `--permission-mode <live>` into
 
 Search order:
 1. `$FNC_PROMPTS_DIR` (env override) — if set, must exist or fnclaude errors with the path.
-2. `<exe-dir>/prompts/` — dev workflow; `mise run build` copies into here.
+2. `<exe-dir>/prompts/` — dev workflow; the build copies into here.
 3. `<exe-dir>/../share/fnclaude/prompts/` — FHS/AUR install layout.
 
 Symlinks in the exe path are resolved via `filepath.EvalSymlinks(os.Executable())` before searching. On resolution failure, the unresolved path is used as fallback.

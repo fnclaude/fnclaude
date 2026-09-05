@@ -62,7 +62,7 @@ function makeClipSpy(clipboardOk: boolean): ClipSpy {
 
 const REQUIRED_FIELDS: WireRequest = {
   op: 'switch',
-  destination: 'arch-setup@fnrhombus',
+  destination: 'arch-setup@fnclaude',
   name: 'fix-thing',
   summary: 'summary content',
 };
@@ -173,7 +173,7 @@ describe('createSwitchHandler — normal switch', () => {
 
     const argv = trigger.getStashedArgv();
     expect(argv).toEqual([
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       '--name',
       'fix-thing',
       '@/tmp/test/summary.md',
@@ -198,7 +198,7 @@ describe('createSwitchHandler — normal switch', () => {
     expect(argv).toEqual([
       'opus',
       'max',
-      'arch-setup@fnrhombus',
+      'arch-setup@fnclaude',
       '--name',
       'fix-thing',
       '@/p/summary.md',
@@ -438,7 +438,7 @@ describe('createSwitchHandler — permission_mode=never paste-flow', () => {
 
     expect(r.action).toBe('paste_flow');
     expect(r.command).toBe(
-      'fnclaude arch-setup@fnrhombus --name fix-thing @/runtime/summary.md',
+      'fnclaude arch-setup@fnclaude --name fix-thing @/runtime/summary.md',
     );
     expect(r.clipboard_ok).toBe(true);
     expect(typeof r.message).toBe('string');
@@ -472,7 +472,7 @@ describe('createSwitchHandler — permission_mode=never paste-flow', () => {
     // preserveArgs phase 2; --ide is preserved; then dest, --name name,
     // @summaryPath.
     expect(r.command).toBe(
-      'fnclaude opus arch-setup@fnrhombus --ide --name fix-thing @/r/s.md',
+      'fnclaude opus arch-setup@fnclaude --ide --name fix-thing @/r/s.md',
     );
   });
 

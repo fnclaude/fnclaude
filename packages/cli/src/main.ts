@@ -16,6 +16,11 @@ import { expandAliases } from './argv/expand';
 import { parseArgs } from './argv/parse';
 import { expandShortFlags } from './argv/short-flags';
 import { loadConfig } from './config/load';
+import {
+  defaultNoopDir,
+  fncConfigDir,
+  promptOverridesDir,
+} from './config/paths';
 import { initLogging } from './log/init';
 import { bootFields } from './log/boot';
 import { reexecSelf, startHandoffAwaiter } from './handoff/awaiter';
@@ -54,20 +59,11 @@ import { makeSessionJsonlReady, seedUltracodePrompt } from './launch/seed-prompt
 import { seedNoopDir } from './noop/seed';
 import { resolveTemplateSourcePath } from './noop/template-source';
 import { ensureCwd } from './path/ensure-cwd';
+import { expandTilde } from './path/resolve';
 import { resolvePromptsDir } from './prompts/dir';
 import { injectFragments, loadFragments } from './prompts/load';
 import { isInteractiveSession, selectFragments } from './prompts/select';
-import { buildCloneUrl, computeCloneDestination } from './repo/clone';
-import { cloneRepo } from './repo/clone-exec';
-import { isRepoNotFoundError } from './repo/clone-failure';
-import { parseCloneUrl } from './repo/clone-url';
-import { bootstrapRepo } from './repo/bootstrap';
-import { confirm } from './repo/confirm';
-import { runGitInit } from './repo/git-runner';
-import { runGhApi, runGhClone, runGhRepoCreate } from './repo/gh-runner';
-import { loadHostAliases } from './repo/host-aliases';
-import { findOwner, formatOwnerLookupError } from './repo/owner-lookup';
-import { loadRepoSettings } from './repo/repo-settings';
+import { findFngit, makeFngitRunner } from './repo/fngit';
 import { resolveInput } from './repo/resolve-input';
 import { deriveAutoCompactThreshold } from './usage/autocompact-threshold';
 import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
@@ -117,99 +113,44 @@ if (!parsed.ok) {
   process.exit(2);
 }
 
-// Load fnclaude config (auto.tmux + other settings the launcher consults).
+// Load fnc's config from $XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.*
+// (specs/rhombus-rocks-config.md). Nothing reads Claude Code's settings.json
+// any more: repo templates, source directories and host aliases all live in
+// the shared rhombus.rocks config, which fngit — not fnc — reads.
 const HOME = homedir();
 const shellCwd = process.cwd();
-const configBase = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
-const config = await loadConfig({ path: join(configBase, 'fnclaude', 'config.toml') });
+const xdgEnv = {
+  home: HOME,
+  xdgConfigHome: process.env.XDG_CONFIG_HOME,
+  xdgStateHome: process.env.XDG_STATE_HOME,
+};
+const config = await loadConfig({ env: xdgEnv });
 
-// Load settings before resolution. Resolution-time settings only need user +
-// managed tiers (project/local require knowing projectRoot, which only matters
-// after launch). The managed-settings path is Linux-only for now; macOS &
-// Windows resolution to come.
-const settings = loadRepoSettings({
-  userPath: join(HOME, '.claude', 'settings.json'),
-  projectPath: join(shellCwd, '.claude', 'settings.json'),
-  localPath: join(shellCwd, '.claude', 'settings.local.json'),
-  managedPath: '/etc/claude-code/managed-settings.json',
-});
-const hostAliases = loadHostAliases({
-  systemPath: '/usr/share/fnrhombus/host-aliases.json',
-  userPath: join(HOME, '.local', 'share', 'fnrhombus', 'host-aliases.json'),
-});
+// fnc's starting directory: `noopDir` when set, else the default under the
+// brand directory. `~` is expanded here so everything downstream sees an
+// absolute path.
+const noopDirPath =
+  config.noopDir !== undefined && config.noopDir !== ''
+    ? expandTilde(config.noopDir, HOME)
+    : defaultNoopDir(xdgEnv);
 
-// Resolve the first positional (path or repo ref) to a launch cwd. The
-// resolver handles path short-circuit (/, ~, ~/) AND repo-ref refs whose owner
-// is already known (URL forms, owner/name, name@owner, gh:owner/name). Bare
-// names and clone execution route through the gh-CLI branches below; ambiguous
-// matches surface a clean error.
-const resolved = resolveInput({
+// Resolve the first positional to a launch cwd. fnc owns three cases: no
+// argument (the starting directory), an explicit path form, and stripping a
+// `+workspace` suffix. Everything else is a repo reference and goes to the
+// fngit CLI, which resolves and clones it and prints the path
+// (specs/rhombus-rocks-config.md § "fngit CLI contract").
+//
+// fngit is optional. Without it on PATH the resolver accepts only real paths
+// and errors on a repo reference with a message naming `fnc install`.
+const fngitBin = findFngit();
+const resolved = await resolveInput({
   input: parsed.firstPath,
   shellCwd,
   home: HOME,
-  xdgConfigHome: process.env.XDG_CONFIG_HOME,
-  settings: {
-    cloneTemplate: settings.cloneTemplate,
-    worktreeTemplate: settings.worktreeTemplate,
-    hostAliases,
-  },
+  noopDir: noopDirPath,
+  fngit: fngitBin === null ? null : makeFngitRunner(fngitBin),
+  onProgress: (line) => process.stderr.write(`${line}\n`),
 });
-
-// Clone the ref into `destination`; if the clone fails *because the repo
-// doesn't exist*, offer to bootstrap a fresh local repo (and optionally the
-// private GitHub remote) instead of hard-failing. Returns the cwd to launch
-// in, or null when the caller should abort (already printed + must exit 2).
-// Shared by both `needs-clone` and `needs-owner-lookup`.
-async function cloneOrBootstrap(url: string, destination: string): Promise<string | null> {
-  process.stderr.write(`fnclaude: cloning ${url} → ${destination}\n`);
-  const cloneR = await cloneRepo({
-    url,
-    destination,
-    ghClone: runGhClone,
-    mkdirp: async (path) => {
-      await mkdir(path, { recursive: true });
-    },
-  });
-  if (cloneR.ok) return destination;
-
-  // Only the repo-not-found failure is recoverable; auth/network/etc still
-  // hard-fail as before.
-  if (!isRepoNotFoundError(cloneR.stderr)) {
-    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-    return null;
-  }
-
-  const parts = parseCloneUrl(url);
-  if (parts === null) {
-    process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-    return null;
-  }
-
-  const boot = await bootstrapRepo({
-    owner: parts.owner,
-    name: parts.name,
-    host: parts.host,
-    destination,
-    url,
-    deps: {
-      confirm,
-      mkdirp: async (path) => {
-        await mkdir(path, { recursive: true });
-      },
-      gitInit: runGitInit,
-      ghRepoCreate: runGhRepoCreate,
-      log: (msg) => process.stderr.write(`${msg}\n`),
-    },
-  });
-  if (boot.kind === 'launched') return boot.cwd;
-  if (boot.kind === 'error') {
-    process.stderr.write(`fnclaude: ${boot.error}\n`);
-    return null;
-  }
-  // declined → restore today's behavior: print the original clone error.
-  process.stderr.write(`fnclaude: ${cloneR.error}\n`);
-  return null;
-}
 
 let cwd: string;
 let usedNoopFallback = false;
@@ -234,75 +175,6 @@ switch (resolved.kind) {
       await seedNoopDir({ noopDir: cwd, templateSourcePath: tmplSource.path });
     }
     break;
-  case 'needs-clone': {
-    // Repo ref resolved cleanly but the destination doesn't exist on disk.
-    // Clone it (or bootstrap, if it doesn't exist), then launch there.
-    const launchCwd = await cloneOrBootstrap(resolved.url, resolved.destination);
-    if (launchCwd === null) process.exit(2);
-    cwd = launchCwd;
-    workspaceFromRef = resolved.workspace;
-    break;
-  }
-  case 'needs-owner-lookup': {
-    // Bare-name ref — ask gh which org owns a repo by this name, then
-    // re-route through the resolver as if owner had been on the input.
-    const ownerR = await findOwner({ name: resolved.name, ghApi: runGhApi });
-    if (!ownerR.ok) {
-      process.stderr.write(`${formatOwnerLookupError(ownerR, resolved.name)}\n`);
-      process.exit(2);
-    }
-    // Build a synthetic ref for the resolved owner and recompute destination.
-    const syntheticRef = {
-      host: '',
-      owner: ownerR.owner,
-      name: resolved.name,
-      workspace: resolved.workspace,
-      original: resolved.name,
-    };
-    if (settings.cloneTemplate === '') {
-      process.stderr.write(
-        `fnclaude: cloneTemplate is not configured in repoSettings; cannot resolve bare-name refs.\n`,
-      );
-      process.exit(2);
-    }
-    const destR = computeCloneDestination({
-      ref: syntheticRef,
-      template: settings.cloneTemplate,
-      hostAliases,
-      home: HOME,
-    });
-    if (!destR.ok) {
-      process.stderr.write(`fnclaude: ${destR.error}\n`);
-      process.exit(2);
-    }
-    // If the destination already exists, just launch there. Otherwise clone.
-    const { existsSync } = await import('node:fs');
-    if (existsSync(destR.path)) {
-      cwd = destR.path;
-      workspaceFromRef = resolved.workspace;
-      break;
-    }
-    const url = buildCloneUrl(syntheticRef);
-    const launchCwd = await cloneOrBootstrap(url, destR.path);
-    if (launchCwd === null) process.exit(2);
-    cwd = launchCwd;
-    workspaceFromRef = resolved.workspace;
-    break;
-  }
-  case 'ambiguous': {
-    const both = resolved.cloneDestination ?? resolved.repoRef ?? '?';
-    process.stderr.write(
-      `fnclaude: ambiguous reference — could be the local directory ${resolved.path} OR ${both}. Disambiguate by typing './<name>' for the local path.\n`,
-    );
-    process.exit(2);
-  }
-  case 'ambiguous-local': {
-    const list = resolved.paths.map((p) => `  ${p}`).join('\n');
-    process.stderr.write(
-      `fnclaude: ambiguous reference — multiple local clones named '${resolved.name}':\n${list}\nDisambiguate with '${resolved.name}@<owner>'.\n`,
-    );
-    process.exit(2);
-  }
   case 'error':
     process.stderr.write(`fnclaude: ${resolved.error}\n`);
     process.exit(2);
@@ -433,12 +305,26 @@ if (fragmentNames.length > 0) {
     exeDir,
   });
   if (promptsDir.dir !== null) {
-    const loaded = loadFragments(fragmentNames, promptsDir.dir);
+    // A file in the user's override directory replaces the packaged fragment
+    // of the same name (specs/rhombus-rocks-config.md § fnc prompt overrides).
+    // Passed unconditionally: `resolveFragmentPath` treats a missing directory
+    // as "nothing overridden", so there is nothing to check first.
+    const loaded = loadFragments(fragmentNames, promptsDir.dir, promptOverridesDir(xdgEnv));
     for (const w of loaded.warnings) warnings.add(w);
     claudeArgs = injectFragments(claudeArgs, loaded.content);
   } else if (promptsDir.warning !== undefined) {
     warnings.add(promptsDir.warning);
   }
+}
+
+// `claude.defaultArgs` from config — flags Claude Code has no persistent
+// setting for, so fnc supplies them on every launch. Inserted before the `--`
+// sentinel so a prompt body stays last, and BEFORE ultracode's rewrite so a
+// default flag can't survive into the `/effort ultracode` slot. Explicit argv
+// still wins: claude's own parser takes the last occurrence of a flag, and
+// these are inserted ahead of nothing the user typed after them.
+if (config.claudeDefaultArgs !== undefined && config.claudeDefaultArgs.length > 0) {
+  claudeArgs = insertFlagsBeforeSentinel(claudeArgs, ...config.claudeDefaultArgs);
 }
 
 // Ultracode: rewrite the prompt positional so claude's single prompt slot is

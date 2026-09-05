@@ -15,7 +15,7 @@
  * passes through unchanged so the sibling inherits the same user
  * environment.
  *
- * Ports Go canonical's `cleanEnvForSpawn` (`fnclaude@fnrhombus/src/spawn.go`).
+ * Ports Go canonical's `cleanEnvForSpawn` (`fnclaude/src/spawn.go`).
  * The TS shape is a `Record<string,string>` because Bun.spawn's `env`
  * option takes the object form; Go was producing `KEY=VALUE` slices for
  * `exec.Cmd.Env`. Same semantics either way.

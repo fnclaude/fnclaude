@@ -1,22 +1,22 @@
 /**
- * Auto-tmux gating (§5.4) — when `config.auto.tmux = "worktree"` and the
- * user is creating a new worktree (i.e. `-w <name>` was set and the
- * worktree-intercept layer did NOT find an existing match), inject
- * `--tmux` into passthrough. The injection itself is the caller's job;
- * this module decides whether.
+ * Auto-tmux gating (§5.4) — Claude Code has no persistent setting for
+ * `--tmux`, so fnc supplies the default from `auto.tmux` in its config. The
+ * injection itself is the caller's job; this module decides whether.
+ *
+ * Three settings (specs/oobe-interview.md, Sessions batch):
+ *
+ *   `never`     — the default. Never inject.
+ *   `always`    — inject on every launch.
+ *   `worktree`  — inject only when CREATING a new worktree: `-w <name>` was
+ *                 set and the worktree-intercept layer found no existing
+ *                 match. Entering an existing worktree does not qualify.
+ *
+ * Explicit user intent always wins, under every setting: `--no-tmux` and an
+ * already-present `--tmux` in passthrough both suppress the injection. (Short
+ * `-T` is assumed to have been expanded by §4.5.) Any other value — including
+ * an unset one — means never.
  *
  * Per design.md §1 and prd.launcher.md "Auto-tmux for new worktrees".
- *
- * All five conditions must hold:
- *   1. configAutoTmux === "worktree"
- *   2. worktreeSet === true (user passed -w / 2nd-positional)
- *   3. worktreeMatched === false (a new worktree, not entering an
- *      existing one)
- *   4. noTmux === false (user did not pass --no-tmux escape hatch)
- *   5. passthrough does NOT already contain `--tmux` or `--tmux=…`
- *      (short -T is assumed to have been expanded by §4.5)
- *
- * If any fails: do nothing — explicit user intent always wins.
  */
 
 export interface AutoTmuxArgs {
@@ -36,10 +36,14 @@ function passthroughHasTmux(passthrough: readonly string[]): boolean {
 }
 
 export function shouldInjectTmux(args: AutoTmuxArgs): boolean {
+  // The user's explicit choice comes first, so it applies to `always` too —
+  // otherwise `auto.tmux = "always"` would make `--no-tmux` unusable.
+  if (args.noTmux) return false;
+  if (passthroughHasTmux(args.passthrough)) return false;
+
+  if (args.configAutoTmux === 'always') return true;
   if (args.configAutoTmux !== 'worktree') return false;
   if (!args.worktreeSet) return false;
   if (args.worktreeMatched) return false;
-  if (args.noTmux) return false;
-  if (passthroughHasTmux(args.passthrough)) return false;
   return true;
 }

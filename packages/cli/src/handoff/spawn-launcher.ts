@@ -17,7 +17,7 @@
  * knob is strictly better: one surface, every terminal.
  *
  * Ports Go canonical's `spawnSiblingImpl` + `autoDetectSpawnCommand` +
- * `buildSpawnArgv` from `fnclaude@fnrhombus/src/spawn.go`. Substitution
+ * `buildSpawnArgv` from `fnclaude/src/spawn.go`. Substitution
  * is per-token after whitespace splitting — a `{dest}` expanding to a
  * path with spaces stays one argv entry, no shell involvement.
  *

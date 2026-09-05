@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { expandTilde, noopDir, resolveCwd } from '../../src/path/resolve';
+import { expandTilde, resolveCwd } from '../../src/path/resolve';
+
+/** The caller resolves `noopDir` (config or default) and passes it in. */
+const NOOP = '/home/tom/.config/rhombus.rocks/fnclaude/noop';
 
 describe('expandTilde', () => {
   const home = '/home/tom';
@@ -35,48 +38,26 @@ describe('expandTilde', () => {
   });
 });
 
-describe('noopDir', () => {
-  test('uses XDG_CONFIG_HOME when present', () => {
-    expect(noopDir({ xdgConfigHome: '/custom/xdg', home: '/home/tom' })).toBe(
-      '/custom/xdg/fnclaude/noop',
-    );
-  });
-
-  test('falls back to $HOME/.config when XDG not set', () => {
-    expect(noopDir({ xdgConfigHome: undefined, home: '/home/tom' })).toBe(
-      '/home/tom/.config/fnclaude/noop',
-    );
-  });
-
-  test('empty XDG_CONFIG_HOME also falls back', () => {
-    // Some shells set XDG_CONFIG_HOME='' to mean "unset"; align with
-    // XDG spec which treats empty as "use default".
-    expect(noopDir({ xdgConfigHome: '', home: '/home/tom' })).toBe(
-      '/home/tom/.config/fnclaude/noop',
-    );
-  });
-});
-
 describe('resolveCwd — noop fallback', () => {
-  const ENV = { home: '/home/tom', xdgConfigHome: '/home/tom/.config', shellCwd: '/current' };
+  const ENV = { home: '/home/tom', noopDir: NOOP, shellCwd: '/current' };
 
   test('null firstPath → noop fallback', () => {
     expect(resolveCwd(null, ENV)).toEqual({
-      launchCwd: '/home/tom/.config/fnclaude/noop',
+      launchCwd: NOOP,
       usedNoopFallback: true,
     });
   });
 
   test('empty string firstPath → noop fallback (defensive)', () => {
     expect(resolveCwd('', ENV)).toEqual({
-      launchCwd: '/home/tom/.config/fnclaude/noop',
+      launchCwd: NOOP,
       usedNoopFallback: true,
     });
   });
 });
 
 describe('resolveCwd — tilde expansion', () => {
-  const ENV = { home: '/home/tom', xdgConfigHome: '/home/tom/.config', shellCwd: '/current' };
+  const ENV = { home: '/home/tom', noopDir: NOOP, shellCwd: '/current' };
 
   test('~ alone → home', () => {
     expect(resolveCwd('~', ENV)).toEqual({
@@ -94,7 +75,7 @@ describe('resolveCwd — tilde expansion', () => {
 });
 
 describe('resolveCwd — absolute paths', () => {
-  const ENV = { home: '/home/tom', xdgConfigHome: '/home/tom/.config', shellCwd: '/current' };
+  const ENV = { home: '/home/tom', noopDir: NOOP, shellCwd: '/current' };
 
   test('absolute path: passes through unchanged', () => {
     expect(resolveCwd('/abs/path', ENV)).toEqual({
@@ -105,7 +86,7 @@ describe('resolveCwd — absolute paths', () => {
 });
 
 describe('resolveCwd — relative paths', () => {
-  const ENV = { home: '/home/tom', xdgConfigHome: '/home/tom/.config', shellCwd: '/current' };
+  const ENV = { home: '/home/tom', noopDir: NOOP, shellCwd: '/current' };
 
   test('./relative → shellCwd-joined', () => {
     expect(resolveCwd('./relative', ENV)).toEqual({
@@ -133,7 +114,7 @@ describe('resolveCwd — combined tilde + abs/rel rules', () => {
   test('tilde-expanded path is always absolute, no shellCwd join', () => {
     const r = resolveCwd('~/src/proj', {
       home: '/home/tom',
-      xdgConfigHome: '/home/tom/.config',
+      noopDir: NOOP,
       shellCwd: '/somewhere/else',
     });
     expect(r.launchCwd).toBe('/home/tom/src/proj');
@@ -144,7 +125,7 @@ describe('resolveCwd — combined tilde + abs/rel rules', () => {
     // passes through. Verify.
     const r = resolveCwd('/foo/~bar', {
       home: '/home/tom',
-      xdgConfigHome: '/home/tom/.config',
+      noopDir: NOOP,
       shellCwd: '/current',
     });
     expect(r.launchCwd).toBe('/foo/~bar');

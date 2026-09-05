@@ -29,11 +29,10 @@ over there, with enough context to start cold.
 ## Opening the window
 
 fnclaude needs a command that opens a terminal. Set one in
-`$XDG_CONFIG_HOME/fnclaude/config.toml`:
+`$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json`:
 
-```toml
-[auto]
-spawn_command = "..."
+```json
+{ "auto": { "spawnCommand": "ghostty -e {bin} {dest} --name {name} @{summary}" } }
 ```
 
 The value is split on whitespace. Each token may contain `{bin}` (the fnc binary),

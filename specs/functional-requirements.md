@@ -124,17 +124,17 @@ A third positional is an error. Use `-A <dir>` for additional directories.
 
 ## 3. Where fnclaude Launches (CWD Resolution)
 
-### 3.1 No Argument → Noop Session
+### 3.1 No Argument → Starting Directory
 
-When no path is given, fnclaude launches in a placeholder "noop" directory (`$XDG_CONFIG_HOME/fnclaude/noop`, defaulting to `~/.config/fnclaude/noop`). The directory is created if missing.
+When no path is given, fnclaude launches in its starting directory: `noopDir` from the config when set, otherwise `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/noop` (default `~/.config/rhombus.rocks/fnclaude/noop`). The directory is created if missing.
 
-On the first noop launch, fnclaude seeds a `handoff.template.md` file into that directory (copied from a template bundled with fnclaude). If the file already exists it is never overwritten — you can edit it freely.
+On the first such launch, fnclaude seeds a `handoff.template.md` file into that directory (copied from a template bundled with fnclaude). If the file already exists it is never overwritten — you can edit it freely.
 
-In a noop session, fnclaude injects different system prompt fragments than a normal session (see §7).
+In a starting-directory session, fnclaude injects different system prompt fragments than a normal session (see §7).
 
 ### 3.2 Absolute Paths
 
-An absolute path (starting with `/`) is used as-is. fnclaude does not check whether the path exists — it passes it to claude and claude will error if the directory is absent.
+An absolute path (starting with `/`) is used as-is. fnclaude does not check whether the path exists — it creates the tree if missing and launches there.
 
 ### 3.3 Home-Relative Paths (`~` and `~/...`)
 
@@ -144,66 +144,46 @@ An absolute path (starting with `/`) is used as-is. fnclaude does not check whet
 
 Paths starting with `.` or `..` resolve relative to your current working directory. They are never treated as repository references. No existence check is performed.
 
-### 3.5 Bare Names (Repository Resolution)
+### 3.5 Repository References
 
-A word that isn't a path or magic token is treated as a repository reference. fnclaude resolves it in this order:
+Anything that is not one of the path forms above, and does not name a directory sitting in your current working directory, is a repository reference. fnclaude does not resolve it itself — it runs:
 
-1. **Local clone already on disk**: if exactly one directory matching `<name>@<owner>` (or the pattern from your `cloneTemplate` setting) exists on disk, launch there directly.
-2. **Multiple matching local clones**: error — "ambiguous reference — multiple local clones named `<name>`" — you must disambiguate with `<name>@<owner>`.
-3. **No local clone**: look up the owner via `gh` (requires GitHub CLI authentication), then clone the repository.
-4. **Ambiguous (bare name + same-named local directory)**: error — explains how to disambiguate with `./name` for the local path.
+```
+fngit clone <reference>
+```
 
-### 3.6 Qualified Repository References
+and launches in the absolute path fngit prints. fngit does the whole job: parsing the reference, expanding your clone template, searching your source directories, resolving a bare name's owner through `gh`, and cloning if there is nothing on disk yet. A repository that is already cloned resolves without touching the network.
 
-These forms have the owner explicitly, skipping the GitHub owner lookup:
+A bare word that names an existing directory in your current working directory launches in that directory instead. `./name` forces the path reading; `name@owner` forces the repository reading.
+
+fngit is configured through the shared `$XDG_CONFIG_HOME/rhombus.rocks/config.json` — clone template, worktree template, additional source directories, host aliases. fnclaude does not read that file.
+
+Reference forms fngit accepts:
 
 | Form | Example |
 |---|---|
-| `name@owner` | `fnclaude@fnrhombus` |
-| `owner/name` | `fnrhombus/fnclaude` |
-| `gh:owner/name` | `gh:fnrhombus/fnclaude` |
+| bare name | `fnclaude` |
+| `name@owner` | `fnclaude@fnclaude` |
+| `owner/name` | `fnclaude/fnclaude` |
+| `gh:owner/name` | `gh:fnclaude/fnclaude` |
 | Full HTTPS URL | `https://github.com/owner/name` |
 | SSH URL | `git@github.com:owner/name` |
 
-For all of these, fnclaude computes the local clone destination from your `cloneTemplate` setting:
-- If the destination **exists on disk**: launch there.
-- If both the destination **and** a same-path local directory exist: error (ambiguous).
-- If only a local relative path exists (not the clone destination): launch in that local path.
-- If neither exists: clone the repository (see §3.8).
+### 3.6 fngit Is Optional
+
+fngit is not required. Without it on `PATH`, fnclaude accepts only real paths — absolute, `~`-anchored, or `./`-relative — and any repository reference produces an error naming `fnc install`, the wizard that sets fngit up.
 
 ### 3.7 Workspace Suffix (`+workspace`)
 
-Any repository reference may have a `+<workspace>` suffix (e.g., `fnclaude+fix-auth`). This passes the workspace name through to the worktree intercept (see §5) as if you had also typed `-w fix-auth`.
+Any reference may carry a `+<workspace>` suffix (e.g., `fnclaude+fix-auth`). fnclaude strips it before calling fngit and passes the name through to the worktree intercept (see §5) as if you had also typed `-w fix-auth`. A trailing `+` with nothing after it is ignored.
 
-### 3.8 Cloning
-
-When a repository needs to be cloned, fnclaude:
-1. Prints `fnclaude: cloning <url> → <destination>` to stderr.
-2. Runs `gh repo clone` to clone the repository.
-3. On success, launches in the cloned directory.
-4. On failure with a "repository not found" error, offers to bootstrap a new repository instead (see §3.9).
-5. On other clone failures (auth, network, etc.), prints the error and exits.
-
-The clone destination path is computed from your `cloneTemplate` setting in repo settings (see §10).
-
-### 3.9 Bootstrap (Repository Not Found)
-
-When a clone fails because the repository doesn't exist on GitHub, fnclaude offers to bootstrap a new one:
-- **Ask confirmation**: prompts whether to create a new local repo and optionally a private GitHub remote.
-- If accepted: creates the directory, runs `git init`, and optionally `gh repo create` for a private remote, then launches there.
-- If declined: prints the original clone error and exits.
-
-### 3.10 Error Cases
+### 3.8 Error Cases
 
 | Situation | Error |
 |---|---|
-| Bare name + same-named local dir | Ambiguous — use `./name` or `name@owner` |
-| Multiple local clones for bare name | Ambiguous — use `name@owner` |
-| `owner/name` where both local path and clone destination exist | Ambiguous — explained with both paths |
-| `a/b/c` (multi-slash, no local match) | Ambiguous/unparseable |
-| `name+` (empty workspace suffix) | Error: empty workspace |
-| `cloneTemplate` not configured + repo ref | Error naming missing config |
-| `cloneTemplate` uses `{host-short}` but alias missing | Error naming the host |
+| Repository reference with no fngit installed | Names `fnc install` and what still works |
+| fngit cannot resolve the reference | fngit's own reason, relayed verbatim |
+| `+workspace` with no reference before it | Error: empty repo reference |
 | `claude` not found on PATH | Error with install hint, exit 127 |
 | Parse error (too many positionals, duplicate subcommand) | Error message, exit 2 |
 
@@ -241,13 +221,19 @@ Any characters in `<name>` that are illegal in a branch name are sanitized (repl
 
 ## 6. Auto-Tmux
 
-When the config has `[auto] tmux = "worktree"` **and** `-w <name>` (or a 2nd positional) was given **and** no matching worktree was found (i.e., a new worktree is being created), fnclaude automatically injects `--tmux` into the claude arguments.
+Claude Code has no persistent setting for `--tmux`, so fnclaude supplies the default from `auto.tmux` in its config:
 
-**Suppressed by**:
-- `--no-tmux` flag to `fnc`.
+| Setting | Effect |
+|---|---|
+| `never` (or absent) | Never inject `--tmux`. |
+| `always` | Inject on every launch. |
+| `worktree` | Inject only when a NEW worktree is being created: `-w <name>` (or a 2nd positional) was given and no matching worktree was found. |
+
+**Suppressed under every setting by**:
+- the `--no-tmux` flag to `fnc`;
 - `--tmux` already present in the passthrough flags.
-- The worktree already exists (matched during intercept).
-- Config set to `never` or absent.
+
+Explicit intent always wins, so `--no-tmux` remains usable under `always`.
 
 ---
 
@@ -269,7 +255,9 @@ fnclaude injects additional system prompt content into every session. The conten
 
 If a fragment file is missing, fnclaude skips it and shows a deferred warning after claude exits.
 
-Fragment files are located relative to the fnclaude binary. Override with `FNC_PROMPTS_DIR`.
+Fragment files are located relative to the fnclaude binary. Override the packaged directory with `FNC_PROMPTS_DIR`.
+
+**User overrides**: a file in `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/prompts/` replaces the packaged fragment of the same name. This is per fragment — overriding `noop-router.md` leaves the others packaged. `fnc install` creates that directory with a `README.txt` listing the recognised names and where to copy the packaged originals from. Nothing is copied there on install, and nothing there is ever overwritten by an update.
 
 ---
 
@@ -285,79 +273,66 @@ When you type `fnc ultracode [path] [-- prompt]`:
 
 ## 9. Configuration File
 
-Location: `$XDG_CONFIG_HOME/fnclaude/config.toml` (default: `~/.config/fnclaude/config.toml`).
+Location: `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json` (default: `~/.config/rhombus.rocks/fnclaude/config.json`).
 
-### 9.1 `[auto]` Section
+Any of `config.json`, `config.jsonc`, `config.toml`, or `config.yaml` is read — whichever exists, in that order. fnclaude always **writes** JSON, because JSON's `$schema` key is the one form every editor honours without extra setup:
 
-```toml
-[auto]
-tmux = "never" | "worktree"        # when to inject --tmux (default: unset/never)
-handoff = "never" | "ask" | <seconds>  # handoff behavior for session transfers
-spawn_command = "..."              # command to open new terminal windows for spawn
+```json
+{
+  "$schema": "https://json.schemastore.org/rhombus-rocks-fnclaude-config.json",
+  "noOobe": true,
+  "noopDir": "~/.config/rhombus.rocks/fnclaude/noop",
+  "auto": { "tmux": "never", "handoff": "3", "spawnCommand": "ghostty -e {bin} {dest} --name {name} @{summary}" },
+  "claude": { "defaultArgs": ["--chrome", "--brief"] },
+  "exec": { "env": { "NAME": "value" } },
+  "context": { "noticeThreshold": 150000, "noticeTiers": [], "noticeRepeat": { "every": 50000, "level": "urgent" } }
+}
 ```
 
-**`tmux`**: controls auto-tmux injection (see §6).
+There is **no runtime schema validation**. The schema exists for editor completion, not gatekeeping: the loader degrades per field, so a wrong-shaped `auto` costs you `auto` and the rest of the file still loads. Rewriting the file drops comments.
+
+**Migration**: if no file exists at that location, the pre-restructure `$XDG_CONFIG_HOME/fnclaude/config.toml` is read once and rewritten as JSON at the new path, with `spawn_command` → `spawnCommand` and `notice_*` → `notice*`. Keys fnclaude doesn't read ride along rather than being dropped.
+
+### 9.1 Top level
+
+**`noOobe`**: when falsy or absent — including the whole file being absent — an interactive launch runs the first-run interview. `fnc install` sets it after a successful Apply.
+
+**`noopDir`**: fnclaude's starting directory. A leading `~` is expanded.
+
+### 9.2 `auto`
+
+**`tmux`**: `never` | `always` | `worktree`. See §6.
 
 **`handoff`**: controls how `fnc_switch_project` and `fnc_restart` transfer the session:
 - `"never"`: paste-flow only (shows the command to run manually).
 - `"ask"`: prompts before executing the transfer. (⚠ not covered by tests)
-- A number (seconds): auto-executes the transfer after that delay. (⚠ not covered by tests)
+- A number of seconds as a string: auto-executes the transfer after that delay. (⚠ not covered by tests)
 
-**`spawn_command`**: template for opening a new terminal window when `fnc_spawn_session` is called. Placeholders: `{bin}` (fnclaude path), `{dest}` (destination), `{name}` (session name), `{summary}` (handoff summary file path with `@` prefix). If not set, falls back to `tmux new-window -d` when `$TMUX` is set, otherwise enters paste-flow.
+**`spawnCommand`**: template for opening a new terminal window when `fnc_spawn_session` is called. Placeholders: `{bin}` (fnclaude path), `{dest}` (destination), `{name}` (session name), `{summary}` (handoff summary file path with `@` prefix). If not set, falls back to `tmux new-window -d` when `$TMUX` is set, otherwise enters paste-flow.
 
-### 9.2 `[exec.env]` Section
+### 9.3 `claude`
 
-```toml
-[exec.env]
-FOO = "bar"
-```
+**`defaultArgs`**: an array of flags appended to every claude launch, for flags Claude Code has no persistent setting for. Inserted before the prompt sentinel.
+
+### 9.4 `exec.env`
 
 Keys and values injected into every claude child process's environment. Your shell environment is the base; these keys override shell values; `FNCLAUDE_HANDOFF` and `FNC_SOCKET` are then set on top of these.
 
 `FNC_ARGS_JSON` is always stripped from the child environment regardless of config or shell.
 
-### 9.3 `[context]` Section
+### 9.5 `context`
 
-```toml
-[context]
-notice_threshold = 150000    # tokens at which first notice fires (default: 150000)
-notice_tiers = [...]         # custom tier labels
-notice_repeat = 50000        # repeat interval after all tiers (default: 50000)
-```
-
-Controls the context-budget notices (see §13).
-
-### 9.4 `[name]` Section (⚠ not covered by tests)
-
-```toml
-[name]
-model = "claude-haiku-4-5"   # model used for auto-name generation
-timeout = "3s"               # timeout for auto-name LLM call
-```
+**`noticeThreshold`**, **`noticeTiers`**, **`noticeRepeat`** control the context-budget notices (see §13). Each threshold is a positive number of tokens or an `"NN%"` string measured against the derived auto-compact point.
 
 ---
 
-## 10. Repo Settings (`~/.claude/settings.json`)
+## 10. Repository Settings
 
-fnclaude reads the `repoSettings` block from claude's standard settings files. Four tiers, highest-precedence first:
+fnclaude no longer reads Claude Code's `settings.json` for anything.
 
-1. **Managed** (`/etc/claude-code/managed-settings.json`) — org policy
-2. **Local** (`<project>/.claude/settings.local.json`)
-3. **Project** (`<project>/.claude/settings.json`)
-4. **User** (`~/.claude/settings.json`)
+Clone template, worktree template, branch template, additional source directories, and host aliases live in the shared `$XDG_CONFIG_HOME/rhombus.rocks/config.json`, and are read by **fngit** (repository location) and the **worktree-paths** plugin (worktree creation) — not by fnclaude. fnclaude reaches all of it indirectly, by running `fngit clone` and letting fngit apply the settings.
 
-Each tier contributes individual fields; missing fields from a higher tier do not blank out lower-tier values.
-
-**Fields**:
-
-| Field | Purpose |
-|---|---|
-| `cloneTemplate` | Path template for clone destinations. Placeholders: `{repo}`, `{owner}`, `{host}`, `{host-short}` (requires host alias). Example: `~/src/{repo}@{owner}` |
-| `worktreeTemplate` | Path template for worktree siblings. Used to exclude them when searching for local clones. (⚠ not directly acted on) |
-| `branchTemplate` | Branch naming template. (⚠ read by fnclaude, not otherwise acted on) |
-| `gateEnvVar` | Environment variable name used as a gate. (⚠ read by fnclaude, not otherwise acted on) |
-
-Malformed JSON in a tier is silently skipped; that tier is treated as absent. Non-string field values are dropped (that field treated as empty for that tier).
+See `specs/rhombus-rocks-config.md` for the shared file's shape.
 
 ---
 
@@ -366,7 +341,8 @@ Malformed JSON in a tier is silently skipped; that tier is treated as absent. No
 | Variable | Effect |
 |---|---|
 | `ANTHROPIC_API_KEY` | When set, auto-name calls the Anthropic API directly instead of shelling out to `claude -p` |
-| `XDG_CONFIG_HOME` | Base for config and noop directories (default: `~/.config`) |
+| `XDG_CONFIG_HOME` | Base for the config, prompt-override, and starting directories (default: `~/.config`) |
+| `XDG_STATE_HOME` | Base for session logs (default: `~/.local/state`) |
 | `FNC_PROMPTS_DIR` | Override the system prompt fragments directory |
 | `FNC_NOOP_TEMPLATE_PATH` | Override the source path for `handoff.template.md` seeded on first noop launch |
 | `FNC_LOG` | Log level override (`debug`, `info`, `warn`, `error`) |
@@ -489,7 +465,7 @@ When the session's context window fills up, fnclaude injects a notice into the c
 
 Each tier fires **once**. After a compact (`/compact`) is detected (context drops), the watermark resets and all tiers re-arm — you get a fresh set of notices on the next fill cycle.
 
-**Configurable** via `[context]` in `config.toml`: `notice_threshold` (first tier), `notice_tiers` (labels), `notice_repeat` (repeat interval).
+**Configurable** via `context` in the config file: `noticeThreshold` (first tier), `noticeTiers` (the ladder), `noticeRepeat` (repeat interval).
 
 ---
 

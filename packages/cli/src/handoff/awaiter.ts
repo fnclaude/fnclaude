@@ -161,14 +161,16 @@ export interface ReexecSelfArgs {
   exit?: (code: number) => never;
   /**
    * Test seam: does the captured fnc bin script still exist on disk?
-   * Defaults to `existsSync`. A live session captures the bin as the
-   * version-pinned mise path; `mise upgrade` deletes that dir out from
-   * under it, so we check before re-exec'ing into a dead path.
+   * Defaults to `existsSync`. A live session captures the bin as whatever
+   * absolute path it was started from, which for most global installs is a
+   * version-pinned directory; upgrading fnc deletes that directory out from
+   * under the session, so we check before re-exec'ing into a dead path.
    */
   binExists?: (path: string) => boolean;
   /**
-   * Test seam: resolve the `fnc` command from PATH (the stable mise shim,
-   * which survives version-dir deletion). Defaults to `Bun.which('fnc')`.
+   * Test seam: resolve the `fnc` command from PATH — the shim or symlink an
+   * install puts there, which survives version-dir deletion. Defaults to
+   * `Bun.which('fnc')`.
    */
   whichFnc?: () => string | null;
 }
@@ -223,15 +225,15 @@ export async function reexecSelf(args: ReexecSelfArgs): Promise<never> {
 
   // Decide what to re-exec. Normally we relaunch via `bun <fncBin> …`, the
   // same script/runtime we're running. But a long-running session captures
-  // fncBin as the VERSION-PINNED mise path
-  // (…/installs/npm-fnclaude-cli/<VER>/…/bin/fnc.js); `mise upgrade` deletes
-  // that version dir out from under the live session, so re-exec'ing
-  // `bun <stale-path>` dies with "Module not found". When the captured bin
-  // is gone, re-resolve the `fnc` COMMAND from PATH (the mise shim, which is
-  // stable across version-dir deletion) and exec it DIRECTLY — no bun prefix,
-  // because the shim re-bootstraps the runtime + preflight itself, and mise
-  // dispatches on argv[0]'s basename. If PATH resolution also fails, fall
-  // back to the stale `bun <fncBin>` best-effort so we don't regress.
+  // fncBin as an absolute path into a VERSION-PINNED install directory, and
+  // upgrading fnc deletes that directory out from under the live session, so
+  // re-exec'ing `bun <stale-path>` dies with "Module not found". When the
+  // captured bin is gone, re-resolve the `fnc` COMMAND from PATH — the shim
+  // or symlink the install put there, which points at whatever version is
+  // current — and exec it DIRECTLY, with no bun prefix: that entry point
+  // re-bootstraps the runtime and preflight itself. If PATH resolution also
+  // fails, fall back to the stale `bun <fncBin>` best-effort so we don't
+  // regress.
   const fncCmd = binExists(fncBin) ? null : whichFnc();
   const relaunchArgv = fncCmd ? [fncCmd, ...args.argv] : [bunExec, fncBin, ...args.argv];
 

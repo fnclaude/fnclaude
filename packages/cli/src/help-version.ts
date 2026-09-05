@@ -124,16 +124,16 @@ Repo settings (~/.claude/settings.json):
   tiers in standard claude-settings precedence.
 
 Examples:
-  fnc                                  # noop session in ~/.config/fnclaude/noop
+  fnc                                  # starting directory (no project)
   fnc opus max ~/src/proj              # opus + max effort in ~/src/proj
   fnc ~/src/proj feature               # cwd + worktree name (same as -w feature)
   fnc sonnet ~/src/proj -- "fix the bug"
                                        # auto-name from prompt, sonnet model
   fnc resume ~/src/proj                # session picker for ~/src/proj
-  fnc fnclaude@fnrhombus               # owner-qualified repo ref (auto-cloned)
+  fnc fnclaude@fnclaude                # owner-qualified repo ref (needs fngit)
   fnc -BVC                             # --brief --verbose --chrome
 
-For more, see https://github.com/fnrhombus/fnclaude
+For more, see https://github.com/fnclaude/fnclaude
 `;
 
 let cachedVersion: string | null = null;

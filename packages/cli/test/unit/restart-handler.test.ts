@@ -2,7 +2,7 @@
  * Unit tests for §8.1 handler — `createRestartHandler`.
  *
  * Ports relevant cases from the Go canonical
- * `fnclaude@fnrhombus/src/socket_listener_overrides_test.go`:
+ * `fnclaude/src/socket_listener_overrides_test.go`:
  *
  *   - origArgs preserved (magic at front, launchCWD in middle, post-magic flags at end)
  *   - bare origArgs (no magic, no flags)

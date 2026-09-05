@@ -162,8 +162,8 @@ exit 0
     //
     // Strip every bun-providing dir from PATH so the shim's preflight
     // can't find it. CI runners commonly stack multiple bun installations
-    // on PATH simultaneously (mise's installs dir, proto's shim dir,
-    // setup-bun's `~/.bun/bin`, system package manager dirs, …) — earlier
+    // on PATH simultaneously (a version manager's installs dir, its shim
+    // dir, setup-bun's `~/.bun/bin`, system package manager dirs, …) — earlier
     // single-shot strategies (name-based heuristics, `Bun.which('bun')` →
     // dirname) only removed one of them and left the rest resolving bun.
     // Iterate: probe → find currently-resolving dir → drop → repeat until

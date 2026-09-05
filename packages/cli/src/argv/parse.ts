@@ -2,7 +2,7 @@
  * Full argv parser. Consumes the user's raw argv (post-intake) and produces
  * a structured Args record for the launcher and MCP pipeline.
  *
- * Mirrors Go canonical `parseArgs` (`fnclaude@fnrhombus/src/main.go:130–343`):
+ * Mirrors Go canonical `parseArgs` (`fnclaude/src/main.go:130–343`):
  * one left-to-right walk with a sticky `inFlags` boundary. Magic positionals
  * (model/effort/subcommand) consume the leading prefix; then a maximum of
  * two non-flag positionals fill firstPath and worktreeArg; once the first

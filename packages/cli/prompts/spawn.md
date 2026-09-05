@@ -15,7 +15,7 @@ Pass the user's destination reference through verbatim. fnclaude resolves it. Ac
 
 - An absolute path (`/home/user/proj`, `~/src/foo`).
 - A repo short-name (`arch-setup`) — fnclaude searches gh-orgs, clones if needed.
-- A `name@owner` form (`arch-setup@fnrhombus`).
+- A `name@owner` form (`arch-setup@fnclaude`).
 - A `owner/name` or `gh:owner/name` form.
 - A full URL (`https://github.com/owner/name`, `git@github.com:owner/name`).
 - An optional `+workspace` suffix (`arch-setup+fix-foo`) — base repo + worktree.

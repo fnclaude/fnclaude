@@ -171,15 +171,17 @@ should call out which test would have failed pre-fix.
 
 There is currently no `pre-commit` hook in `.githooks/`: the only one that
 existed formatted the renderer package's TypeScript with biome, and the
-renderer was excised. `mise.toml`'s `[hooks] enter` still points git at
-`.githooks/`, so dropping a hook in there is all it takes to add one back.
+renderer was excised. Git is still pointed at that directory
+(`git config core.hooksPath .githooks`), so dropping a hook in there is all it
+takes to add one back.
 
 If you do add a hook, make sure its tooling is reachable before you commit —
-subagent worktrees routinely lack mise's activation and will fail loudly:
+a subagent worktree often has a barer PATH than your shell, and the hook will
+fail loudly:
 
 ```sh
 command -v <your-formatter> >/dev/null && echo "ok: $(which <your-formatter>)" \
-  || echo "MISSING — run: eval \"$(mise activate bash)\" (or zsh)"
+  || echo "MISSING — activate your toolchain first"
 ```
 
 Don't `--no-verify` to bypass — if the hook can't run, that's a setup

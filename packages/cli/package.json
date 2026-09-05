@@ -16,6 +16,7 @@
   "files": [
     "bin",
     "prompts",
+    "schemas",
     "share",
     "src"
   ],
@@ -29,6 +30,10 @@
     "provenance": true
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.99.0"
+    "@anthropic-ai/sdk": "^0.99.0",
+    "confbox": "^0.3.1"
+  },
+  "devDependencies": {
+    "json-schema-to-ts": "^3.1.1"
   }
 }

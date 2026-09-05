@@ -72,7 +72,7 @@ describe.skipIf(SKIP_WINDOWS)('noop seeding (§10.7) — handoff.template.md', (
     try {
       const { exitCode } = await runNoopLaunch({ XDG_CONFIG_HOME: xdg });
       expect(exitCode).toBe(0);
-      const seeded = join(xdg, 'fnclaude', 'noop', 'handoff.template.md');
+      const seeded = join(xdg, 'rhombus.rocks', 'fnclaude', 'noop', 'handoff.template.md');
       expect(existsSync(seeded)).toBe(true);
       // Content should match the shipped template byte-for-byte.
       expect(readFileSync(seeded, 'utf8')).toBe(readFileSync(REAL_TEMPLATE, 'utf8'));
@@ -84,7 +84,7 @@ describe.skipIf(SKIP_WINDOWS)('noop seeding (§10.7) — handoff.template.md', (
   test('existing handoff.template.md is preserved (no clobber)', async () => {
     const xdg = mkdtempSync(join(tmpdir(), 'fnc-e2e-noop-noclobber-'));
     try {
-      const noopDir = join(xdg, 'fnclaude', 'noop');
+      const noopDir = join(xdg, 'rhombus.rocks', 'fnclaude', 'noop');
       mkdirSync(noopDir, { recursive: true });
       const existing = join(noopDir, 'handoff.template.md');
       writeFileSync(existing, 'user-edited contents');
@@ -102,7 +102,7 @@ describe.skipIf(SKIP_WINDOWS)('noop seeding (§10.7) — handoff.template.md', (
       const { exitCode } = await runNoopLaunch({ XDG_CONFIG_HOME: xdg });
       expect(exitCode).toBe(0);
       // CLAUDE.md should never appear (that was the README divergence).
-      expect(existsSync(join(xdg, 'fnclaude', 'noop', 'CLAUDE.md'))).toBe(false);
+      expect(existsSync(join(xdg, 'rhombus.rocks', 'fnclaude', 'noop', 'CLAUDE.md'))).toBe(false);
     } finally {
       rmSync(xdg, { recursive: true, force: true });
     }
@@ -145,7 +145,7 @@ describe.skipIf(SKIP_WINDOWS)('noop seeding (§10.7) — handoff.template.md', (
       const exitCode = await proc.exited;
       expect(exitCode).toBe(0);
       // Noop dir should not have been created by a non-noop launch.
-      expect(existsSync(join(xdg, 'fnclaude', 'noop', 'handoff.template.md'))).toBe(false);
+      expect(existsSync(join(xdg, 'rhombus.rocks', 'fnclaude', 'noop', 'handoff.template.md'))).toBe(false);
     } finally {
       rmSync(xdg, { recursive: true, force: true });
     }
@@ -161,7 +161,7 @@ describe.skipIf(SKIP_WINDOWS)('noop seeding (§10.7) — handoff.template.md', (
         FNC_NOOP_TEMPLATE_PATH: customSource,
       });
       expect(exitCode).toBe(0);
-      const seeded = join(xdg, 'fnclaude', 'noop', 'handoff.template.md');
+      const seeded = join(xdg, 'rhombus.rocks', 'fnclaude', 'noop', 'handoff.template.md');
       expect(existsSync(seeded)).toBe(true);
       expect(readFileSync(seeded, 'utf8')).toBe('CUSTOM TEMPLATE');
     } finally {
