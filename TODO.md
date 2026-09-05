@@ -1,0 +1,111 @@
+# TODO
+
+Started 2026-09-04. Tracked in git (Tom, 2026-09-04).
+
+---
+
+## Status legend
+
+✅ shipped · 🟡 in-progress · ⬜ queued · ❓ needs-decision
+
+---
+
+## Queued
+
+- [ ] ⬜ **Drop dead `repoSettings.gateEnvVar`** — the field was a knob for the worktree-paths plugin (gate templates on an env var like `FNCLAUDE_INVOCATION`); the plugin removed it in 2.0.0 (2026-05-18, fnclaude/worktree-paths#18, replaced by Claude Code's native `enabledPlugins`). fnc never acted on it and now nothing does.
+  - Remove from `RepoSettings` + `KNOWN_FIELDS` in `packages/cli/src/repo/repo-settings.ts`, and the loader's header comment.
+  - Update `packages/cli/test/unit/repo-settings.test.ts`.
+  - Fix stale doc mentions: `docs/functional-requirements.md` (settings table) and `docs/design.md` (`gateEnvVar — plugin-only`); `docs/archive/specs.md` can stay as archive.
+  - SUPERSEDED by the Restructure below: the whole `repoSettings` reader goes away with fngit adoption. Do this only if the restructure stalls.
+
+- [ ] ⬜ **Fix stale `{host-short}` pointers** — the LUT is read from `/usr/share/fnrhombus/host-aliases.json` + `~/.local/share/fnrhombus/host-aliases.json` (`repo/host-aliases.ts`), but:
+  - `repo/template.ts` no-entry error says "add one to `~/.claude/settings.json`'s `hostShortAliases` block" — wrong location; point at the two JSON files.
+  - worktree-paths README (`~/src/worktree-paths@fnclaude/README.md` line ~88) says the system file "ships with fnclaude" — it doesn't; neither tool ships it.
+
+---
+
+## Restructure (2026-09-04) — renderer excise, rhombus.rocks brand, fngit adoption, in-session OOBE
+
+Tom's directives, verbatim intent. Cross-repo: fnclaude, fngit (`~/src/fngit@rhombus-rocks`), worktree-paths (`~/src/worktree-paths@fnclaude`).
+
+### Done
+
+- [x] ✅ **Tag last renderer revision** — `renderer-last` → `c2f77bb` (origin/main, 2026-09-03), pushed. Last renderer-touching commit was `cc0f50d` (docs site PR #356).
+- [x] ✅ **Worktree cleanup** — removed `+docs-cc-statusline-teammates` (PR #355 merged) and `+docs-renderer-surface-options` (PR #354 merged) + local/remote branches. KEPT `+feat-session-coordination` (draft PR #351, 11 unmerged commits, pushed, idle since 2026-08-12) — Tom to decide.
+
+### Decisions (all made 2026-09-04)
+
+- [x] ✅ **Rename `@fnclaude/cli` → `@rhombus.rocks/fnclaude`** — DECIDED yes (Tom, 2026-09-04). Bare `fnclaude` stays as thin alias package depending on it. Future Electron renderer = separate package, unaffected.
+- [x] ✅ **Config layout under parent brand** — DECIDED (Tom proposed, 2026-09-04):
+  - shared:  `$XDG_CONFIG_HOME/rhombus.rocks/config.json` (repo templates, additionalSrcDirs, hostAliases; json/jsonc/toml/yaml all accepted)
+  - fnc:     `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json` (+ `prompts/` override dir)
+  - fngit:   `$XDG_CONFIG_HOME/rhombus.rocks/fngit/config.json` (if it needs anything app-specific)
+  - state:   `$XDG_STATE_HOME/rhombus.rocks/fnclaude/` (logs), data: `$XDG_DATA_HOME/rhombus.rocks/fngit/shims`
+  - ✅ format (2026-09-04): use `confbox` (unjs, zero-dep, parse+stringify TOML/JSON/JSONC/JSON5/YAML) in BOTH fnc and fngit. Loader accepts whichever `config.{json,jsonc,toml,yaml}` exists. **Tom (2026-09-04): format MUST support a schema for intellisense → wizard writes `config.json` with `"$schema": "https://json.schemastore.org/rhombus-rocks-config.json"` (SchemaStore HOSTS the schema — no rhombus.rocks infra; Tom 2026-09-04)** (JSON `$schema` is universal; TOML needs Taplo `#:schema`, YAML needs yaml-language-server — both still work for users who have them). Schema source of truth: a hand-written `config.schema.json` (small; it's what ships/hosts anyway); TS types derived at compile time only via `json-schema-to-ts` `FromSchema` (dev dep, zero runtime). **NO runtime schema validation (Tom, 2026-09-04: don't add validation just because you can)** — loaders keep today's per-field degrade. Only existing justified check stays: fngit `validateCloneTemplate` on wizard template answers. Source of truth in our repo, mirrored into SchemaStore via PR (see cross-repo item); also shipped in the npm package. `~/.fngitrc` migrates verbatim + `$schema` line. Rejected: c12 (read-only, 6 deps, 4.0-rc, rc9 flat format), cosmiconfig (read-only, no TOML). Caveat: rewrite drops comments.
+- [x] ✅ **Prompt fragments: override-only, no automatic copy** (Tom, 2026-09-04). `rhombus.rocks/fnclaude/prompts/<name>.md` overrides the packaged file by name when present. OOBE creates the dir with ONLY a `README.txt` (plain text, not md — users browse this in a file manager/`ls`; `.md` reads as GitHub front-page; Tom 2026-09-04) explaining: files here override packaged prompts by name, the packaged seed path (`<install-dir>/prompts/`), and the recognised fragment names. No OOBE copy question. Rewrite noop-router's "you cannot edit this" paragraph to point at the override dir.
+- [x] ✅ **`+feat-session-coordination` / draft PR #351: KEEP parked** (Tom, 2026-09-04). Rebase after the restructure lands.
+
+### Queued — fnclaude repo
+
+- [ ] ⬜ **Excise renderer** — delete `packages/renderer` (12k LOC), `@fnclaude/renderer` dep in cli + umbrella `package.json`, 16 cli src/test files referencing renderer (`launch/renderer-mount.ts` etc.), release-please manifest/config entry, moon config, `docs/renderer-component-hierarchy.md`, renderer mentions in `docs/INDEX.md`, `docs/functional-requirements.md`, `docs/decisions.md`, `RENDERER-*.md`, `PLAN.renderer.md`. Umbrella `fnclaude` description. Memory files referencing renderer-as-target → update.
+- [ ] ⬜ **Adopt `@rhombus.rocks/fngit` (npm, currently 1.3.0) for repo location** — replace `packages/cli/src/repo/*` (resolve-input, local-clones, owner-lookup, template, host-aliases, repo-settings, gh-runner, github-origin, clone, bootstrap) with fngit's `locate` / `parseRepoRef` / `loadLocateSettings`. Keep only fnc-specific glue (`+workspace` suffix → worktree, noop fallback, clone-or-bootstrap prompt). Check fngit covers: `+workspace` parsing, `name@owner`, `gh:owner/name`, URL forms, bootstrap-on-missing-repo. Gaps → fngit PRs, not local forks. Install via `mise`/package dep, never vendor.
+- [ ] ⬜ **Stop reading Claude settings entirely** — remove 4-tier `~/.claude/settings.json` reads (`repo/repo-settings.ts`, `main.ts:124-129`), `/usr/share/fnrhombus/host-aliases.json` + `~/.local/share/fnrhombus/host-aliases.json`. Templates + hostAliases come from shared rhombus.rocks config via fngit. `fnrhombus` naming gone everywhere (paths, error strings, help text).
+- [ ] ⬜ **Move fnc config** `$XDG_CONFIG_HOME/fnclaude/config.toml` → `$XDG_CONFIG_HOME/rhombus.rocks/fnclaude/config.json` (with `$schema`; migrate the old TOML on first run); logs → `$XDG_STATE_HOME/rhombus.rocks/fnclaude/`. Migrate-on-first-run or OOBE handles.
+- [ ] ⬜ **Package rename** (decided) — `@fnclaude/cli` → `@rhombus.rocks/fnclaude`; umbrella `fnclaude` depends on it; release-please manifest + config; npm OIDC trusted publisher for new name; `npm deprecate @fnclaude/cli`; mise install docs; `ffnc`/live-install notes.
+- [ ] ⬜ **In-session OOBE** — trigger: `no-oobe` in fnc config falsy/absent (including whole config absent). Shape (agreed 2026-09-04): **plan in code, relay in the model.** fnc builds the questionnaire deterministically (reuse/share fngit's `InstallPlan` shape; detection of emulators/gh auth/existing configs lives here, testable). MCP pair `fnc_oobe_next()` → next BATCH of independent unanswered questions (grouped by context, ≤4 per batch, one `AskUserQuestion` call each; dependent questions — branchTemplate after hook=yes, hostAliases after a `{host-short}` template, worktree default derived from clone answer — go in a later batch; Tom 2026-09-04) as data, `fnc_oobe_answer(id, value)` → validate + WRITE to the (standard-path) config immediately — resumable for free; an interrupted wizard re-offers next launch with answered questions skipped (Tom, 2026-09-04: incremental is fine; config path is standard, not a question). Prompt fragment is 3 lines: call next, present verbatim via `AskUserQuestion`, post answer, repeat; never invent questions. Same plan builder backs deterministic `fnc install -y --flags` for dotfiles. SUBCOMMAND NAME DECIDED: `fnc install` (Tom, 2026-09-04; matches `fngit install`): bare `fnc install` launches the wizard session; `-y --flags` runs non-interactively. Closing note tells users to re-run it. Must NOT fire in non-interactive launches (`-p`, stream-json, cloud). Pre-launch: in oobe mode SKIP ref resolution entirely — launch the wizard session in the SHELL CWD with `--no-session-persistence` (confirmed keep, 2026-09-04: nothing worth keeping, keeps cwd's resume picker/history clean; VERIFY the flag is honoured interactively, not only under -p) (Tom, 2026-09-04: it's the CC behaviour users expect, and the dir most likely already trusted — CC's trust dialog is per-dir in `~/.claude.json`, so a /tmp dir would prompt every time; NOT the noop dir: creating it is a mutation needing signoff). Cost: cwd project's CLAUDE.md/hooks/MCP load into the wizard — verify whether `--bare` still honours `--mcp-config` + `--append-system-prompt`; if so use it. **Wizard session must not dirty cwd AT ALL (Tom):** (1) `oobe.md` says the only outputs are `AskUserQuestion` + `fnc_oobe_*` calls — no files, edits, shell, git, memory; (2) enforce mechanically on the wizard launch: `--disallowedTools Write,Edit,MultiEdit,NotebookEdit,Bash` + `--permission-mode default`. All writes happen inside fnc after Apply. Inject `oobe.md` INSTEAD of `noop-router.md`, name it e.g. `fnc-setup`, drop `--resume`/`--continue`/`-w` for that launch. **Signoff before system mutation (Tom):** config-file writes are incremental; everything ELSE waits for the final preview + `AskUserQuestion` Apply (Recommended) / Go back / Abort: mkdir noop dir (+seed), install CC hook, shim/PATH edits, `no-oobe = true`, restart. Abort → config keeps the answers, nothing else touched, wizard offered again next launch; the last `fnc_oobe_answer` sets `no-oobe = true` and fires the existing restart trigger with the ORIGINAL argv, so the re-exec resolves/clones normally (Tom, 2026-09-04). Skip any question already configured. Questions:
+  - install branch-naming CC hook (worktree-paths) — yes (Recommended) / no. NOTE: fngit wizard has NO "why" text, only "(recommended)"; rationale is in fngit README "Why" + worktree-paths README → write our own from those.
+  - clone template — "as this system (Metis) is configured" (Recommended, seeded from existing `~/.fngitrc` / old `~/.claude/settings.json` repoSettings / old fnc config if present) / type something. Separate question for worktree template. Branch template asked only when the hook install is accepted.
+  - spawn command — detect installed terminal emulators, offer the correct `{bin} {dest} --name {name} @{summary}` template per emulator (Recommended = current terminal) / type something. Show placeholder list.
+  - noop dir location — default (Recommended) / type a path. Preceded by a printed paragraph explaining what the starting directory IS (nobody knows "no-project landing").
+  - **Interview text reviewed by Tom 2026-09-04** — literal question/answer text lives in the chat transcript of that date (revised outline); decisions from that review:
+    - tmux: fnc offers `Never / Always / When creating a new worktree` itself (CC has no persistent `--tmux` setting); `--tmux` REMOVED from the flags multi-select.
+    - transfers: "How should session transfers be handled?" → Delay 3s (Recommended) / Proceed immediately / Ask each time / Other=seconds.
+    - hook question text must say what CC does wrong (`.claude/worktrees/<name>/` inside the repo, branch `worktree-<name>`) then "install this to override"; answer shown as "Yes (Highly Recommended)".
+    - `{input}` = the name Claude Code requested (from `--worktree`/WorktreeCreate), NOT "what you typed"; every question lists ALL its placeholders with definitions for the non-obvious ones.
+    - host aliases (Tom, 2026-09-04): users can't use `{host-short}` without knowing the options → fngit ships BUILT-IN DEFAULTS (`github.com=gh, gitlab.com=gl, bitbucket.org=bb, codeberg.org=cb`), listed inline in the placeholder definition; user config holds overrides only. HOST-ALIAS QUESTION DROPPED from the interview entirely (Tom, later 2026-09-04). Instead a CLOSING NOTE printed after Apply points at (a) `repos.hostAliases` in the shared config for `{host-short}` overrides and (b) the prompts override dir + its README.txt — wording: "replaces fnc's packaged SYSTEM prompt of the same name" (Tom). Use "system prompt" for the fragments everywhere in user-facing text. Batch count drops to 6. Requires the fngit built-in-defaults change (today it errors on any host with no entry).
+    - fngit OPTIONAL — DECIDED (Tom, 2026-09-04): fnc talks to fngit as a CLI ON PATH (`Bun.which('fngit')`, run `fngit clone <ref>`, read path from stdout); wizard installs via `mise use -g npm:@rhombus.rocks/fngit` (npm -g for non-mise users); without it fnc accepts only real paths. Asked in batch 1 alongside the hook: batch 1 = **Tools**: "Install fngit to resolve repo names?" Yes (Highly Recommended)/No + hook question. Repos batch asks only what the chosen tools need: clone template + other places only if fngit; worktree template if either; branch template only if hook; both No → batch skipped. git-shim question (batch 4) only if fngit.
+    - "Other places" defaults: NO `/**` — fngit's search is two fixed rungs per dir (`<dir>/<name>`, then template last segment re-rooted); `*` only for a fixed owner level. Recursive glob = full tree walk per lookup.
+    - Repo templates → fnc SYSTEM PROMPT fragment rendered from config at launch (Claude makes worktrees by hand too, hook only covers WorktreeCreate). NOT written into `~/.claude/CLAUDE.md` (frozen, file fnc doesn't own). Post-Apply SCAN: grep user prefs for worktree/clone/`~/src` lines, print candidates under the closing note as a heuristic for the user to review.
+    - ORDER FIXED: Tools first (1/6), then Repos (clone, worktree, branch-if-hook, other places) so `{branch}` never refers forward. Batches: Tools (fngit + hook), Repos, Sessions, Claude+git, Apply, Done(note).
+    - Text: placeholders comma-delimited, "e.g." IS the definition, no "alias you define" (gh ships preconfigured); never say "above" (not visible); noop paragraph: "transfers you to the right place", "...or have a task that doesn't belong to any project or repository", dropped the CLAUDE.md/handoff sentence. Progress label printed in session between batches AND in the header chip.
+    - "Go back" DROPPED: answers are already written; Apply screen = Apply / Abort, and its auto "Other" is free text ("change the clone template") → model maps to a question id → `fnc_oobe_reask(id)` re-presents just that question, returns to Apply.
+    - progress: `AskUserQuestion` header chip (≤12 chars) carries `Repos (1/6)`; denominator = batches actually shown after skips.
+    - PLACEHOLDER SET MISMATCH: hook supports 10 (`{input} {owner} {repo} {repo-dir} {clone-path} {cwd} {host} {host-plain} {host-short} {branch}`), fngit 6; the shared worktreeTemplate is read by both → fngit must accept the hook's full set (see fngit reminder).
+  - auto.tmux — never / worktree; auto.handoff — never / ask / N seconds.
+  - default claude flags — DECIDED (2026-09-04): ONE `multiSelect` `AskUserQuestion` over `--chrome`, `--tmux`, `--brief`, `--ide`, `--verbose` (each with a one-sentence meaning) + "Other" for anything else (`--betas`, `--bare`, …). Nothing pre-selected, no recommendation. CONSTRAINT: `AskUserQuestion` allows max 4 options per question (+ auto "Other") — verified live 2026-09-04, Tom liked the UI; the plan builder must chunk any list >4 across screens or trim to 4 + Other. Stored as `claude.defaultArgs: string[]` in fnc config, appended to every launch. exec.env stays a config-only key (not asked).
+  - fngit's own questions if not yet configured: additionalSrcDirs, shadow-git shim, gh auth. (hostAliases: NOT asked — see closing note.)
+  - **fnc SUBSUMES the installation interview for every dep it installs (Tom, 2026-09-04):** fngit's questions and the hook's questions are asked by the fnc OOBE itself, once, in one flow. Deps are then driven NON-interactively (`fngit install -y --flags…` / hook install commands) with the collected answers. `fngit install` stays as a standalone wizard for people who install fngit alone; it must never prompt when fnc drives it.
+  - LEAVE OUT `context.notice*`.
+  - then: write configs, install files (hostAliases into shared config — no more separate host-aliases.json), install CC hook, create prompts override dir with README only. Set `no-oobe = true`.
+  - Beware pre-existing config from fngit / CC hook installs — detect + migrate, never clobber.
+
+### Queued — cross-repo / external
+
+- [ ] 🔔 **REMINDER (Tom): update user prefs (`dots`: `~/.claude/CLAUDE.git.md`)** — it says templates live in `~/.claude/settings.json` `repoSettings` (moving to `rhombus.rocks/config.json`), and lists `worktree-paths` + the marketplace under the `fnclaude` org (moving to `rhombus-rocks`). Also `TODO.md` is now TRACKED in git (Tom, 2026-09-04), no longer excluded.
+
+- [ ] ⬜ **Publish workflow must be named `release.yml`** in every repo that publishes to npm (Tom, 2026-09-04: he configures npm trusted publishing against that filename). fnclaude currently publishes from the `CI` workflow's release-please job → move the publish step into `.github/workflows/release.yml`. Check fngit's workflow name too.
+- [x] ✅ **`fnc` is the canonical CLI** — RESOLVED (Tom, 2026-09-04): he'd assumed `fnc` was an alias; it is already the only bin. Package stays `@rhombus.rocks/fnclaude`, bin `fnc`, no change.
+- [ ] ❓ **Dummy npm publishes for trusted-publishing setup** — Tom wants a /tmp executable (path on clipboard) that publishes placeholder versions so the packages exist before he wires trusted publishing. RESOLVED (Tom, 2026-09-04): ONE package, `@rhombus.rocks/fnclaude` (hook is not on npm; fngit already exists). Tom prefers publishing via his `~/.npmrc` auth from this machine — but the token currently returns 401 → he must `npm login` first.
+- [ ] ⬜ **Execution plan (Tom, 2026-09-04):** (1) `/goweb` fngit + fnc changes together, written assuming the hook works as designed; (2) publish dummies; (3) hook repo move happens LOCALLY (repo transfer needs Tom's auth), then `/goweb` the hook's code changes. Cloud agents can't publish or transfer repos.
+
+- [ ] ⬜ **Publish the config schemas to SchemaStore (this IS the hosting)** — ONE SCHEMA PER CONFIG FILE, named by path (Tom, 2026-09-04): `rhombus-rocks-config.json` (shared, `fileMatch` `**/rhombus.rocks/config.json`), `rhombus-rocks-fnclaude-config.json` (`**/rhombus.rocks/fnclaude/config.json`), `rhombus-rocks-fngit-config.json` if fngit gets app-specific keys; future products follow `rhombus-rocks-<product>-config.json`. PR to `SchemaStore/schemastore`: files under `src/schemas/json/`, catalog entries in `src/api/json/catalog.json`, test fixtures per their contributing rules. First PR carries shared + fnclaude. URL is dead until merged — OOBE writes the `$schema` line regardless. Every later schema change = another SchemaStore PR.
+
+### Queued — fngit repo (`~/src/fngit@rhombus-rocks`)
+
+- [ ] 🔔 **REMINDER (Tom): this repo must be updated as part of the restructure** — config location/format (below), hook rename constants, `install-plan` API, BUILT-IN DEFAULT HOST ALIASES (gh/gl/bb/cb; config = overrides only; stop erroring on unlisted-but-default hosts), and TEMPLATE PLACEHOLDER PARITY with the hook (fngit's template parser must accept `{input} {branch} {clone-path} {repo-dir} {cwd}` in worktreeTemplate, at least for search-exclusion marker derivation). Nothing here happens by itself when fnclaude changes.
+
+- [ ] ⬜ **Config location** — `~/.fngitrc` / `FNGIT_CONFIG` → shared `$XDG_CONFIG_HOME/rhombus.rocks/config.json` (any of json/jsonc/toml/yaml accepted via confbox). Keep `FNGIT_CONFIG` override. Migrate `~/.fngitrc` on read.
+- [ ] ⬜ **Expose an install-plan API** fnc's OOBE can drive (questions + actions) so the two wizards share one source of truth. fnc owns the interview; fngit supplies its question set as data and accepts answers non-interactively (`fngit install -y --<flags>` already exists; an exported plan builder is the cleaner form). Must never prompt when driven by fnc.
+- [x] ✅ `branchTemplate` — REVISED (Tom, 2026-09-04, later): since fnc installs the hook, all three templates are KEPT TOGETHER in the shared `repos` block and the fnc OOBE asks `branchTemplate` right after "install hook: yes" (skipped on no). fngit still doesn't read it; schema description says "used by worktree-paths".
+
+### Queued — worktree-paths repo (`~/src/worktree-paths@fnclaude`)
+
+- [ ] 🔔 **REMINDER (Tom): this repo must be updated as part of the restructure** — read templates (incl. `branchTemplate`) from the shared rhombus.rocks config, repo/marketplace/plugin rename. Until it's done the hook still reads Claude's `settings.json`, which breaks the "no Claude settings file" rule the moment fnc installs it.
+
+- [ ] ⬜ **Read templates from shared rhombus.rocks config** instead of CC `settings.json` `repoSettings` (4 tiers).
+- [ ] ⬜ **Move the hook to the rhombus.rocks scope** — DECIDED yes (Tom, 2026-09-04). Transfer repo `fnclaude/worktree-paths` → `rhombus-rocks` org; marketplace `fnrhombus/claude-plugins` → `rhombus-rocks/claude-plugins`; plugin name `claude-code-worktree-paths` → `worktree-paths`. Marketplace id lives in users' `enabledPlugins` and does NOT migrate itself → fngit install + OOBE need a detect-old-marketplace-and-swap step. Do BEFORE OOBE ships so the wizard only installs the new name. Update fngit `PLUGIN_*` constants in `src/cli.ts`.
+- [ ] ⬜ README: system host-aliases file "ships with fnclaude" — obsolete once hostAliases live in shared config.
+
+### Suggested order
+
+1. Decisions (all made 2026-09-04) → 2. fngit config move + API → 3. worktree-paths reads shared config → 4. fnclaude: excise renderer (own PR, mechanical) → 5. fnclaude: fngit adoption + drop claude settings + config move (one PR) → 6. package rename → 7. OOBE.
