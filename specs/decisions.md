@@ -562,3 +562,13 @@ When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), th
 **Decision:** A filesystem port exists but only `config/load.ts` is converted (the one hermetic-test payoff). The other fs-using leaves keep inline `fs` behind real-tmpdir tests — the working status quo. A systematic port is a separately-justified future decision, not part of DI adoption.
 
 **Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).
+
+---
+
+## 2026-09-05 — Vendored `@rhombus-std` dist is committed; CI builds before it tests
+
+**Decision:** The vendored packages' built bundles (`vendor/<name>/dist/bundle/`) are committed artifacts, not build outputs. There is no in-tree step that regenerates them — each package's build script calls a `scripts/build-lib.ts` that does not exist in this checkout — and their `exports`/`main` point straight at `dist/bundle/index.js` with types resolved via the sibling `.d.ts`. Their dist IS the shipped artifact (per [proposals/design.fnioc-adoption.md](proposals/design.fnioc-adoption.md) Graft 2), the same reason their sources are committed. Consequence: `packages/cli/.gitignore` must keep these trees out of its ignore patterns — `dist/` carries a `!vendor/*/dist/` re-include, and `.cache/` is anchored `/.cache/`; an unanchored `dist/`/`.cache/` silently swallows the vendored trees, so a fresh checkout (CI) loses the types and the ttsc checker fails with "Cannot find module '@rhombus-std/di'". A unit guard (`test/unit/vendor-dist-present.test.ts`) asserts the artifacts are present so a cold checkout fails in the unit tier, not a multi-minute build.
+
+**Decision:** CI builds the lowered `dist/` before it tests, and only once. The e2e/unit tiers spawn `bin/fnc.js`, whose dev path rebuilds `dist/` when a source file is newer than the sentinel; on a cold runner, many spawns each started a full ttsc/Go host compile at once and every test timed out. `packages/cli`'s moon `test` task now depends on `~:build`, a bunfig preload builds `dist/` once before any test file loads, and `build-dist.ts` takes a cross-process lock (`--if-stale` skips when fresh) so concurrent builders serialize into one build. The repo-local ttsc host cache is persisted in CI keyed on the ttsc/typescript pins and the vendored transform source.
+
+**Revisit when:** the migration sequence in [proposals/design.di-architecture.md](proposals/design.di-architecture.md) §9 reaches a step whose falsifier fires, or `@rhombus-std` publishes `@next` for all six packages (§8 flip gates).

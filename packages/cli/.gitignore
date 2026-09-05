@@ -14,5 +14,6 @@ dist/
 # the vendored package sources themselves are committed.
 vendor/*/node_modules/
 
-# ttsc/Go transform-host caches (repo-local; rebuilt on demand)
-.cache/
+# ttsc/Go transform-host caches (repo-local; rebuilt on demand). Anchored to this package's
+# own .cache so it never swallows a vendored package's tree (the same trap dist/ hit above).
+/.cache/
