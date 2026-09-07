@@ -96,9 +96,9 @@ describe.skipIf(SKIP_WINDOWS)('`fnc install` launches a locked-down wizard sessi
 
   test('the tool lockdown is on the command line, not just in the prompt', async () => {
     const p = await plan(['install']);
-    expect(p.claudeArgs).toContain('--no-session-persistence');
+    expect(p.claudeArgs).not.toContain('--no-session-persistence');
     const d = p.claudeArgs.indexOf('--disallowedTools');
-    expect(p.claudeArgs[d + 1]).toBe('Write,Edit,MultiEdit,NotebookEdit,Bash');
+    expect(p.claudeArgs[d + 1]).toBe('Write,Edit,NotebookEdit,Bash');
     const m = p.claudeArgs.indexOf('--permission-mode');
     expect(p.claudeArgs[m + 1]).toBe('default');
   });
@@ -122,7 +122,7 @@ describe.skipIf(SKIP_WINDOWS)('`fnc install` launches a locked-down wizard sessi
     // With no fngit on PATH a repo reference errors. `install` must not take
     // that path at all — it has no reference to resolve.
     const p = await plan(['install'], { PATH: process.env.PATH ?? '' });
-    expect(p.claudeArgs).toContain('--no-session-persistence');
+    expect(p.claudeArgs[p.claudeArgs.indexOf('--name') + 1]).toBe('fnc-setup');
   });
 
   test('an unknown flag is refused rather than silently dropped', async () => {
