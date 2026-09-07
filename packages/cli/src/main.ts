@@ -382,8 +382,8 @@ if (fragmentNames.length > 0) {
 // cwd; these flags make that true whether or not it complies. Every write the
 // setup performs happens inside fnc, after Apply.
 //
-// `--no-session-persistence` keeps the cwd's resume picker and history clean —
-// there is nothing in a setup session worth resuming.
+// `--name` is what keeps the session legible in the resume picker; nothing
+// here suppresses the entry, because the flags that would are `--print`-only.
 let oobeState: OobeState | null = null;
 let oobeHandlerArgs: Parameters<typeof createOobeNextHandler>[0] | null = null;
 if (isOobeLaunch) {

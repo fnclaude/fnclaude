@@ -11,13 +11,17 @@
  * The wizard session is a real `claude` session, launched with `oobe.md`
  * injected INSTEAD of `noop-router.md`, and locked down:
  *
- *   - `--no-session-persistence`, so it leaves no resume entry and no history
- *     in the directory it runs in;
- *   - `--disallowedTools Write,Edit,MultiEdit,NotebookEdit,Bash` and
+ *   - `--disallowedTools Write,Edit,NotebookEdit,Bash` and
  *     `--permission-mode default`, so the model MECHANICALLY cannot dirty the
  *     cwd even if it ignores the prompt. Every write happens in fnc, after
  *     Apply. The prompt says so; this makes it true.
  *   - no `--resume`, `--continue`, or `-w`: this is a fresh, one-off session.
+ *
+ * Every flag here works in an interactive session. claude gates a family of
+ * flags on `--print` (`--no-session-persistence`, `--output-format`, and the
+ * streaming ones) and refuses to start at all when one reaches an interactive
+ * launch, so the wizard leaves a normal session entry behind and relies on
+ * `--name` to stay recognisable in the picker instead.
  *
  * It runs in the SHELL CWD, not a scratch directory. Claude Code's trust
  * dialog is per-directory (`~/.claude.json`), so a temp dir would prompt for
@@ -160,9 +164,8 @@ export function buildWizardArgs(promptContent: string, mcpConfig?: string): stri
   const args = [
     '--append-system-prompt',
     promptContent,
-    '--no-session-persistence',
     '--disallowedTools',
-    'Write,Edit,MultiEdit,NotebookEdit,Bash',
+    'Write,Edit,NotebookEdit,Bash',
     '--permission-mode',
     'default',
   ];

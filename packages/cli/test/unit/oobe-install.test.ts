@@ -132,6 +132,38 @@ describe('flagsToAnswers — the two entry points share one plan', () => {
   });
 });
 
+/**
+ * Flags claude accepts only alongside `--print`. Passing one to an
+ * interactive launch is a hard error, not a warning.
+ */
+const PRINT_ONLY_FLAGS = [
+  '--no-session-persistence',
+  '--output-format',
+  '--input-format',
+  '--include-partial-messages',
+  '--replay-user-messages',
+];
+
+/** The tool names claude recognises in a permission rule. */
+const CLAUDE_TOOL_NAMES = [
+  'Agent',
+  'Bash',
+  'BashOutput',
+  'Edit',
+  'ExitPlanMode',
+  'Glob',
+  'Grep',
+  'KillShell',
+  'NotebookEdit',
+  'Read',
+  'SlashCommand',
+  'Task',
+  'TodoWrite',
+  'WebFetch',
+  'WebSearch',
+  'Write',
+];
+
 describe('buildWizardArgs — the wizard session is locked down mechanically', () => {
   const args = buildWizardArgs('the prompt');
 
@@ -140,8 +172,12 @@ describe('buildWizardArgs — the wizard session is locked down mechanically', (
     expect(args[1]).toBe('the prompt');
   });
 
-  test('it leaves no resume entry or history in the directory it runs in', () => {
-    expect(args).toContain('--no-session-persistence');
+  test('the wizard is interactive, so it carries no --print-only flag', () => {
+    // claude rejects these outright outside --print mode ("--x can only be
+    // used with --print mode"), which kills the wizard before it starts.
+    for (const flag of PRINT_ONLY_FLAGS) {
+      expect(args).not.toContain(flag);
+    }
   });
 
   test('the tools that could dirty the cwd are disallowed, not merely discouraged', () => {
@@ -149,7 +185,16 @@ describe('buildWizardArgs — the wizard session is locked down mechanically', (
     // whether or not the model complies.
     const i = args.indexOf('--disallowedTools');
     expect(i).toBeGreaterThanOrEqual(0);
-    expect(args[i + 1]).toBe('Write,Edit,MultiEdit,NotebookEdit,Bash');
+    expect(args[i + 1]!.split(',')).toEqual(['Write', 'Edit', 'NotebookEdit', 'Bash']);
+  });
+
+  test('every disallowed tool is one claude knows, so no rule is a dead typo', () => {
+    // An unrecognised name prints "Permission deny rule ... matches no known
+    // tool" and denies nothing — a lockdown with a hole in it.
+    const names = args[args.indexOf('--disallowedTools') + 1]!.split(',');
+    for (const name of names) {
+      expect(CLAUDE_TOOL_NAMES).toContain(name);
+    }
   });
 
   test('permission mode is default — the wizard is not a bypass session', () => {
