@@ -331,39 +331,3 @@ describe('slashToolEnabled (C4 opt-in gate)', () => {
     expect(slashToolEnabled({})).toBe(false);
   });
 });
-
-describe('buildTools — C4 registration gate', () => {
-  const dial = async () => ({ action: 'queued' });
-
-  test('fnc_run_slash_command absent when not opted in', () => {
-    const tools = buildTools({ socketPath: '/run/x.sock', dialAndCall: dial, env: {} });
-    expect('fnc_run_slash_command' in tools).toBe(false);
-    // The always-on slash tools are still present.
-    expect('request_compact' in tools).toBe(true);
-    expect('fnc_set_effort' in tools).toBe(true);
-    expect('fnc_set_model' in tools).toBe(true);
-  });
-
-  test('fnc_run_slash_command present when FNC_ENABLE_SLASH_TOOL=1', () => {
-    const tools = buildTools({
-      socketPath: '/run/x.sock',
-      dialAndCall: dial,
-      env: { FNC_ENABLE_SLASH_TOOL: '1' },
-    });
-    expect('fnc_run_slash_command' in tools).toBe(true);
-  });
-
-  test('opted-in run_slash tool routes to op "run_slash"', async () => {
-    const calls: Array<{ request: { op: string } }> = [];
-    const tools = buildTools({
-      socketPath: '/run/x.sock',
-      dialAndCall: async (a) => {
-        calls.push(a as { request: { op: string } });
-        return { action: 'queued' };
-      },
-      env: { FNC_ENABLE_SLASH_TOOL: '1' },
-    });
-    await tools['fnc_run_slash_command']!.handler({ command: 'clear' });
-    expect(calls[0]!.request.op).toBe('run_slash');
-  });
-});

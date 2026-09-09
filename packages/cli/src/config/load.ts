@@ -92,6 +92,20 @@ export interface FnConfig {
    * `"NN%"` string (percentage of the derived auto-compact point, #332).
    */
   contextNoticeLadder: NoticeLadderSpec | undefined;
+  /**
+   * `channels.additional`. Extra entries for claude's `--channels` flag, in
+   * the `plugin:<name>@<marketplace>` form. fnc names ITSELF unconditionally;
+   * this is for channels the user also wants in every session.
+   */
+  channelsAdditional: string[] | undefined;
+  /**
+   * `channels.development`. Extra entries for
+   * `--dangerously-load-development-channels`, which bypasses the channel
+   * allowlist. HONOURED ONLY IN A DEV ENVIRONMENT — on an installed copy the
+   * key is read and then ignored, so a config file cannot talk a user's
+   * machine into arming the bypass.
+   */
+  channelsDevelopment: string[] | undefined;
   /** `exec.env`. Extra environment for the claude child. */
   execEnv: Record<string, string> | undefined;
 }
@@ -120,6 +134,8 @@ const EMPTY: FnConfig = {
   claudeDefaultArgs: undefined,
   contextNoticeThreshold: undefined,
   contextNoticeLadder: undefined,
+  channelsAdditional: undefined,
+  channelsDevelopment: undefined,
   execEnv: undefined,
 };
 
@@ -188,6 +204,7 @@ export async function loadConfig(args: LoadConfigArgs): Promise<FnConfig> {
 function project(root: Record<string, unknown>, warn: (m: string) => void): FnConfig {
   const auto = asRecord(root.auto) ?? {};
   const claude = asRecord(root.claude) ?? {};
+  const channels = asRecord(root.channels) ?? {};
   return {
     noOobe: root.noOobe === true,
     noopDir: pickString(root.noopDir),
@@ -197,6 +214,8 @@ function project(root: Record<string, unknown>, warn: (m: string) => void): FnCo
     claudeDefaultArgs: pickStringArray(claude.defaultArgs),
     contextNoticeThreshold: pickContextNoticeThreshold(root),
     contextNoticeLadder: pickContextNoticeLadder(root, warn),
+    channelsAdditional: pickStringArray(channels.additional),
+    channelsDevelopment: pickStringArray(channels.development),
     execEnv: pickExecEnv(root),
   };
 }

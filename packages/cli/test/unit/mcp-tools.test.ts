@@ -19,21 +19,26 @@ import { buildTools, MCP_TOOL_NAMES } from '../../src/mcp/dispatch';
 import type { WireRequest, WireResponse } from '../../src/mcp/wire';
 
 describe('MCP_TOOL_NAMES', () => {
-  test('exposes the original four, the Batch-2 slash tools, get_usage, and the OOBE trio', () => {
+  test('exposes the handoff four, get_usage, the channel probe, and the OOBE trio', () => {
     expect(MCP_TOOL_NAMES).toEqual([
       'fnc_restart',
       'fnc_switch_project',
       'fnc_spawn_session',
       'fnc_copy_to_clipboard',
-      'request_compact',
-      'fnc_set_effort',
-      'fnc_set_model',
-      'fnc_run_slash_command',
       'get_usage',
+      'fnc_channel_test_arm',
+      'fnc_channel_test_ack',
       'fnc_oobe_next',
       'fnc_oobe_answer',
       'fnc_oobe_reask',
     ]);
+  });
+
+  test('no tool writes into the live TUI input', () => {
+    // Keystroke injection is withdrawn; a replacement will go through hooks.
+    for (const name of ['request_compact', 'fnc_set_effort', 'fnc_set_model', 'fnc_run_slash_command']) {
+      expect(MCP_TOOL_NAMES as readonly string[]).not.toContain(name);
+    }
   });
 });
 
@@ -59,10 +64,11 @@ describe('the OOBE tools are gated to a wizard session', () => {
     for (const name of OOBE) expect(registered).not.toContain(name);
   });
 
-  test('the gate is independent of the slash-tool opt-in', () => {
+  test('FNC_OOBE is the only thing that opens the gate', () => {
+    // No other env knob registers a tool — the slash-tool opt-in is gone.
     const registered = names({ FNC_ENABLE_SLASH_TOOL: '1' });
     for (const name of OOBE) expect(registered).not.toContain(name);
-    expect(registered).toContain('fnc_run_slash_command');
+    expect(registered).not.toContain('fnc_run_slash_command');
   });
 });
 
@@ -181,9 +187,9 @@ describe('buildTools — per-tool handler shape', () => {
     const tools = buildTools({
       socketPath: '/run/fake.sock',
       dialAndCall: fake.dial,
-      // Opt in to the generic slash tool AND the wizard tools so every name
-      // in MCP_TOOL_NAMES is present for this completeness check.
-      env: { FNC_ENABLE_SLASH_TOOL: '1', FNC_OOBE: '1' },
+      // Opt in to the gated tools so every name in MCP_TOOL_NAMES is present
+      // for this completeness check.
+      env: { FNC_OOBE: '1', FNC_CHANNEL_TEST: '1' },
     });
     // Schema port from §7.5 wiring: each entry carries description +
     // inputSchema so the jsonrpc-server's tools/list response is complete.

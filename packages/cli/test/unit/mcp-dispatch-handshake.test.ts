@@ -66,7 +66,7 @@ describe('dispatch — initialize handshake', () => {
 });
 
 describe('dispatch — tools/list', () => {
-  test('returns the always-on tools (slash tool opt-in absent) with descriptions + JSON-Schema input', async () => {
+  test('returns the always-on tools with descriptions + JSON-Schema input', async () => {
     const out = await handleMcpLine(
       JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
     );
@@ -77,19 +77,15 @@ describe('dispatch — tools/list', () => {
       description: string;
       inputSchema: { type: string; properties: object; required?: string[] };
     }>;
-    // The opt-in fnc_run_slash_command is absent without
-    // FNC_ENABLE_SLASH_TOOL=1, so eight of the nine names show here.
-    expect(tools).toHaveLength(8);
+    // The wizard trio needs FNC_OOBE=1, so a normal session lists five.
+    expect(tools).toHaveLength(5);
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
       'fnc_copy_to_clipboard',
       'fnc_restart',
-      'fnc_set_effort',
-      'fnc_set_model',
       'fnc_spawn_session',
       'fnc_switch_project',
       'get_usage',
-      'request_compact',
     ]);
     for (const t of tools) {
       expect(typeof t.description).toBe('string');

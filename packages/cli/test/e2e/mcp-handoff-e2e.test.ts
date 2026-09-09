@@ -420,17 +420,13 @@ describe.skipIf(SKIP_WINDOWS)('mcp wire handoff round-trip', () => {
     expect(envelope.id).toBe(2);
     expect(envelope.error).toBeUndefined();
     const names = (envelope.result?.tools ?? []).map((t) => t.name).sort();
-    // fnc_run_slash_command is opt-in (FNC_ENABLE_SLASH_TOOL=1) and unset
-    // here, so it's absent; the other eight always register.
+    // The wizard trio needs FNC_OOBE=1, so a normal session lists five.
     expect(names).toEqual([
       'fnc_copy_to_clipboard',
       'fnc_restart',
-      'fnc_set_effort',
-      'fnc_set_model',
       'fnc_spawn_session',
       'fnc_switch_project',
       'get_usage',
-      'request_compact',
     ]);
     for (const tool of envelope.result?.tools ?? []) {
       expect(tool.description.length).toBeGreaterThan(0);

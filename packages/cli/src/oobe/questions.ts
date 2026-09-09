@@ -124,7 +124,18 @@ const REPOS: readonly Question[] = [
     question: 'Where should fnc clone repos to?',
     detail:
       'fnc performs best when it can derive the owner, repo, and branch from the directory name alone, without opening any files. Placeholders: `{repo}`, `{owner}`, `{host}` e.g. `github.com`, `{host-plain}` e.g. `github`, `{host-short}` e.g. `gh`',
-    options: [{ label: `${DEFAULT_CLONE_TEMPLATE} (Recommended)`, value: DEFAULT_CLONE_TEMPLATE }],
+    options: [
+      {
+        label: `${DEFAULT_CLONE_TEMPLATE} (Recommended)`,
+        description: 'one flat directory, owner in the name',
+        value: DEFAULT_CLONE_TEMPLATE,
+      },
+      {
+        label: '~/src/{owner}/{repo}',
+        description: 'one directory per owner',
+        value: '~/src/{owner}/{repo}',
+      },
+    ],
     freeText: 'a path template',
     target: { kind: 'shared', path: 'repos.cloneTemplate' },
   },
@@ -135,7 +146,16 @@ const REPOS: readonly Question[] = [
     detail:
       'Placeholders: `{repo}`, `{owner}`, `{host}` e.g. `github.com`, `{host-plain}` e.g. `github`, `{host-short}` e.g. `gh`, `{input}` the requested worktree name, `{branch}` the branch name from the next question, `{clone-path}` absolute path of the main checkout e.g. `{clone-path}+{branch}`, `{repo-dir}` directory name of the main checkout, `{cwd}` directory name the request came from',
     options: [
-      { label: `${DEFAULT_WORKTREE_TEMPLATE} (Recommended)`, value: DEFAULT_WORKTREE_TEMPLATE },
+      {
+        label: `${DEFAULT_WORKTREE_TEMPLATE} (Recommended)`,
+        description: 'beside the clone directory',
+        value: DEFAULT_WORKTREE_TEMPLATE,
+      },
+      {
+        label: '{clone-path}+{input}',
+        description: 'beside the main checkout, wherever it actually lives',
+        value: '{clone-path}+{input}',
+      },
     ],
     freeText: 'a path template',
     target: { kind: 'shared', path: 'repos.worktreeTemplate' },
@@ -151,6 +171,11 @@ const REPOS: readonly Question[] = [
         label: `${DEFAULT_BRANCH_TEMPLATE} (Recommended)`,
         description: 'same as the worktree name',
         value: DEFAULT_BRANCH_TEMPLATE,
+      },
+      {
+        label: '{owner}/{input}',
+        description: 'namespaced by owner',
+        value: '{owner}/{input}',
       },
     ],
     freeText: 'a branch-name template',
@@ -194,7 +219,13 @@ const SESSIONS_STATIC: readonly Question[] = [
     options: [
       {
         label: '~/.config/rhombus.rocks/fnclaude/noop (Recommended)',
+        description: 'out of the way, beside the rest of fnc\'s config',
         value: '~/.config/rhombus.rocks/fnclaude/noop',
+      },
+      {
+        label: '~/.local/state/rhombus.rocks/fnclaude/noop',
+        description: 'with the other state fnc writes',
+        value: '~/.local/state/rhombus.rocks/fnclaude/noop',
       },
     ],
     freeText: 'a path',
@@ -247,23 +278,8 @@ export const SPAWN_COMMAND_QUESTION: Omit<Question, 'options'> = {
 
 const CLAUDE_GIT: readonly Question[] = [
   {
-    id: 'claude-flags',
-    header: 'Claude+git',
-    question: 'Which claude flags should fnc pass on every launch?',
-    detail: 'Claude Code has no setting for these, so fnc supplies the default. Pick any.',
-    multiSelect: true,
-    options: [
-      { label: '--chrome', description: 'enable the Claude in Chrome browser integration', value: '--chrome' },
-      { label: '--brief', description: 'enable the SendUserMessage tool for short status pings', value: '--brief' },
-      { label: '--ide', description: 'connect to a running IDE automatically on startup', value: '--ide' },
-      { label: '--verbose', description: 'show full tool output in the transcript', value: '--verbose' },
-    ],
-    freeText: 'any other flags, space-separated',
-    target: { kind: 'fnc', path: 'claude.defaultArgs' },
-  },
-  {
     id: 'git-shim',
-    header: 'Claude+git',
+    header: 'Git',
     question: 'Put a `git` shim first on your PATH?',
     detail:
       'Every `git clone <name>` from any shell, script, or editor then gets the lookup. Everything else passes straight through to git.',
@@ -271,6 +287,32 @@ const CLAUDE_GIT: readonly Question[] = [
     target: { kind: 'decision' },
   },
 ];
+
+/**
+ * `claude.defaultArgs`, reachable only through `fnc install -y --claude-args`.
+ *
+ * The interview does not ask it. Claude Code's own `/config` panel owns
+ * `--chrome`, `--ide` and `--verbose`, and a setup screen that re-asks them
+ * gives the user two places to set one thing. What is left is too thin to be
+ * worth a screen; the closing note points at the config key instead.
+ */
+export const CLAUDE_FLAGS_QUESTION: Question = {
+  id: 'claude-flags',
+  header: 'Claude+git',
+  question: 'Which claude flags should fnc pass on every launch?',
+  detail: 'Flags fnc adds to every launch, on top of whatever `/config` sets.',
+  multiSelect: true,
+  options: [
+    {
+      label: '--brief',
+      description: 'enable the SendUserMessage tool for short status pings',
+      value: '--brief',
+    },
+    { label: 'None', description: 'pass nothing extra', value: '' },
+  ],
+  freeText: 'any other flags, space-separated',
+  target: { kind: 'fnc', path: 'claude.defaultArgs' },
+};
 
 const APPLY: readonly Question[] = [
   {
@@ -289,14 +331,14 @@ const APPLY: readonly Question[] = [
 
 /**
  * The batches in order. Tools first so `{branch}` never refers forward, then
- * Repos, Sessions, Claude and git, Apply. The Done note is printed rather than
+ * Repos, Sessions, Git, Apply. The Done note is printed rather than
  * asked, so it isn't a batch here.
  */
 export const BATCH_SPECS: readonly BatchSpec[] = [
   { id: 'tools', title: 'Tools', questions: TOOLS },
   { id: 'repos', title: 'Repos', questions: REPOS },
   { id: 'sessions', title: 'Sessions', preamble: SESSIONS_PREAMBLE, questions: SESSIONS_STATIC },
-  { id: 'claude-git', title: 'Claude and git', questions: CLAUDE_GIT },
+  { id: 'claude-git', title: 'Git', questions: CLAUDE_GIT },
   { id: 'apply', title: 'Apply', questions: APPLY },
 ];
 
@@ -304,8 +346,10 @@ export const BATCH_SPECS: readonly BatchSpec[] = [
  * Look one question up by id, for `fnc_oobe_reask`. Returns the STATIC
  * definition; `spawn-command` is absent here because its options depend on
  * the machine, so the plan builder owns it — the caller rebuilds that one.
+ * `claude-flags` is not in a batch either, so it is matched directly.
  */
 export function findQuestion(id: string): Question | undefined {
+  if (id === CLAUDE_FLAGS_QUESTION.id) return CLAUDE_FLAGS_QUESTION;
   for (const batch of BATCH_SPECS) {
     for (const q of batch.questions) {
       if (q.id === id) return q;
@@ -321,9 +365,10 @@ export function findQuestion(id: string): Question | undefined {
  * user-facing string.
  */
 export function closingNote(sharedConfigPath: string, promptsDir: string): string {
-  return `Two things you didn't get asked about, for when you want to dig in:
+  return `Three things you didn't get asked about, for when you want to dig in:
 - **Host aliases** for \`{host-short}\` default to \`gh\`, \`gl\`, \`bb\`, \`cb\`. Add or change them under \`repos.hostAliases\` in \`${sharedConfigPath}\`.
 - **Prompt overrides**: any file you drop in \`${promptsDir}/\` replaces fnc's packaged system prompt of the same name. The \`README.txt\` there lists the names.
+- **Extra claude flags** on every launch live under \`claude.defaultArgs\`. Claude Code's \`/config\` covers most of what you'd want there.
 
 Re-run this any time with \`fnc install\`.`;
 }

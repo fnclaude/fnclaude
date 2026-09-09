@@ -67,9 +67,33 @@ interface RunOptions {
  * every magic-alias / short-flag assertion to repeat the pair.
  */
 function stripMcpConfig(claudeArgs: readonly string[]): string[] {
-  const idx = claudeArgs.indexOf('--mcp-config');
-  if (idx < 0) return [...claudeArgs];
-  return [...claudeArgs.slice(0, idx), ...claudeArgs.slice(idx + 2)];
+  let out = [...claudeArgs];
+  const idx = out.indexOf('--mcp-config');
+  if (idx >= 0) out = [...out.slice(0, idx), ...out.slice(idx + 2)];
+  return stripChannelFlags(out);
+}
+
+/**
+ * Drop the channel flags fnc adds beside the MCP config. Each takes one or
+ * more entry arguments, so the run continues to the next `--flag` rather than
+ * assuming a fixed pair.
+ */
+function stripChannelFlags(claudeArgs: readonly string[]): string[] {
+  const FLAGS = ['--channels', '--dangerously-load-development-channels'];
+  const out: string[] = [];
+  let skipping = false;
+  for (const token of claudeArgs) {
+    if (FLAGS.includes(token)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (token.startsWith('-')) skipping = false;
+      else continue;
+    }
+    out.push(token);
+  }
+  return out;
 }
 
 async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {
@@ -216,21 +240,23 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — magic alias expansion', () => {
     expect(args.slice(-2)).toEqual(['--', '/effort ultracode']);
   });
 
-  test('ultracode -- say hi → /effort ultracode after --; user prompt dropped from slot', async () => {
-    const { plan, exitCode } = await runPlan(['ultracode', '--', 'say hi']);
+  test('ultracode -- say hi → refused: the prompt slot is already spoken for', async () => {
+    // `/effort ultracode` IS claude's single prompt positional. Delivering a
+    // typed prompt alongside it needed a follow-up written into the live TUI;
+    // with that withdrawn, fnc refuses rather than silently dropping it.
+    const { exitCode, stderr } = await runPlan(['ultracode', '--', 'say hi']);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('cannot carry a prompt');
+  });
+
+  test('bare ultracode still boots into the effort', async () => {
+    const { plan, exitCode } = await runPlan(['ultracode']);
     expect(exitCode).toBe(0);
     const args = stripMcpConfig(plan!.claudeArgs);
-    expect(args).toContain('--model');
     expect(args[args.indexOf('--model') + 1]).toBe('opus');
     expect(args).not.toContain('--effort');
-    // `/effort ultracode` is the single element immediately after a `--`.
     const sentIdx = args.indexOf('--');
-    expect(sentIdx).toBeGreaterThanOrEqual(0);
     expect(args[sentIdx + 1]).toBe('/effort ultracode');
-    // The user's prompt body never competes for the single prompt slot.
-    expect(args).not.toContain('say hi');
-    expect(args).not.toContain('say');
-    expect(args).not.toContain('hi');
   });
 
   test('fork → --resume --fork-session', async () => {

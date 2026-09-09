@@ -480,3 +480,34 @@ When the user passes a prompt body via the `--` sentinel (`fnc -- "say hi"`), th
 **Why two separate prompts, and private-by-default remote:** the local bootstrap (mkdir + git init + git remote add) is fully reversible. Creating a GitHub remote is outward-facing and hard to undo, so it's gated behind its own explicit second prompt and defaults to `--private`. In a non-TTY context (CI, pipes), the confirm helper returns its default (No) without blocking, so non-interactive runs against a missing repo behave exactly as they did before this change — fnclaude never bootstraps or creates a remote by surprise.
 
 **Revisit when:** gh changes its not-found error wording (update the signatures in [`packages/cli/src/repo/clone-failure.ts`](../packages/cli/src/repo/clone-failure.ts)); or an explicit opt-in (`--new` flag or `+new` suffix) is wanted to skip the first prompt for the known-bootstrap case; or template-based creation (`gh repo create --template`) is wanted instead of a bare empty repo.
+
+## 2026-09-08 — "dev environment" is a `.git` above the bin, and it gates the channel bypass
+
+fnc registers itself as a Claude Code **channel** so its own MCP server can push
+`notifications/claude/channel` events into a running session instead of only answering tool
+calls. Registration needs two independent things: the `claude/channel` capability in the
+subprocess's `initialize` result, and fnc's name on a channel flag in claude's argv — being
+present in `--mcp-config` is explicitly not enough.
+
+During the channels research preview, `--channels` accepts only plugins from an Anthropic-curated
+allowlist, so `server:fnclaude` registers **only** via
+`--dangerously-load-development-channels`. That flag bypasses the allowlist, so it must never be
+armed on a user's installed copy. fnc therefore needs a notion of "development environment",
+which it did not previously have.
+
+**Decided:** `isDevEnvironment` (`src/env/dev.ts`), in precedence order — explicit `FNC_DEV=1`/`0`;
+then never-dev if the bin path contains `node_modules/`; then dev if any ancestor of the bin
+directory holds a `.git` entry; else not dev. `.git` is tested with `existsSync` rather than a
+directory check because in a worktree it is a file holding a `gitdir:` pointer, and a worktree is
+as much a checkout as the main one. The `node_modules` test comes first so a dependency's own
+checkout cannot read as ours.
+
+**Consequence:** fnc names itself on `--channels` in production (a no-op today, with claude's own
+startup notice explaining why) and on the development flag in a checkout — never both. The
+`channels.development` config key is read but ignored outside a dev environment, so no config file
+can talk an installed copy into arming the bypass. `channels.additional` rides `--channels` in
+both environments.
+
+**Alternative rejected:** a plain `channels.enabled` boolean. Neither flag is a boolean — both take
+one or more entries (`plugin:<name>@<marketplace>`, `server:<name>`) — and the allowlist bypass is
+per-entry, so a boolean could not express which entries it covers.
