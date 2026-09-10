@@ -24,6 +24,7 @@
 import { readFileSync } from 'node:fs';
 
 import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server';
+import { startMessageReceiver } from './receiver';
 import { TOOL_SCHEMAS } from './tool-schemas';
 import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire';
 
@@ -234,7 +235,20 @@ export async function runMcpServer(_flags: McpFlags): Promise<number> {
     initializeResponse: buildInitializeResponse(),
   });
 
+  // No inbox (bare mode, or claude found no acceptable socket dir) → no receiver.
+  const inboxPath = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
+  const receiver = inboxPath
+    ? await startMessageReceiver({
+        inboxPath,
+        inboxToken: process.env.CLAUDE_CODE_MESSAGING_TOKEN,
+      }).catch((err: unknown) => {
+        process.stderr.write(`fnc mcp: message receiver not started: ${(err as Error).message}\n`);
+        return undefined;
+      })
+    : undefined;
+
   await runStdinLoop(server);
+  await receiver?.stop();
   return 0;
 }
 
