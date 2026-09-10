@@ -103,6 +103,23 @@ describe.skipIf(SKIP_WINDOWS)('`fnc install` launches a locked-down wizard sessi
     expect(p.claudeArgs[m + 1]).toBe('default');
   });
 
+  test('the wizard opens on question one, not an empty input box', async () => {
+    // A system prompt is not a turn. Without this claude renders oobe.md and
+    // waits for the user to type — a blank session that interviews nobody.
+    const p = await plan(['install']);
+    const sentinel = p.claudeArgs.indexOf('--');
+    expect(sentinel).toBeGreaterThanOrEqual(0);
+    expect(p.claudeArgs.slice(sentinel + 1).join(' ').trim()).not.toBe('');
+  });
+
+  test('flags injected downstream stay ahead of that turn, not inside it', async () => {
+    // `--mcp-config` is spliced in after the wizard flags are built; behind
+    // the sentinel it would be prompt text instead of the MCP wiring that
+    // registers the three oobe tools.
+    const p = await plan(['install']);
+    expect(p.claudeArgs.indexOf('--mcp-config')).toBeLessThan(p.claudeArgs.indexOf('--'));
+  });
+
   test('the session is named so it is recognisable', async () => {
     const p = await plan(['install']);
     expect(p.claudeArgs[p.claudeArgs.indexOf('--name') + 1]).toBe('fnc-setup');

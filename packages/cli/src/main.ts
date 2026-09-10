@@ -39,6 +39,7 @@ import {
   isInstallSubcommand,
   parseInstallFlags,
   shouldRunOobe,
+  WIZARD_FIRST_TURN,
   WIZARD_SESSION_NAME,
 } from './install/subcommand';
 import { configuredPaths } from './config/configured';
@@ -52,15 +53,7 @@ import { detectSpawnCandidates, detectTools } from './oobe/detect';
 import { OobeState } from './oobe/state';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
-import { createPtyWriterHolder } from './mcp/handlers/inject-slash';
-import { createControlSeamHolder, createPtyControlSeam } from './mcp/handlers/send-control';
 import { createRestartHandler } from './mcp/handlers/restart';
-import {
-  createRequestCompactHandler,
-  createRunSlashCommandHandler,
-  createSetEffortHandler,
-  createSetModelHandler,
-} from './mcp/handlers/slash-tools';
 import { createSpawnHandler } from './mcp/handlers/spawn';
 import { createSwitchHandler } from './mcp/handlers/switch';
 import { injectMcpConfig } from './mcp/inject-config';
@@ -72,7 +65,6 @@ import { AUTO_NAME_MODEL, AUTO_NAME_SYSTEM_PROMPT } from './name/llm-prompt';
 import { sanitizeForPath } from './name/sanitize';
 import { sdkLlmCall } from './name/sdk-llm';
 import { findPromptSentinel, insertFlagsBeforeSentinel, promptBody } from './argv/sentinel';
-import { makeSessionJsonlReady, seedUltracodePrompt } from './launch/seed-prompt';
 import { seedNoopDir } from './noop/seed';
 import { resolveTemplateSourcePath } from './noop/template-source';
 import { ensureCwd } from './path/ensure-cwd';
@@ -82,10 +74,7 @@ import { injectFragments, loadFragments } from './prompts/load';
 import { isInteractiveSession, selectFragments } from './prompts/select';
 import { findFngit, makeFngitRunner } from './repo/fngit';
 import { resolveInput } from './repo/resolve-input';
-import { deriveAutoCompactThreshold } from './usage/autocompact-threshold';
-import { resolveContextNoticeLadder, startContextMonitor } from './usage/context-monitor';
 import { planOwnSession } from './usage/own-session';
-import { makeOwnSessionFileResolver } from './usage/proc-session-id';
 import { createWarningBuffer } from './warnings/buffer';
 import { shouldInjectTmux } from './worktree/auto-tmux';
 import { listWorktrees } from './worktree/git-list';
@@ -258,15 +247,19 @@ const parsedWithIntercept = { ...parsed, passthrough: intercept.passthrough };
 
 // `ultracode` effort: claude's --effort flag rejects the value, so it rides
 // as the `/effort ultracode` initial-prompt slash command (runs on boot —
-// verified: `claude -- "/effort ultracode"`). The user's actual prompt (if
-// any) can't share that single prompt slot, so we capture it here as the
-// seed to submit as a follow-up after claude is ready (useTerminal branch
-// only). expandAliases already suppressed --effort for ultracode and the
-// parser implied --model opus, same as any bare effort.
+// verified: `claude -- "/effort ultracode"`). That consumes claude's single
+// prompt slot, so a prompt the user typed has nowhere to go — fnc refuses the
+// combination rather than dropping it. expandAliases already suppressed
+// --effort for ultracode and the parser implied --model opus, same as any
+// bare effort.
 const isUltracode = parsedWithIntercept.effort === 'ultracode';
-const ultracodeSeedPrompt = isUltracode
-  ? promptBody(parsedWithIntercept.passthrough).join(' ').trim()
-  : '';
+if (isUltracode && promptBody(parsedWithIntercept.passthrough).join(' ').trim() !== '') {
+  process.stderr.write(
+    'fnclaude: `ultracode` takes claude\'s prompt slot, so it cannot carry a prompt too. ' +
+      'Start the session without one and type it in.\n',
+  );
+  process.exit(2);
+}
 
 // Build the final claude argv: prepend magic-captured flags (model/effort/
 // subcommand), then expand any short-flag clusters in the passthrough.
@@ -393,6 +386,10 @@ if (isOobeLaunch) {
     '--name',
     WIZARD_SESSION_NAME,
   );
+  // The turn that starts the interview. It goes after the sentinel as prompt
+  // body, so the `--mcp-config` pair injected downstream lands ahead of it
+  // rather than being read as more prompt content.
+  claudeArgs.push('--', WIZARD_FIRST_TURN);
 
   const tools = detectTools();
   const spawnCandidates = detectSpawnCandidates();
@@ -455,7 +452,7 @@ if (config.claudeDefaultArgs !== undefined && config.claudeDefaultArgs.length > 
 
 // Ultracode: rewrite the prompt positional so claude's single prompt slot is
 // exactly `/effort ultracode`. Drop any user-prompt tokens that followed `--`
-// (they're delivered as a follow-up via the seed-prompt step after spawn).
+// (fnc refused the combination up front, so there are none).
 // Done after fragment injection (which keys off the prompt body) and before
 // MCP injection, so `--mcp-config` still lands BEFORE this `--`.
 if (isUltracode) {
@@ -494,15 +491,6 @@ const childEnv = composeEnv({
 // everywhere else — a model that can see `fnc_oobe_next` in a normal session
 // has no interview to advance and no reason to be tempted.
 if (isOobeLaunch) childEnv.FNC_OOBE = '1';
-
-// #332: percentage context-notice tiers ("94%") resolve against the derived
-// Claude Code auto-compact threshold (100% = the auto-compact point), computed
-// per active model + the child's env (surface/window overrides). We read the
-// SAME env claude sees (childEnv), so setting CLAUDE_CODE_AUTO_COMPACT_WINDOW
-// et al. moves claude's real behavior and this derivation in lockstep. The
-// active model is supplied per tick by the context monitor's session reader.
-const deriveNoticeThreshold = (model: string): number =>
-  deriveAutoCompactThreshold({ model, env: childEnv });
 
 // Self-MCP --mcp-config injection (§7.4). Skipped when there's no socket
 // to dial back to (win32 — no listener), and gated to interactive
@@ -555,21 +543,6 @@ if (!claudeBin.ok) {
   process.exit(127);
 }
 
-// Deferred-binding PTY writer for the slash-injection MCP tools (C0–C4).
-// The dispatcher is wired below BEFORE the terminal exists; the keystone
-// handlers take `slashWriter.write` now and we bind it to the real
-// `term.write` once the terminal spawns (further down). Until bound, a
-// write is a no-op (fire-and-forget) — but the terminal binds long before
-// any tool call can arrive.
-const slashWriter = createPtyWriterHolder();
-
-// Deferred-binding tagged control-injection seam (#299) for control traffic
-// (context notices, /compact, follow-up handoffs). Built BEFORE the terminal
-// exists; the /compact handler takes `controlSeam.sendControl` now and the
-// real PTY seam binds once the terminal spawns. Control messages sent before
-// bind are queued, not dropped.
-const controlSeam = createControlSeamHolder();
-
 // Bind the MCP listener (Unix only). Must happen BEFORE Bun.spawn so the
 // subprocess claude launches per --mcp-config can dial back over
 // $FNC_SOCKET. Bind failure is fatal per Go canonical — we can't run
@@ -613,12 +586,6 @@ if (mcpSocketPath !== undefined) {
         switch: switchHandler,
         spawn: spawnHandler,
         copy_to_clipboard: handleCopyToClipboard,
-        // Batch-2 slash-injection tools — thin wrappers over the C0
-        // keystone, all sharing the deferred-bound PTY writer.
-        compact: createRequestCompactHandler({ sendControl: controlSeam.sendControl }),
-        set_effort: createSetEffortHandler({ write: slashWriter.write }),
-        set_model: createSetModelHandler({ write: slashWriter.write }),
-        run_slash: createRunSlashCommandHandler({ write: slashWriter.write }),
         // get_usage returns structured budget data read from the session
         // JSONL; launchCWD is the encoded-cwd half of that path.
         get_usage: createGetUsageHandler({ launchCWD: cwd }),
@@ -698,9 +665,6 @@ let exitCode: number;
 // Captured so the post-exit handoff branch can await it (keeps the
 // parent alive + foreground until the re-exec'd child exits).
 let handoffAwaiter: Promise<void> | undefined;
-// Stops the context-size monitor's poll timer on teardown. Only set on
-// the useTerminal branch; left undefined under stdio inherit.
-let contextMonitorStop: (() => void) | undefined;
 try {
   let proc: Bun.Subprocess;
   if (useTerminal) {
@@ -722,42 +686,6 @@ try {
     });
     logger.info('claude.spawn', { claudePid: proc.pid, cwd });
 
-    // Bind the slash-injection writer to the live PTY input — the same
-    // path user keystrokes take below. The MCP tool handlers wired before
-    // spawn now route into this terminal.
-    slashWriter.bind((payload: string) => {
-      term.write(payload);
-    });
-
-    // Tagged control seam (#299): control traffic (context notices, /compact,
-    // follow-up handoffs) routes through this rather than the raw keystroke
-    // injector, so it carries the structural marker AND — crucially — defers
-    // around any line the user is mid-typing instead of splicing into it. The
-    // stdin forwarder below feeds `noteUserInput` so the seam knows when a draft
-    // is in flight.
-    const ptyControl = createPtyControlSeam({
-      write: (payload: string) => {
-        term.write(payload);
-      },
-    });
-    controlSeam.bind(ptyControl.sendControl);
-
-    // Ultracode seed: claude booted under the `/effort ultracode` initial
-    // prompt, which consumed its single prompt slot. If the user ALSO typed a
-    // prompt, submit it as a follow-up once claude is ready — detected by its
-    // session JSONL appearing under ~/.claude/projects/<cwd>/ (no fixed
-    // delay; capped by a fallback so it always fires). Fire-and-forget side
-    // promise — never blocks the main flow.
-    if (isUltracode && ultracodeSeedPrompt !== '') {
-      void seedUltracodePrompt({
-        seedPrompt: ultracodeSeedPrompt,
-        write: (payload) => {
-          term.write(payload);
-        },
-        waitForReady: makeSessionJsonlReady({ launchCWD: cwd }),
-      });
-    }
-
     // Forward user stdin → PTY. Raw mode so the shell line discipline
     // doesn't eat control sequences (Ctrl-C, arrow keys, etc.) before
     // claude sees them. bun#25779 (control bytes not delivering signals
@@ -766,9 +694,6 @@ try {
     // needed.
     process.stdin.setRawMode(true);
     process.stdin.on('data', (chunk: Buffer) => {
-      // Track draft state so a control message can't splice into a line the
-      // user is mid-typing (#299), then forward the keystrokes to claude.
-      ptyControl.noteUserInput(chunk.toString());
       term.write(chunk);
     });
 
@@ -778,38 +703,6 @@ try {
       term.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
     });
 
-    // §9.0 / #170 part 2: tiered context-size monitor. Polls the live
-    // session JSONL's latest-turn context size and, each time it crosses a
-    // new rung of the escalation ladder (consider → plan → now → urgent),
-    // emits ONE notice through the tagged control seam (#299) — suggesting the
-    // model call request_compact. Routing through the seam (not raw term.write)
-    // means the notice carries the structural marker and never splices into a
-    // line the user is mid-typing. A watermark suppresses re-fires on mere
-    // growth and re-arms after a compaction drop. The ladder defaults to a
-    // percentage ladder (76/82/88/94% + 2.5% repeat) that resolves against the
-    // derived auto-compact point per active model/surface (#332), overridable
-    // via [[context.notice_tiers]] / [context.notice_repeat] in config.toml
-    // (each `at`/`every` a bare token count OR a "NN%" percentage), the legacy
-    // [context] notice_threshold, or the FNC_CONTEXT_NOTICE_THRESHOLD env var
-    // (precedence in resolveContextNoticeLadder).
-    contextMonitorStop = startContextMonitor({
-      launchCWD: cwd,
-      ladder: resolveContextNoticeLadder({
-        configLadder: config.contextNoticeLadder,
-        configThreshold: config.contextNoticeThreshold,
-      }),
-      deriveThreshold: deriveNoticeThreshold,
-      sendControl: ptyControl.sendControl,
-      // Pin the monitor to THIS session's own JSONL by id (no oldest-mtime
-      // guess). When the id is known up front, use it directly; when it isn't
-      // (`fnc resume` bare/--continue/--fork/picker), resolve the REAL id from
-      // the fnc MCP child's /proc environ (keyed on claude's pid) so the
-      // identity path is still taken instead of guessing a sibling's file.
-      ownSessionFile: makeOwnSessionFileResolver({
-        upfrontId: ownSessionId,
-        claudePid: proc.pid,
-      }),
-    }).stop;
   } else {
     proc = Bun.spawn([claudeBin.path, ...claudeArgs], {
       cwd,
@@ -852,11 +745,6 @@ try {
   // parent's job.
   if (mcpListenerStop !== undefined) {
     await mcpListenerStop();
-  }
-  // Stop the context-size monitor's poll timer (idempotent; no-op if it
-  // already latched off after firing).
-  if (contextMonitorStop !== undefined) {
-    contextMonitorStop();
   }
 }
 

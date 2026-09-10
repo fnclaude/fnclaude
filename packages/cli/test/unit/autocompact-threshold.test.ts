@@ -79,22 +79,6 @@ describe('deriveConfiguredWindow — precedence', () => {
     ).toBe(1_000_000);
   });
 
-  test('settings autoCompactWindow honored below the env var, clamped', () => {
-    expect(
-      deriveConfiguredWindow({ model: 'claude-opus-4-8', env: {}, settingsAutoCompactWindow: 400_000 }),
-    ).toBe(400_000);
-    // env var beats settings
-    expect(
-      deriveConfiguredWindow({
-        model: 'claude-opus-4-8',
-        env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: '300000' },
-        settingsAutoCompactWindow: 400_000,
-      }),
-    ).toBe(300_000);
-  });
-});
-
-describe('deriveAutoCompactThreshold — configuredWindow − 33000', () => {
   test('default cli 1M session → 934000 (= 967000 − 33000)', () => {
     expect(deriveAutoCompactThreshold({ model: 'claude-opus-4-8[1m]', env: {} })).toBe(934_000);
   });

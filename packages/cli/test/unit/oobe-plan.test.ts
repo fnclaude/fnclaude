@@ -16,6 +16,7 @@ import type { SpawnCandidate, ToolPresence } from '../../src/oobe/detect';
 import {
   MAX_OPTIONS_PER_QUESTION,
   MAX_QUESTIONS_PER_BATCH,
+  MIN_OPTIONS_PER_QUESTION,
   type PlanContext,
   buildPlan,
   MAX_CHIP_LENGTH,
@@ -24,7 +25,7 @@ import {
   progressLabel,
   progressText,
 } from '../../src/oobe/plan';
-import type { QuestionId } from '../../src/oobe/questions';
+import { findQuestion, type QuestionId } from '../../src/oobe/questions';
 
 const NO_TOOLS: ToolPresence = { fngit: false, plugin: false, gitShim: false };
 
@@ -49,12 +50,8 @@ function allIds(c: PlanContext): string[] {
 
 describe('batch order', () => {
   test('Tools comes first, so `{branch}` never refers forward', () => {
-    expect(buildPlan(ctx()).map((b) => b.id)).toEqual([
-      'tools',
-      'sessions',
-      'claude-git',
-      'apply',
-    ]);
+    // No Git batch on a default ctx: git-shim waits on an fngit install.
+    expect(buildPlan(ctx()).map((b) => b.id)).toEqual(['tools', 'sessions', 'apply']);
   });
 
   test('Repos appears once a tool has been accepted', () => {
@@ -112,7 +109,8 @@ describe('dependencies — Repos asks only what the chosen tools need', () => {
     const ids = allIds(c);
     expect(ids).not.toContain('install-fngit');
     expect(ids).toContain('clone-template');
-    expect(ids).toContain('git-shim');
+    // But NOT git-shim: fngit's own installer already put that to them.
+    expect(ids).not.toContain('git-shim');
   });
 });
 
@@ -156,17 +154,10 @@ describe('progress — the denominator counts what will actually be shown', () =
   test('a fresh machine, both tools declined', () => {
     const c = ctx({ answers: answers([['install-fngit', 'no'], ['install-plugin', 'no']]) });
     const plan = buildPlan(c);
-    // Repos is gone, so Sessions is 1 of 3 rather than 2 of 5.
-    expect(plan.map((b) => b.progressText)).toEqual([
-      'Sessions (1/3)',
-      'Claude and git (2/3)',
-      'Apply (3/3)',
-    ]);
-    expect(plan.map((b) => b.progressLabel)).toEqual([
-      'Sessions 1/3',
-      'Claude 2/3',
-      'Apply 3/3',
-    ]);
+    // Repos is gone with fngit declined, and Git with it — the shim question
+    // is the batch's only member and it needs an fngit install.
+    expect(plan.map((b) => b.progressText)).toEqual(['Sessions (1/2)', 'Apply (2/2)']);
+    expect(plan.map((b) => b.progressLabel)).toEqual(['Sessions 1/2', 'Apply 2/2']);
   });
 
   test('indexes are 1-based and the total is the same on every batch', () => {
@@ -248,13 +239,19 @@ describe('the AskUserQuestion caps', () => {
     expect(q.options[0]!.value).toBe('ghostty x');
   });
 
-  test('the claude-flags multi-select is exactly at the cap', () => {
-    const q = buildPlan(ctx()).find((b) => b.id === 'claude-git')!.questions[0]!;
-    expect(q.id).toBe('claude-flags');
-    expect(q.multiSelect).toBe(true);
-    expect(q.options.length).toBe(4);
-    // Free text is the tool's automatic slot and does not count against the cap.
-    expect(q.freeText).toBeDefined();
+  test('claude-flags is never asked — /config owns those flags', () => {
+    const asked = buildPlan(ctx()).flatMap((b) => b.questions.map((q) => q.id));
+    expect(asked).not.toContain('claude-flags');
+    // It survives as a definition so `-y --claude-args` and reask resolve it.
+    expect(findQuestion('claude-flags')?.multiSelect).toBe(true);
+  });
+
+  test('no asked question is under the two-option floor', () => {
+    // AskUserQuestion rejects a one-option question outright, which strands
+    // the interview on it.
+    for (const q of buildPlan(ctx()).flatMap((b) => b.questions)) {
+      expect(q.options.length).toBeGreaterThanOrEqual(MIN_OPTIONS_PER_QUESTION);
+    }
   });
 });
 
@@ -287,7 +284,8 @@ describe('the spawn-command question is built from detection', () => {
 
   test('with nothing detected the screen still has an option, not just free text', () => {
     const q = buildSpawnQuestion([]);
-    expect(q.options.length).toBe(1);
+    // Two, not one: AskUserQuestion rejects a single-option question.
+    expect(q.options.length).toBe(2);
     expect(q.options[0]!.value).toContain('tmux new-window');
   });
 });
@@ -339,6 +337,7 @@ describe('nextBatch', () => {
       ]),
     });
     const plan = buildPlan(c);
-    expect(plan.map((b) => b.id)).toEqual(['claude-git', 'apply']);
+    // Git holds only git-shim, which an already-installed fngit skips.
+    expect(plan.map((b) => b.id)).toEqual(['apply']);
   });
 });

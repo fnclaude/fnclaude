@@ -39,6 +39,8 @@ import { TMUX_SPAWN_TEMPLATE, type SpawnCandidate, type ToolPresence } from './d
 /** `AskUserQuestion` limits, verified live 2026-09-04. */
 export const MAX_QUESTIONS_PER_BATCH = 4;
 export const MAX_OPTIONS_PER_QUESTION = 4;
+/** Below this the call is rejected outright and the interview stalls. */
+export const MIN_OPTIONS_PER_QUESTION = 2;
 
 export interface PlanContext {
   /** What is already installed. Drives the tool-question skips. */
@@ -113,8 +115,11 @@ function isRelevant(ctx: PlanContext, q: Question): boolean {
     // Only the plugin reads the branch template.
     case 'branch-template':
       return plugin;
+    // Only when THIS run installs fngit. An fngit the user installed
+    // themselves already put the question to them in its own installer, and
+    // asking again invites them to undo a shim they deliberately have.
     case 'git-shim':
-      return fngit;
+      return !ctx.tools.fngit && saidYes(ctx.answers, 'install-fngit');
     default:
       return true;
   }
@@ -143,9 +148,11 @@ export function capOptions(q: Question): Question {
  * user demonstrably has running. Beyond that the ordering from
  * `detectSpawnCandidates` decides which survive the 4-option cap.
  *
- * With nothing detected the question still gets an option — the tmux form,
- * which is the one command that works without knowing the emulator — so the
- * screen is never a bare free-text prompt.
+ * The tmux form is always among them — it is the one command that works
+ * without knowing the emulator, so the question is answerable even when
+ * nothing is detected. It is also what keeps the option count at the two
+ * `AskUserQuestion` requires; a one-option question is rejected outright and
+ * the interview stalls on it.
  */
 export function buildSpawnQuestion(candidates: readonly SpawnCandidate[]): Question {
   const options = candidates.map((c) => ({
@@ -157,11 +164,18 @@ export function buildSpawnQuestion(candidates: readonly SpawnCandidate[]): Quest
         : 'also installed',
     value: c.template,
   }));
-  if (options.length === 0) {
+  if (!options.some((o) => o.value === TMUX_SPAWN_TEMPLATE)) {
     options.push({
-      label: `${TMUX_SPAWN_TEMPLATE} (Recommended)`,
+      label: options.length === 0 ? `${TMUX_SPAWN_TEMPLATE} (Recommended)` : TMUX_SPAWN_TEMPLATE,
       description: 'when running inside tmux',
       value: TMUX_SPAWN_TEMPLATE,
+    });
+  }
+  if (options.length < MIN_OPTIONS_PER_QUESTION) {
+    options.push({
+      label: 'None',
+      description: 'fnc prints the command for you to run yourself',
+      value: '',
     });
   }
   return capOptions({ ...SPAWN_COMMAND_QUESTION, options });

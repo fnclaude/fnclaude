@@ -26,6 +26,7 @@ import {
   isInstallSubcommand,
   parseInstallFlags,
   shouldRunOobe,
+  WIZARD_FIRST_TURN,
 } from '../../src/install/subcommand';
 import { leafPaths } from '../../src/config/configured';
 import type { QuestionId } from '../../src/oobe/questions';
@@ -200,6 +201,13 @@ describe('buildWizardArgs — the wizard session is locked down mechanically', (
   test('permission mode is default — the wizard is not a bypass session', () => {
     const i = args.indexOf('--permission-mode');
     expect(args[i + 1]).toBe('default');
+  });
+
+  test('the first turn reads like the user typed it', () => {
+    // It is echoed at the top of their session, so it carries no tool name
+    // and no instructions — oobe.md already says what starting setup means.
+    expect(WIZARD_FIRST_TURN).not.toContain('fnc_oobe_');
+    expect(WIZARD_FIRST_TURN.startsWith('-')).toBe(false);
   });
 
   test('no --resume / --continue / -w: this is a one-off session', () => {

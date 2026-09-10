@@ -216,21 +216,23 @@ describe.skipIf(SKIP_WINDOWS)('launch plan — magic alias expansion', () => {
     expect(args.slice(-2)).toEqual(['--', '/effort ultracode']);
   });
 
-  test('ultracode -- say hi → /effort ultracode after --; user prompt dropped from slot', async () => {
-    const { plan, exitCode } = await runPlan(['ultracode', '--', 'say hi']);
+  test('ultracode -- say hi → refused: the prompt slot is already spoken for', async () => {
+    // `/effort ultracode` IS claude's single prompt positional. Delivering a
+    // typed prompt alongside it needed a follow-up written into the live TUI;
+    // with that withdrawn, fnc refuses rather than silently dropping it.
+    const { exitCode, stderr } = await runPlan(['ultracode', '--', 'say hi']);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('cannot carry a prompt');
+  });
+
+  test('bare ultracode still boots into the effort', async () => {
+    const { plan, exitCode } = await runPlan(['ultracode']);
     expect(exitCode).toBe(0);
     const args = stripMcpConfig(plan!.claudeArgs);
-    expect(args).toContain('--model');
     expect(args[args.indexOf('--model') + 1]).toBe('opus');
     expect(args).not.toContain('--effort');
-    // `/effort ultracode` is the single element immediately after a `--`.
     const sentIdx = args.indexOf('--');
-    expect(sentIdx).toBeGreaterThanOrEqual(0);
     expect(args[sentIdx + 1]).toBe('/effort ultracode');
-    // The user's prompt body never competes for the single prompt slot.
-    expect(args).not.toContain('say hi');
-    expect(args).not.toContain('say');
-    expect(args).not.toContain('hi');
   });
 
   test('fork → --resume --fork-session', async () => {

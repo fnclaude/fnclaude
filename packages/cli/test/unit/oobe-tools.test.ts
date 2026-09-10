@@ -169,7 +169,9 @@ describe('an answered question is not asked again', () => {
     });
     state.answer('install-fngit', 'no');
     state.answer('install-plugin', 'no');
-    expect(state.next().batch!.id).toBe('claude-git');
+    // Sessions is fully configured and Git needs an fngit install, so the
+    // only batch left to show is the signoff.
+    expect(state.next().batch!.id).toBe('apply');
   });
 });
 
@@ -293,8 +295,8 @@ describe('the MCP tools', () => {
     const r = await h.next({ op: 'oobe_next' });
     expect(r.done).toBe(false);
     expect(r.batch).toBe('tools');
-    expect(r.progress).toBe('Tools 1/4');
-    expect(r.progress_text).toBe('Tools (1/4)');
+    expect(r.progress).toBe('Tools 1/3');
+    expect(r.progress_text).toBe('Tools (1/3)');
     const questions = r.questions as Record<string, unknown>[];
     expect(questions.length).toBe(2);
     expect(questions[0]!.id).toBe('install-fngit');

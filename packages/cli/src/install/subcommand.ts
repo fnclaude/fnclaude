@@ -11,6 +11,9 @@
  * The wizard session is a real `claude` session, launched with `oobe.md`
  * injected INSTEAD of `noop-router.md`, and locked down:
  *
+ *   - `--allowedTools` covering the three `fnc_oobe_*` tools, so the interview
+ *     runs without asking the user to approve fnc's own setup calls — the one
+ *     approval that matters is Apply, which fnc renders itself;
  *   - `--disallowedTools Write,Edit,NotebookEdit,Bash` and
  *     `--permission-mode default`, so the model MECHANICALLY cannot dirty the
  *     cwd even if it ignores the prompt. Every write happens in fnc, after
@@ -37,6 +40,8 @@
  * and clones normally.
  */
 
+import { OOBE_TOOL_NAMES } from '../mcp/dispatch';
+import { MCP_SERVER_KEY } from '../mcp/inject-config';
 import { type QuestionId } from '../oobe/questions';
 
 /** Long-form flags `fnc install -y` accepts, one per interview question. */
@@ -164,6 +169,8 @@ export function buildWizardArgs(promptContent: string, mcpConfig?: string): stri
   const args = [
     '--append-system-prompt',
     promptContent,
+    '--allowedTools',
+    OOBE_TOOL_NAMES.map((name) => `mcp__${MCP_SERVER_KEY}__${name}`).join(','),
     '--disallowedTools',
     'Write,Edit,NotebookEdit,Bash',
     '--permission-mode',
@@ -174,6 +181,22 @@ export function buildWizardArgs(promptContent: string, mcpConfig?: string): stri
   }
   return args;
 }
+
+/**
+ * The user turn the wizard opens on.
+ *
+ * `--append-system-prompt` alone leaves claude sitting at an empty input box:
+ * a system prompt is not a turn, and nothing in the session asks the model to
+ * act. This is the turn that starts the interview, so setup begins on question
+ * one rather than on the user guessing what to type.
+ *
+ * It is worded as the user would word it, because the user sees it echoed at
+ * the top of their session. What it means mechanically is oobe.md's step one.
+ *
+ * It rides as prompt body, after the `--` sentinel, which is what keeps later
+ * flag injections (`--mcp-config`) from landing behind it.
+ */
+export const WIZARD_FIRST_TURN = 'Start setup.';
 
 /** The name the wizard session carries, so it is recognisable in a picker. */
 export const WIZARD_SESSION_NAME = 'fnc-setup';

@@ -17,20 +17,20 @@
  *
  *   configuredWindow precedence (highest first):
  *     1. CLAUDE_CODE_AUTO_COMPACT_WINDOW  (env, tokens, clamp 100k–1M)
- *     2. settings.json autoCompactWindow  (int 1e5–1e6)
- *     3. CLAUDE_CODE_ENTRYPOINT = local-agent | remote_cowork  → 500,000
- *     4. per-model default: 1M-class model → 967,000; else → 200,000
- *     5. CLAUDE_CODE_DISABLE_1M_CONTEXT drops a 1M-class model to 200,000
+ *     2. CLAUDE_CODE_ENTRYPOINT = local-agent | remote_cowork  → 500,000
+ *     3. per-model default: 1M-class model → 967,000; else → 200,000
+ *     4. CLAUDE_CODE_DISABLE_1M_CONTEXT drops a 1M-class model to 200,000
+ *
+ * Claude Code also honours a `settings.json` `autoCompactWindow` between 1
+ * and 2 above. fnc does not read that file at all, so the env var is the
+ * override that moves both sides in lockstep.
  *
  * ── Versioned constants ───────────────────────────────────────────────────
  * The numeric constants (33000, 500000, 967000, 200000) are
  * Claude-Code-version-specific. The env knobs above ARE the manual override:
  * because fnclaude spawns claude with the same env, setting
  * CLAUDE_CODE_AUTO_COMPACT_WINDOW moves BOTH claude's real behavior and
- * fnclaude's derived threshold in lockstep. (The settings.json
- * `autoCompactWindow` knob is honored by {@link deriveConfiguredWindow} when
- * supplied, but production currently wires only the env path — the env var is
- * the higher-precedence, self-consistent override.)
+ * fnclaude's derived threshold in lockstep.
  */
 
 /** 1M-class configured-window default (raw capability 1,000,000). */
@@ -100,8 +100,6 @@ export interface DeriveWindowArgs {
   model: string;
   /** Environment the claude child sees (childEnv), for the override knobs. */
   env: Env;
-  /** settings.json `autoCompactWindow`, when known. Below the env var in precedence. */
-  settingsAutoCompactWindow?: number;
 }
 
 /**
@@ -113,11 +111,6 @@ export function deriveConfiguredWindow(args: DeriveWindowArgs): number {
 
   const envWindow = parsePositiveInt(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW);
   if (envWindow !== undefined) return clampWindow(envWindow);
-
-  const settingsWindow = args.settingsAutoCompactWindow;
-  if (settingsWindow !== undefined && Number.isFinite(settingsWindow) && settingsWindow > 0) {
-    return clampWindow(Math.floor(settingsWindow));
-  }
 
   const entrypoint = (env.CLAUDE_CODE_ENTRYPOINT ?? '').trim();
   if (SURFACE_500K_ENTRYPOINTS.has(entrypoint)) return SURFACE_CONFIGURED_WINDOW;

@@ -226,78 +226,6 @@ const COPY_TO_CLIPBOARD: McpToolSchema = {
   },
 };
 
-const REQUEST_COMPACT: McpToolSchema = {
-  description:
-    "Compact the current conversation in place by triggering claude's /compact slash command, optionally with custom instructions. Use when the user asks to compact, or when you judge the context is getting long and want to summarize before continuing. DRAIN FIRST: finish responding to every queued user prompt before calling this — call it only once your queue is clear, since prompts not yet processed are lost from the compaction summary. Fire-and-forget: the command is queued into the live session and runs as if the user typed it; you do NOT receive the compaction summary back through this tool. Args: instructions (optional — /compact writes the conversation summary ITSELF, so this is SHORT, ADDITIONAL steering only, e.g. 'focus on the auth refactor, drop the unrelated debugging'; NOT a place to write or paste a summary), follow_up (optional — a prompt submitted as a normal user message AFTER the compaction completes, so the session resumes work without waiting for the user; provide it to continue a task across the compaction boundary. Being a normal message, an '@/path/to/file.md' reference works here).",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      instructions: {
-        type: 'string',
-        description:
-          'Optional SHORT additional steering for /compact (it writes the summary itself); not a place to write a summary.',
-      },
-      follow_up: {
-        type: 'string',
-        description:
-          'Optional prompt submitted as a normal user message after the compaction completes, to auto-resume work. An @/path.md reference works here.',
-      },
-    },
-  },
-};
-
-const SET_EFFORT: McpToolSchema = {
-  description:
-    "Change the current session's reasoning effort level in place via claude's /effort slash command. Use when the user asks to raise or lower effort. Fire-and-forget: the command is queued into the live session as if typed; no output is returned. Args: effort (one of low, medium, high, xhigh, max, auto).",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      effort: {
-        type: 'string',
-        description: 'The effort level: low, medium, high, xhigh, max, or auto.',
-        enum: ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
-      },
-    },
-    required: ['effort'],
-  },
-};
-
-const SET_MODEL: McpToolSchema = {
-  description:
-    "Change the current session's model in place via claude's /model slash command. Use when the user asks to switch models. Fire-and-forget: the command is queued into the live session as if typed; no output is returned. Args: model (a bare alias like opus/sonnet/haiku/fable, or a versioned alias like opus5/opus46/sonnet5/fable5/haiku45 which resolves to the full model ID).",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      model: {
-        type: 'string',
-        description:
-          'The model alias: a bare name (opus, sonnet, haiku, fable) or a versioned alias (opus5, opus46, sonnet5, fable5, haiku45).',
-        enum: ['opus', 'sonnet', 'haiku', 'fable', 'opus5', 'opus46', 'sonnet5', 'fable5', 'haiku45'],
-      },
-    },
-    required: ['model'],
-  },
-};
-
-const RUN_SLASH_COMMAND: McpToolSchema = {
-  description:
-    "Run an arbitrary claude slash command in the current session by injecting it into the live TUI input. Generic escape hatch for slash commands that don't have a dedicated fnc tool. Fire-and-forget: the command is queued as if typed by the user; you do NOT receive its output back. Args: command (the slash command name, with or without a leading slash, e.g. 'clear' or '/clear'), args (optional array of arguments appended after the command).",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      command: {
-        type: 'string',
-        description: 'The slash command name, with or without a leading slash.',
-      },
-      args: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional positional arguments appended after the command.',
-      },
-    },
-    required: ['command'],
-  },
-};
 
 const GET_USAGE: McpToolSchema = {
   description:
@@ -367,10 +295,6 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_switch_project: SWITCH_PROJECT,
   fnc_spawn_session: SPAWN_SESSION,
   fnc_copy_to_clipboard: COPY_TO_CLIPBOARD,
-  request_compact: REQUEST_COMPACT,
-  fnc_set_effort: SET_EFFORT,
-  fnc_set_model: SET_MODEL,
-  fnc_run_slash_command: RUN_SLASH_COMMAND,
   get_usage: GET_USAGE,
   fnc_oobe_next: OOBE_NEXT,
   fnc_oobe_answer: OOBE_ANSWER,

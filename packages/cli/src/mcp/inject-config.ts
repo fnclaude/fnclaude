@@ -31,6 +31,9 @@
 
 import { insertFlagsBeforeSentinel } from '../argv/sentinel';
 
+/** The `mcpServers` key fnc registers itself under, and the `mcp__<key>__` tool prefix. */
+export const MCP_SERVER_KEY = 'fnclaude';
+
 export interface InjectMcpConfigArgs {
   claudeArgs: readonly string[];
   /** Path to the bun executable that will run the MCP subprocess (typically process.execPath). */
@@ -56,7 +59,7 @@ export function injectMcpConfig(args: InjectMcpConfigArgs): string[] {
 
   const config = {
     mcpServers: {
-      fnclaude: {
+      [MCP_SERVER_KEY]: {
         command: args.bunExec,
         args: subprocessArgs,
       },
