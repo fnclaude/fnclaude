@@ -227,34 +227,6 @@ const COPY_TO_CLIPBOARD: McpToolSchema = {
 };
 
 
-const CHANNEL_TEST_ARM: McpToolSchema = {
-  description:
-    "Arm the channel round-trip probe, then END YOUR TURN. Starts a timer in fnc's MCP subprocess and returns immediately; when the timer fires — by default 90 seconds later, long after your turn is over — the subprocess pushes a `notifications/claude/channel` event into this session while it sits idle at an empty prompt. The whole point is to find out whether a pushed channel event WAKES an idle session, so after calling this you must not call another tool or keep working: a busy session proves nothing. If the event reaches you, it will tell you to call `fnc_channel_test_ack`. Args: delay_seconds (optional, default 90).",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      delay_seconds: {
-        type: 'number',
-        description: 'Seconds to wait before pushing. Default 90.',
-      },
-    },
-  },
-};
-
-const CHANNEL_TEST_ACK: McpToolSchema = {
-  description:
-    'Acknowledge a channel event pushed by `fnc_channel_test_arm`. Call this the moment you receive the `<channel probe="idle_wake">` event and nothing else first — the call is the measurement, and its timestamp against the push timestamp is the result. Args: note (optional — say what you were doing when the event arrived, e.g. "idle, no prompt in flight").',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      note: {
-        type: 'string',
-        description: 'What you were doing when the event arrived.',
-      },
-    },
-  },
-};
-
 const GET_USAGE: McpToolSchema = {
   description:
     "Return current budget headroom for this session — per-model cost + token breakdown, current context-window size, and subscription limits. Use it at high-token decision points (parallel subagent fan-out, large file reads, deep exploration) to inform model-tier and parallelism choices per the user's preferences; don't poll continuously. Args: session_id (the current Claude session ID — read $CLAUDE_CODE_SESSION_ID from your shell env via Bash, since the env var isn't exposed to MCP tool input directly). Response shape: { session: { cost_usd, by_model: { <model-id>: { input, output, cache_read, cache_write, cost } } }, limits, context: { used, model } }. IMPORTANT — `limits` is `null` in this version: the anthropic-ratelimit-unified-* headers that carry the 5-hour / weekly-all / weekly-Sonnet quotas never reach fnclaude (they flow over claude's own API connection, not the terminal fnclaude wraps), so live limits are NOT observable yet. Treat `null` as \"not yet observed\", never as \"no limit\" or zero. `context.used` is the latest assistant turn's context size in tokens (null if no assistant turn yet).",
@@ -324,8 +296,6 @@ export const TOOL_SCHEMAS: Record<McpToolName, McpToolSchema> = {
   fnc_spawn_session: SPAWN_SESSION,
   fnc_copy_to_clipboard: COPY_TO_CLIPBOARD,
   get_usage: GET_USAGE,
-  fnc_channel_test_arm: CHANNEL_TEST_ARM,
-  fnc_channel_test_ack: CHANNEL_TEST_ACK,
   fnc_oobe_next: OOBE_NEXT,
   fnc_oobe_answer: OOBE_ANSWER,
   fnc_oobe_reask: OOBE_REASK,

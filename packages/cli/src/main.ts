@@ -52,12 +52,10 @@ import { buildApplyPlan, describeApplyPlan } from './oobe/apply';
 import { detectSpawnCandidates, detectTools } from './oobe/detect';
 import { OobeState } from './oobe/state';
 import { handleCopyToClipboard } from './mcp/handlers/clipboard';
-import { isDevEnvironment } from './env/dev';
 import { createGetUsageHandler } from './mcp/handlers/get-usage';
 import { createRestartHandler } from './mcp/handlers/restart';
 import { createSpawnHandler } from './mcp/handlers/spawn';
 import { createSwitchHandler } from './mcp/handlers/switch';
-import { buildChannelFlags } from './mcp/channel-flags';
 import { injectMcpConfig } from './mcp/inject-config';
 import { startMcpListener } from './mcp/listener';
 import { createParentDispatcher, stubParentHandlers } from './mcp/parent-dispatch';
@@ -511,27 +509,6 @@ if (mcpSocketPath !== undefined) {
     noop: usedNoopFallback,
     interactive: isInteractiveSession(claudeArgs),
   });
-
-  // fnc names ITSELF as a channel on every launch, so its own MCP server can
-  // push events into the session rather than only answering tool calls.
-  // Registration needs BOTH the capability (declared in the subprocess's
-  // `initialize`) and the name on the command line — `--mcp-config` alone
-  // does not register a channel. Which flag carries the name depends on
-  // whether this is a source checkout: the allowlist bypass is dev-only.
-  // See mcp/channel-flags.ts.
-  const dev = isDevEnvironment({ binPath: fncBin, env: process.env });
-  claudeArgs = insertFlagsBeforeSentinel(
-    claudeArgs,
-    ...buildChannelFlags({
-      dev,
-      ...(config.channelsAdditional !== undefined
-        ? { additional: config.channelsAdditional }
-        : {}),
-      ...(config.channelsDevelopment !== undefined
-        ? { development: config.channelsDevelopment }
-        : {}),
-    }),
-  );
 }
 
 // Internal test hook: dump the launch plan as JSON and exit 0 BEFORE spawning

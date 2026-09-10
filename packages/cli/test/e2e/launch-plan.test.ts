@@ -67,33 +67,9 @@ interface RunOptions {
  * every magic-alias / short-flag assertion to repeat the pair.
  */
 function stripMcpConfig(claudeArgs: readonly string[]): string[] {
-  let out = [...claudeArgs];
-  const idx = out.indexOf('--mcp-config');
-  if (idx >= 0) out = [...out.slice(0, idx), ...out.slice(idx + 2)];
-  return stripChannelFlags(out);
-}
-
-/**
- * Drop the channel flags fnc adds beside the MCP config. Each takes one or
- * more entry arguments, so the run continues to the next `--flag` rather than
- * assuming a fixed pair.
- */
-function stripChannelFlags(claudeArgs: readonly string[]): string[] {
-  const FLAGS = ['--channels', '--dangerously-load-development-channels'];
-  const out: string[] = [];
-  let skipping = false;
-  for (const token of claudeArgs) {
-    if (FLAGS.includes(token)) {
-      skipping = true;
-      continue;
-    }
-    if (skipping) {
-      if (token.startsWith('-')) skipping = false;
-      else continue;
-    }
-    out.push(token);
-  }
-  return out;
+  const idx = claudeArgs.indexOf('--mcp-config');
+  if (idx < 0) return [...claudeArgs];
+  return [...claudeArgs.slice(0, idx), ...claudeArgs.slice(idx + 2)];
 }
 
 async function runPlan(args: readonly string[], opts: RunOptions = {}): Promise<RunResult> {

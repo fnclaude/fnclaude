@@ -23,16 +23,6 @@
 
 import { readFileSync } from 'node:fs';
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-import { CHANNEL_CAPABILITY, type ChannelWriter } from './channel';
-import {
-  CHANNEL_TEST_LOG_ENV,
-  createChannelTestAckHandler,
-  createChannelTestArmHandler,
-} from './handlers/channel-test';
-
 import { createJsonRpcServer, type McpTool as JsonRpcMcpTool } from './jsonrpc-server';
 import { TOOL_SCHEMAS } from './tool-schemas';
 import { dialAndCall, type WireOp, type WireRequest, type WireResponse } from './wire';
@@ -70,8 +60,6 @@ export const MCP_TOOL_NAMES = [
   'fnc_spawn_session',
   'fnc_copy_to_clipboard',
   'get_usage',
-  'fnc_channel_test_arm',
-  'fnc_channel_test_ack',
   'fnc_oobe_next',
   'fnc_oobe_answer',
   'fnc_oobe_reask',
@@ -93,21 +81,8 @@ export const OOBE_TOOL_NAMES = [
 
 const OOBE_TOOLS: ReadonlySet<McpToolName> = new Set(OOBE_TOOL_NAMES);
 
-/**
- * The channel probe registers only in a source checkout — the same gate that
- * decides whether fnc arms the channel allowlist bypass at all, so the tools
- * exist exactly when the channel they test is registered.
- */
-const CHANNEL_TEST_TOOL_NAMES = [
-  'fnc_channel_test_arm',
-  'fnc_channel_test_ack',
-] as const satisfies readonly McpToolName[];
-
-const CHANNEL_TEST_TOOLS: ReadonlySet<McpToolName> = new Set(CHANNEL_TEST_TOOL_NAMES);
-
 function toolEnabled(name: McpToolName, env: Record<string, string | undefined>): boolean {
   if (OOBE_TOOLS.has(name)) return env.FNC_OOBE === '1';
-  if (CHANNEL_TEST_TOOLS.has(name)) return env.FNC_CHANNEL_TEST === '1';
   return true;
 }
 
@@ -121,9 +96,6 @@ const TOOL_TO_OP: Record<McpToolName, WireOp> = {
   fnc_spawn_session: 'spawn',
   fnc_copy_to_clipboard: 'copy_to_clipboard',
   get_usage: 'get_usage',
-  // Handled in-process, not over the socket; the op is unused.
-  fnc_channel_test_arm: 'channel_test_arm',
-  fnc_channel_test_ack: 'channel_test_ack',
   fnc_oobe_next: 'oobe_next',
   fnc_oobe_answer: 'oobe_answer',
   fnc_oobe_reask: 'oobe_reask',
@@ -138,11 +110,6 @@ export interface BuildToolsArgs {
   }) => Promise<WireResponse>;
   /** Injectable env for the opt-in gate; defaults to `process.env`. */
   env?: Record<string, string | undefined>;
-  /**
-   * Transport sink for server-pushed channel notifications. Defaults to this
-   * process's stdout, which is what claude reads; tests inject a collector.
-   */
-  write?: ChannelWriter;
 }
 
 /**
@@ -161,20 +128,10 @@ export interface BuildToolsArgs {
 export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool> {
   const dialer = args.dialAndCall ?? dialAndCall;
   const env = args.env ?? process.env;
-  const local = buildLocalHandlers(env, args.write);
   const tools: Record<string, JsonRpcMcpTool> = {};
   for (const name of MCP_TOOL_NAMES) {
     if (!toolEnabled(name, env)) continue;
     const schema = TOOL_SCHEMAS[name];
-    const localHandler = local[name];
-    if (localHandler !== undefined) {
-      tools[name] = {
-        description: schema.description,
-        inputSchema: schema.inputSchema,
-        handler: localHandler,
-      };
-      continue;
-    }
     tools[name] = {
       description: schema.description,
       inputSchema: schema.inputSchema,
@@ -198,29 +155,6 @@ export function buildTools(args: BuildToolsArgs): Record<string, JsonRpcMcpTool>
   return tools;
 }
 
-/**
- * The tools answered inside this process instead of over the socket.
- *
- * The channel probe is the only case: arming it needs the stdout transport
- * claude reads, which exists here and nowhere else. Everything else routes to
- * the parent, which owns the terminal and the handoff machinery.
- */
-function buildLocalHandlers(
-  env: Record<string, string | undefined>,
-  write?: ChannelWriter,
-): Partial<Record<McpToolName, (payload: unknown) => Promise<object>>> {
-  if (env.FNC_CHANNEL_TEST !== '1') return {};
-  const sink = write ?? ((line: string) => void process.stdout.write(line));
-  const deps = {
-    write: sink,
-    logPath: env[CHANNEL_TEST_LOG_ENV] ?? join(tmpdir(), 'fnc-channel-probe.jsonl'),
-  };
-  return {
-    fnc_channel_test_arm: createChannelTestArmHandler(deps),
-    fnc_channel_test_ack: createChannelTestAckHandler(deps),
-  };
-}
-
 let cachedVersion: string | null = null;
 
 function readPackageVersion(): string {
@@ -239,16 +173,13 @@ function readPackageVersion(): string {
 /**
  * Build the `initialize` result body shared between Go canonical and TS.
  * Per Go (`src/mcp.go:handleInitialize`): protocolVersion + capabilities
- * + serverInfo. `capabilities.experimental['claude/channel']` is what makes
- * fnc a channel: its presence registers claude's notification listener (the
- * launcher still has to NAME fnc in a channel flag — see channel-flags.ts).
- * `capabilities.tools` is the empty object — claude reads it
+ * + serverInfo. `capabilities.tools` is the empty object — claude reads it
  * as "yes, tools/list is supported", not as a list itself.
  */
 export function buildInitializeResponse(): object {
   return {
     protocolVersion: MCP_PROTOCOL_VERSION,
-    capabilities: { tools: {}, experimental: { ...CHANNEL_CAPABILITY } },
+    capabilities: { tools: {} },
     serverInfo: {
       name: MCP_SERVER_NAME,
       version: readPackageVersion(),

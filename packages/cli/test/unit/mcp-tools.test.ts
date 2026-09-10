@@ -26,8 +26,6 @@ describe('MCP_TOOL_NAMES', () => {
       'fnc_spawn_session',
       'fnc_copy_to_clipboard',
       'get_usage',
-      'fnc_channel_test_arm',
-      'fnc_channel_test_ack',
       'fnc_oobe_next',
       'fnc_oobe_answer',
       'fnc_oobe_reask',
@@ -189,7 +187,7 @@ describe('buildTools — per-tool handler shape', () => {
       dialAndCall: fake.dial,
       // Opt in to the gated tools so every name in MCP_TOOL_NAMES is present
       // for this completeness check.
-      env: { FNC_OOBE: '1', FNC_CHANNEL_TEST: '1' },
+      env: { FNC_OOBE: '1' },
     });
     // Schema port from §7.5 wiring: each entry carries description +
     // inputSchema so the jsonrpc-server's tools/list response is complete.
